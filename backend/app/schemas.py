@@ -1,0 +1,110 @@
+from typing import List, Optional
+
+from pydantic import BaseModel
+
+
+class UploadResponse(BaseModel):
+    message: str
+    total_orders: int
+    is_valid: bool
+    errors: List[str]
+    orders: List[dict]
+    successful_orders: List[dict] = []
+    failed_orders: List[dict] = []
+    file_name: Optional[str] = None
+    batch_id: Optional[int] = None
+    column_order: List[dict] = []
+
+
+class RouteItem(BaseModel):
+    route_name: str
+    vehicle_type: str
+    orders: List[dict]
+    route_distance_km: Optional[float] = None
+    route_time_minutes: Optional[float] = None
+    number_of_stops: int = 0
+    route_segments: List[dict] = []
+    google_maps_url: Optional[str] = None
+    estimated_finish_time: Optional[str] = None
+    average_stop_time: Optional[float] = None
+    delivery_sequence: List[object] = []
+    late_deliveries: List[object] = []
+    utilization_percent: Optional[float] = None
+    is_auto_created: bool = False
+
+
+class RoutePlanResponse(BaseModel):
+    route_count: int
+    routes: List[RouteItem]
+    pending_orders: List[dict]
+    warnings: List[str] = []
+    plan_id: Optional[int] = None
+    is_saved: bool = False
+
+
+class RetryGeocodeRequest(BaseModel):
+    order_id: str
+    updated_address: str
+    orders: List[dict]
+    available_cars: int = 1
+    available_bikes: int = 2
+
+
+class SettingsResponse(BaseModel):
+    default_car_count: int
+    default_bike_count: int
+    theme: str
+    preferences: dict = {}
+
+
+class SettingsUpdateRequest(BaseModel):
+    default_car_count: Optional[int] = None
+    default_bike_count: Optional[int] = None
+    theme: Optional[str] = None
+    preferences: Optional[dict] = None
+
+
+class DashboardResponse(BaseModel):
+    has_data: bool
+    batch_id: Optional[int] = None
+    file_name: Optional[str] = None
+    uploaded_at: Optional[str] = None
+    total_orders: int = 0
+    is_valid: bool = True
+    errors: List[str] = []
+    orders: List[dict] = []
+    failed_orders: List[dict] = []
+    routes: List[dict] = []
+    pending_orders: List[dict] = []
+    warnings: List[str] = []
+    plan_id: Optional[int] = None
+    plan_is_saved: bool = False
+    plan_label: Optional[str] = None
+    column_order: List[dict] = []
+    settings: SettingsResponse
+
+
+class RoutePlanSaveRequest(BaseModel):
+    label: Optional[str] = None
+
+
+class RoutePlanListItem(BaseModel):
+    plan_id: int
+    label: Optional[str] = None
+    saved_at: Optional[str] = None
+    created_at: Optional[str] = None
+    batch_id: Optional[int] = None
+    file_name: Optional[str] = None
+    available_cars: int
+    available_bikes: int
+    route_count: int
+    total_stops: int
+    pending_count: int
+    total_distance_km: float
+
+
+class RoutePlanHistoryResponse(BaseModel):
+    plans: List[RoutePlanListItem]
+    total: int
+    limit: int
+    offset: int

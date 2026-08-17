@@ -1,0 +1,224 @@
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.database import Base
+from app.geocoding.base import GeocodeResult
+from app.geocode_service import clean_address, geocode_address, geocode_orders, geocode_single_address
+
+
+class _FakeGeocoder:
+    """Stand-in for any GeocodingProvider that records every address it was
+    asked to resolve, so tests can assert on call counts (e.g. dedup
+    caching)."""
+
+    def __init__(self, results_by_address):
+        self._results_by_address = results_by_address
+        self.calls = []
+
+    def geocode(self, address):
+        self.calls.append(address)
+        return self._results_by_address.get(address)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def test_clean_address_appends_city_when_missing():
+    assert clean_address("12 Main Street") == "12 Main Street, Chennai, India"
+
+
+def test_clean_address_leaves_city_untouched_when_present():
+    assert clean_address("12 Main Street, Chennai") == "12 Main Street, Chennai"
+
+
+def test_geocode_orders_uses_cache_for_duplicate_addresses(monkeypatch):
+    # Two orders share the exact same address - it must only be geocoded
+    # once, both to save billed API calls and to avoid pointless duplicate
+    # requests.
+    fake_result = GeocodeResult(lat=12.9, lng=80.2, formatted_address="Resolved, Chennai", status="OK", provider="nominatim")
+    fake_geocoder = _FakeGeocoder({"12 Main Street, Chennai, India": fake_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    orders = [
+        {"order_id": "1", "customer_name": "A", "address": "12 Main Street"},
+        {"order_id": "2", "customer_name": "B", "address": "12 Main Street"},
+    ]
+
+    result, provider_error = geocode_orders(orders)
+
+    assert len(fake_geocoder.calls) == 1
+    for order in result:
+        assert order["lat"] == 12.9
+        assert order["lng"] == 80.2
+        assert order["geocoded_address"] == "Resolved, Chennai"
+
+
+def test_geocode_orders_marks_unresolved_address_as_failed(monkeypatch):
+    fake_geocoder = _FakeGeocoder({})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    orders = [{"order_id": "1", "customer_name": "A", "address": "Nonexistent Place, Chennai"}]
+
+    result, provider_error = geocode_orders(orders)
+
+    assert result[0]["lat"] is None
+    assert result[0]["lng"] is None
+    assert "geocode_error" in result[0]
+
+
+def test_geocode_orders_skips_orders_that_already_have_coordinates(monkeypatch):
+    fake_geocoder = _FakeGeocoder({})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    orders = [{"order_id": "1", "customer_name": "A", "address": "Some Address", "lat": 1.0, "lng": 2.0}]
+
+    result, provider_error = geocode_orders(orders)
+
+    assert fake_geocoder.calls == []
+    assert result[0]["lat"] == 1.0
+    assert result[0]["lng"] == 2.0
+
+
+def test_geocode_address_returns_dict_on_success(monkeypatch):
+    fake_result = GeocodeResult(lat=13.0, lng=80.1, formatted_address="Resolved Place, Chennai", status="OK", provider="nominatim")
+    fake_geocoder = _FakeGeocoder({"12 Main Street, Chennai, India": fake_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    result = geocode_address("12 Main Street")
+
+    assert result == {
+        "address": "12 Main Street, Chennai, India",
+        "lat": 13.0,
+        "lng": 80.1,
+        "display_name": "Resolved Place, Chennai",
+        "confidence": None,
+    }
+
+
+def test_geocode_address_returns_none_on_empty_input():
+    assert geocode_address("") is None
+
+
+def test_geocode_single_address_delegates_to_geocode_address(monkeypatch):
+    fake_result = GeocodeResult(lat=1.0, lng=2.0, formatted_address="X", status="OK", provider="nominatim")
+    fake_geocoder = _FakeGeocoder({"Some Address, Chennai, India": fake_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    result = geocode_single_address("Some Address")
+
+    assert result["lat"] == 1.0
+    assert result["lng"] == 2.0
+
+
+def test_geocode_orders_flags_low_confidence_result_as_needs_manual_verification(monkeypatch):
+    # A provider (e.g. Mapbox) can return a real match that's too uncertain
+    # to trust - that must land in Failed Orders for human review, not be
+    # silently accepted as a precise delivery point.
+    low_confidence_result = GeocodeResult(
+        lat=12.9, lng=80.2, formatted_address="Roughly here, Chennai",
+        status="NEEDS_MANUAL_VERIFICATION", provider="mapbox", confidence=0.3,
+    )
+    fake_geocoder = _FakeGeocoder({"Vague Place, Chennai, India": low_confidence_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    orders = [{"order_id": "1", "customer_name": "A", "address": "Vague Place"}]
+
+    result, provider_error = geocode_orders(orders)
+
+    assert result[0]["lat"] is None
+    assert result[0]["lng"] is None
+    assert "Needs Manual Verification" in result[0]["geocode_error"]
+    assert "0.30" in result[0]["geocode_error"]
+
+
+def test_geocode_orders_includes_confidence_on_success(monkeypatch):
+    fake_result = GeocodeResult(lat=1.0, lng=2.0, formatted_address="X", status="OK", provider="mapbox", confidence=0.87)
+    fake_geocoder = _FakeGeocoder({"Some Place, Chennai, India": fake_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    result, provider_error = geocode_orders([{"order_id": "1", "customer_name": "A", "address": "Some Place"}])
+
+    assert result[0]["confidence"] == 0.87
+    assert provider_error is None
+
+
+def test_geocode_orders_stops_immediately_on_provider_error(monkeypatch):
+    # A billing/auth/access failure isn't specific to any address - once
+    # the provider signals this, every remaining order must be marked with
+    # the same clear reason instead of retrying (and failing) individually.
+    from app.geocoding.base import GeocodingProviderError
+
+    class _BrokenGeocoder:
+        def __init__(self):
+            self.calls = []
+
+        def geocode(self, address):
+            self.calls.append(address)
+            raise GeocodingProviderError("Google Geocoding is not working: billing not enabled", provider="google")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    broken_geocoder = _BrokenGeocoder()
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: broken_geocoder)
+
+    orders = [
+        {"order_id": "1", "customer_name": "A", "address": "1 Main Street"},
+        {"order_id": "2", "customer_name": "B", "address": "2 Main Street"},
+        {"order_id": "3", "customer_name": "C", "address": "3 Main Street"},
+    ]
+
+    result, provider_error = geocode_orders(orders)
+
+    assert provider_error is not None
+    assert "billing not enabled" in provider_error
+    assert len(result) == 3
+    for order in result:
+        assert order["lat"] is None
+        assert order["geocode_error"] == provider_error
+    # Only the first address was actually attempted - the rest were marked
+    # without wasting more requests on a known-broken provider.
+    assert broken_geocoder.calls == ["1 Main Street, Chennai, India"]
+
+
+@pytest.fixture
+def db_session():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def test_geocode_orders_reuses_db_cache_across_calls_without_hitting_provider(monkeypatch, db_session):
+    # Simulates two separate uploads (two separate geocode_orders calls)
+    # that both contain the same address - the second call must be served
+    # entirely from the geocoding_cache table, spending zero provider calls.
+    fake_result = GeocodeResult(lat=12.9, lng=80.2, formatted_address="Resolved, Chennai", status="OK", provider="google")
+    fake_geocoder = _FakeGeocoder({"12 Main Street, Chennai, India": fake_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    first_orders = [{"order_id": "1", "customer_name": "A", "address": "12 Main Street"}]
+    geocode_orders(first_orders, db=db_session)
+    assert len(fake_geocoder.calls) == 1
+
+    second_orders = [{"order_id": "2", "customer_name": "B", "address": "12 Main Street"}]
+    result, _ = geocode_orders(second_orders, db=db_session)
+
+    assert len(fake_geocoder.calls) == 1  # unchanged - served from cache
+    assert result[0]["lat"] == 12.9
+    assert result[0]["lng"] == 80.2

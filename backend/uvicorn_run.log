@@ -1,0 +1,342 @@
+﻿.\venv\Scripts\python.exe : INFO:     Started server process [5148]
+At line:1 char:390
++ ... n\backend"; .\venv\Scripts\python.exe -m uvicorn app.main:app --host  ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO:     Started server process [5148]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59833 - "GET /health HTTP/1.1" 200 OK
+INFO:     2409:40f4:10f7:c395:1c80:8bff:fe5c:d74e:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:10f7:c395:1c80:8bff:fe5c:d74e:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+
+Starting geocoding for 35 orders...
+
+[1/35] original='Flat 3B, Nandita Apartment, Door No 50, Thirumalai Pillai Road, T Nagar
+Nandita Apartments
+600017 Chennai TN
+India' normalized='Flat 3B, Nandita Apartment, Door No 50, Thirumalai Pillai Road, T Nagar Nandita Apartments 600017 Chennai TN India'
+   ✅ Success (OK)
+[2/35] original='Old no 69
+New no 46 G4 Padmam apartment 
+2 nd main road 
+Gandhinagar 
+Adyar 
+Chennai 600020' normalized='Old no 69 New no 46 G4 Padmam apartment 2 nd main road Gandhinagar Adyar Chennai 600020'
+   ✅ Success (OK)
+[3/35] original='3 shanti samudra 
+4 Springdale avenue
+Injambakkam' normalized='3 shanti samudra 4 Springdale avenue Injambakkam, Chennai, India'
+   ✅ Success (OK)
+[4/35] original='11, Yogi Gardens, Pallipattu, Tharamani, Chennai, Greater Chennai, Tamil Nadu 600113' normalized='11, Yogi Gardens, Pallipattu, Tharamani, Chennai, Greater Chennai, Tamil Nadu 600113'
+   ✅ Success (OK)
+[5/35] original='pickup' normalized='pickup, Chennai, India'
+   ✅ Success (OK)
+[6/35] original='Door.No: 55, Gandhi Street, Golden George nagar, Nerkundram,
+600107 Chennai TN
+India' normalized='Door.No: 55, Gandhi Street, Golden George nagar, Nerkundram, 600107 Chennai TN India'
+   ✅ Success (OK)
+[7/35] original='New No.32 / Old No. 26 Kothari Road
+Aum Apartments, Flat 1 B
+600034 Chennai City Central TN
+India' normalized='New No.32 / Old No. 26 Kothari Road Aum Apartments, Flat 1 B 600034 Chennai City Central TN India'
+   ✅ Success (OK)
+[8/35] original='28, Padma Street, VGN Avenue, Nolambur, Mogappair West
+600037 Chennai TN
+India' normalized='28, Padma Street, VGN Avenue, Nolambur, Mogappair West 600037 Chennai TN India'
+   ✅ Success (OK)
+[9/35] original='Plot no 3,Door no4/218, Tagoor street .MGR Salai, Palavakkam, Chennai 41.' normalized='Plot no 3, Door no4/218, Tagoor street .MGR Salai, Palavakkam, Chennai 41.'
+   ✅ Success (OK)
+[10/35] original='Door 2 Plot 107 Yeshwanth nagar link street Madambakkam
+600126 Chennai TN
+India' normalized='Door 2 Plot 107 Yeshwanth nagar link street Madambakkam 600126 Chennai TN India'
+   ✅ Success (OK)
+[11/35] original='1043/2 H BLOCK 
+27 TH STREET
+ANNA NAGAR 
+CHENNAI 600040' normalized='1043/2 H BLOCK 27 TH STREET ANNA NAGAR CHENNAI 600040'
+   ✅ Success (OK)
+[12/35] original='19/10, Chinniah Street, T.Nagar, Chennai-17 
+Landmark- Opp to Kamarajar Ninaivu Illam' normalized='19/10, Chinniah Street, T.Nagar, Chennai-17 Landmark- Opp to Kamarajar Ninaivu Illam'
+   ✅ Success (OK)
+[13/35] original='10 Ravi Saraswathi Bhavan
+2nd Floor, New Street
+600034 Chennai TN
+India' normalized='10 Ravi Saraswathi Bhavan 2nd Floor, New Street 600034 Chennai TN India'
+   ✅ Success (OK)
+[14/35] original='New no 26, old no 23/3, 3rd seaward road, valmiki nagar, thiruvanmiyur, chennai
+Individual house
+600041 Chennai TN
+India' normalized='New no 26, old no 23/3, 3rd seaward road, valmiki nagar, thiruvanmiyur, chennai Individual house 600041 Chennai TN India'
+   ✅ Success (OK)
+[15/35] original='Villa No:121, TVS Emerald Aaranya, Kanniamman Kovil Street, Vengaivasal
+600073 Chennai TN
+India' normalized='Villa No:121, TVS Emerald Aaranya, Kanniamman Kovil Street, Vengaivasal 600073 Chennai TN India'
+   ✅ Success (OK)
+[16/35] original='3F, Lobby 2, Kgeyes Eternity, 21 Parvathi Street,
+600090 Chennai TN
+India' normalized='3F, Lobby 2, Kgeyes Eternity, 21 Parvathi Street, 600090 Chennai TN India'
+   ✅ Success (OK)
+[17/35] original='Tower2, Flat 302, Ceebros 174, Sathyadev Avenue, MRC Nagar, RA Puram , Chennai 600028' normalized='Tower2, Flat 302, Ceebros 174, Sathyadev Avenue, MRC Nagar, RA Puram, Chennai 600028'
+   ✅ Success (OK)
+[18/35] original='Capt R Madhu
+46, Anandah, 2nd Floor,
+5th street, Venkateshwara Nagar,
+Kottivakkam, Chennai
+Pin - 600041' normalized='Capt R Madhu 46, Anandah, 2nd Floor, 5th street, Venkateshwara Nagar, Kottivakkam, Chennai Pin - 600041'
+   ✅ Success (OK)
+[19/35] original='106 (old number 120) Vepery High Road, Periamet, Chennai 600003' normalized='106 (old number 120) Vepery High Road, Periamet, Chennai 600003'
+   ✅ Success (OK)
+[20/35] original='14/1 Rutland gate nungambakkam chennai' normalized='14/1 Rutland gate nungambakkam chennai'
+   ✅ Success (OK)
+[21/35] original='Dj party hall , veppambattu' normalized='Dj party hall, veppambattu, Chennai, India'
+   ✅ Success (OK)
+[22/35] original='Flat 10F , B block ,Esthell golden square apartment , Inner ring road , Velachery , Chennai -600042' normalized='Flat 10F, B block, Esthell golden square apartment, Inner ring road, Velachery, Chennai -600042'
+   ✅ Success (OK)
+[23/35] original='Santha Towers
+K-103
+25, Paruthipattu Rd, Avadi, Tamil Nadu 600071' normalized='Santha Towers K-103 25, Paruthipattu Rd, Avadi, Tamil Nadu 600071'
+   ✅ Success (OK)
+[24/35] original='globl info city,G3 Block B
+G3 Block B
+600096 Chennai TN
+India' normalized='globl info city, G3 Block B G3 Block B 600096 Chennai TN India'
+   ✅ Success (OK)
+[25/35] original='9th Cross Street
+600020 Chennai TN
+India' normalized='9th Cross Street 600020 Chennai TN India'
+   ✅ Success (OK)
+[26/35] original='G201, Casagrand The Address,
+Easwaran Street, Karapakkam
+600097 Chennai TN
+India' normalized='G201, Casagrand The Address, Easwaran Street, Karapakkam 600097 Chennai TN India'
+   ✅ Success (OK)
+[27/35] original='M4 block5 Vrisa apartments 4th cross street
+Lakshmi Hayagreeva nagar
+600088 Chennai' normalized='M4 block5 Vrisa apartments 4th cross street Lakshmi Hayagreeva nagar 600088 Chennai'
+   ✅ Success (OK)
+[28/35] original='Service Road, West Tambaram
+F110, Fairmont, Silversprings Invicon
+600045 Chennai TN
+India' normalized='Service Road, West Tambaram F110, Fairmont, Silversprings Invicon 600045 Chennai TN India'
+   ✅ Success (OK)
+[29/35] original='1A, Vijaya Shree Flats
+NO.9, Dr. Radhakrishnan Road 2nd Street, Mylapore, 
+Chennai- 600004.' normalized='1A, Vijaya Shree Flats NO.9, Dr. Radhakrishnan Road 2nd Street, Mylapore, Chennai- 600004.'
+   ✅ Success (OK)
+[30/35] original='Door no:5C, fifth floor, Block 3, Magnolia Park Apartments, No:2 Five Furlong road, guindy, Chennai-600032' normalized='Door no:5C, fifth floor, Block 3, Magnolia Park Apartments, No:2 Five Furlong road, guindy, Chennai-600032'
+   ✅ Success (OK)
+[31/35] original='Magizhagam House
+2/86, Nehru Street, Mettu Colony, Manapakkam
+600125 Chennai TN
+India' normalized='Magizhagam House 2/86, Nehru Street, Mettu Colony, Manapakkam 600125 Chennai TN India'
+   ✅ Success (OK)
+[32/35] original='11,second cross street, Purushothaman Nagar,Chromepet
+600044 Chennai TN
+India' normalized='11, second cross street, Purushothaman Nagar, Chromepet 600044 Chennai TN India'
+   ✅ Success (OK)
+[33/35] original='Plot 499, 18th Street, 4th Sector, KK Nagar
+600078 Chennai TN
+India' normalized='Plot 499, 18th Street, 4th Sector, KK Nagar 600078 Chennai TN India'
+   ✅ Success (OK)
+[34/35] original='Plot no 20,annai velanganni Nagar phase 2,4th avenue mugalivakkam chennai 125' normalized='Plot no 20, annai velanganni Nagar phase 2, 4th avenue mugalivakkam chennai 125'
+   ✅ Success (OK)
+[35/35] original='Flat No. A-305,
+ETA Jasmine Court Apartment, 2/297, Mount Poonamallee Rd, , Kattuppakkam, Tamil Nadu 600056
+600056 Chennai TN
+India' normalized='Flat No. A-305, ETA Jasmine Court Apartment, 2/297, Mount Poonamallee Rd,  Kattuppakkam, Tamil Nadu 600056 600056 Chennai TN India'
+   ✅ Success (OK)
+
+======================================
+Total Orders : 35
+Success      : 35
+Failed       : 0
+======================================
+
+INFO:     2409:40f4:10f7:c395:1c80:8bff:fe5c:d74e:0 - "POST /api/orders/upload HTTP/1.1" 200 OK
+INFO:     2409:40f4:10f7:c395:1c80:8bff:fe5c:d74e:0 - "POST /api/routes/generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64856 - "GET /health HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /health HTTP/1.1" 200 OK
+INFO:     2402:3a80:42e:551c:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2402:3a80:42e:551c:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2402:3a80:42e:551c:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     42.111.161.253:0 - "DELETE /api/routes/19 HTTP/1.1" 200 OK
+INFO:     42.111.161.253:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     42.111.161.253:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/routes/history?limit=50 HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /health HTTP/1.1" 200 OK
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+
+Starting geocoding for 36 orders...
+
+[1/36] original='18/25, park place, ground floor,Rajaji street saidapet Chennai
+600015' normalized='18/25, park place, ground floor, Rajaji street saidapet Chennai 600015'
+   ✅ Success (OK)
+[2/36] original='S. Chandrasekar, 
+13/24 pallappan street, 
+1 st floor, Triplicane, icehouse' normalized='S. Chandrasekar, 13/24 pallappan street, 1 st floor, Triplicane, icehouse, Chennai, India'
+   ✅ Success (OK)
+[3/36] original='No: 4f, Rajus Citadel Apartments, Pound Street,
+Ayappakkam
+600077 Chennai TN' normalized='No: 4f, Rajus Citadel Apartments, Pound Street, Ayappakkam 600077 Chennai TN'
+   ✅ Success (OK)
+[4/36] original='77 Arundale street Mylapore
+Near Mylapore post office
+600004' normalized='77 Arundale street Mylapore Near Mylapore post office 600004, Chennai, India'
+   ✅ Success (OK)
+[5/36] original='32/16 , cv raman road alwarpet' normalized='32/16, cv raman road alwarpet, Chennai, India'
+   ✅ Success (OK)
+[6/36] original='No.16 Poongavanam nagar,                  (opp to rv nagar tank) kodungaiyur chennai 600-118' normalized='No.16 Poongavanam nagar, (opp to rv nagar tank) kodungaiyur chennai 600-118'
+   ✅ Success (OK)
+[7/36] original='No 4 Kk Road 3rd CROSS Street Ambattur
+600053 Chennai TN' normalized='No 4 Kk Road 3rd CROSS Street Ambattur 600053 Chennai TN'
+   ✅ Success (OK)
+[8/36] original='Krishnamma Nilayam”
+33/24 Karpagambal Nagar,
+Mylapore, Chennai 600004' normalized='Krishnamma Nilayam” 33/24 Karpagambal Nagar, Mylapore, Chennai 600004'
+   ✅ Success (OK)
+[9/36] original='2/7 , aikyaa sripuram lane, behind deccan plaza royapeta' normalized='2/7, aikyaa sripuram lane, behind deccan plaza royapeta, Chennai, India'
+   ✅ Success (OK)
+[10/36] original='6/30 secretariat colony Adambakkam
+S2 probity shantha
+600088 Adambakkam TN' normalized='6/30 secretariat colony Adambakkam S2 probity shantha 600088 Adambakkam TN, Chennai, India'
+   ✅ Success (OK)
+[11/36] original='Tower2, Flat 302, Ceebros 174, Sathyadev Avenue, MRC Nagar, RA Puram , Chennai 600028,' normalized='Tower2, Flat 302, Ceebros 174, Sathyadev Avenue, MRC Nagar, RA Puram, Chennai 600028'
+   ✅ Success (OK)
+[12/36] original='Dharmabhoopathy nagar 3rd street, vadakupattu, medavakkam
+SLR Homes, Flat AS1
+600100 Chennai TN' normalized='Dharmabhoopathy nagar 3rd street, vadakupattu, medavakkam SLR Homes, Flat AS1 600100 Chennai TN'
+   ✅ Success (OK)
+[13/36] original='Plot 19, Santhosh street, VGP shanthi nagar, Pallikaranai
+F2 Krish Homes
+600100 Chennai TN' normalized='Plot 19, Santhosh street, VGP shanthi nagar, Pallikaranai F2 Krish Homes 600100 Chennai TN'
+   ✅ Success (OK)
+[14/36] original='44,Eldams road,Teynampet
+4d
+600018 Chennai TN
+India' normalized='44, Eldams road, Teynampet 4d 600018 Chennai TN India'
+   ✅ Success (OK)
+[15/36] original='Taksh Traders, 48 / 58 Savari Muthu Sreet, Mannady Street, Chennai, 600001, TN, IN' normalized='Taksh Traders, 48 / 58 Savari Muthu Sreet, Mannady Street, Chennai, 600001, TN, IN'
+   ✅ Success (OK)
+[16/36] original='New no : 7, Old no : 4 , First cross 6th street,
+Dr. subbarayan nagar, Kodambakkam
+600024 Chennai TN
+India' normalized='New no : 7, Old no : 4, First cross 6th street, Dr. subbarayan nagar, Kodambakkam 600024 Chennai TN India'
+   ✅ Success (OK)
+[17/36] original='Ceebros Boulevard,
+Block 1, Flat No 418, Mettukuppam, Thoraipakkam, Chennai – 600 097' normalized='Ceebros Boulevard, Block 1, Flat No 418, Mettukuppam, Thoraipakkam, Chennai – 600 097'
+   ✅ Success (OK)
+[18/36] original='4 Dhanalakshmi enclave, 1st street
+600077 Noombal, Puliyambedu,' normalized='4 Dhanalakshmi enclave, 1st street 600077 Noombal, Puliyambedu, Chennai, India'
+   ✅ Success (OK)
+[19/36] original='Plot No-169, 3rd Main road, AGS Colony, Velachery
+600042 Chennai TN' normalized='Plot No-169, 3rd Main road, AGS Colony, Velachery 600042 Chennai TN'
+   ✅ Success (OK)
+[20/36] original='Manohar apartment G1, 57/68,4th main road Gandhinagar, Adyar,
+Adyar,' normalized='Manohar apartment G1, 57/68, 4th main road Gandhinagar, Adyar, Adyar, Chennai, India'
+   ✅ Success (OK)
+[21/36] original='APPASWAMY CITY SQAURE
+A5 BLOCK 2
+Kandanchavadi 
+Omr road
+Chennai 96' normalized='APPASWAMY CITY SQAURE A5 BLOCK 2 Kandanchavadi Omr road Chennai 96'
+   ✅ Success (OK)
+[22/36] original='prestige bella vista iyyappanthangal
+2035, tower 2b
+600056' normalized='prestige bella vista iyyappanthangal 2035, tower 2b 600056, Chennai, India'
+   ✅ Success (OK)
+[23/36] original='69, 1st main road, Indira nagar, Adyar
+Independent House
+600020' normalized='69, 1st main road, Indira nagar, Adyar Independent House 600020, Chennai, India'
+   ✅ Success (OK)
+[24/36] original='Amara Akasha Apts, Flat 9A, 9th Floor, # 5/1165 OMR Road, Perungudi,
+Amara Akasha
+600096 Chennai TN
+India
++91' normalized='Amara Akasha Apts, Flat 9A, 9th Floor, # 5/1165 OMR Road, Perungudi, Amara Akasha 600096 Chennai TN India +91'
+   ✅ Success (OK)
+[25/36] original='245,arunaghiri street,valasaravakkam' normalized='245, arunaghiri street, valasaravakkam, Chennai, India'
+   ✅ Success (OK)
+[26/36] original='block A,18th floor,door -01,thaisha apartment, virugambakkam' normalized='block A, 18th floor, door -01, thaisha apartment, virugambakkam, Chennai, India'
+   ✅ Success (OK)
+[27/36] original='No 1 Balambal street Periyar nagar
+West kk nagar Nesapakam
+600078' normalized='No 1 Balambal street Periyar nagar West kk nagar Nesapakam 600078, Chennai, India'
+   ✅ Success (OK)
+[28/36] original='A-24, 3rd Floor, Agni Balaraga Apartment,
+Pamban Salai, ICF Colony, Ayyapakkam,
+600058' normalized='A-24, 3rd Floor, Agni Balaraga Apartment, Pamban Salai, ICF Colony, Ayyapakkam, 600058, Chennai, India'
+   ✅ Success (OK)
+[29/36] original='Kg signature City
+C1 block 103 maduravoyal bypass, mogappair
+600095' normalized='Kg signature City C1 block 103 maduravoyal bypass, mogappair 600095, Chennai, India'
+   ✅ Success (OK)
+[30/36] original='#14,Madhuvijay Residence
+Athreyapuram Main Road 
+Choolaimedu 
+Chennai 94' normalized='#14, Madhuvijay Residence Athreyapuram Main Road Choolaimedu Chennai 94'
+   ✅ Success (OK)
+[31/36] original='9th Cross Street,aishwarya colony,indira nagar, adyar
+600020 Chennai TN' normalized='9th Cross Street, aishwarya colony, indira nagar, adyar 600020 Chennai TN'
+   ✅ Success (OK)
+[32/36] original='New no209,old no 102,R.k mutt road,mandavelli,
+Opp to CSI St.lukes church
+600028' normalized='New no209, old no 102, R.k mutt road, mandavelli, Opp to CSI St.lukes church 600028, Chennai, India'
+   ✅ Success (OK)
+[33/36] original='1502 TS krishna nagar mogappair east
+600037' normalized='1502 TS krishna nagar mogappair east 600037, Chennai, India'
+   ✅ Success (OK)
+[34/36] original='1/37,anna street periapanicherry, koovur post
+600128' normalized='1/37, anna street periapanicherry, koovur post 600128, Chennai, India'
+   ✅ Success (OK)
+[35/36] original='13,karunanidhi 3rd street,kottur
+600085' normalized='13, karunanidhi 3rd street, kottur 600085, Chennai, India'
+   ✅ Success (OK)
+[36/36] original='43B, 2nd Cross Street, Kumaran Nagar
+600092' normalized='43B, 2nd Cross Street, Kumaran Nagar 600092, Chennai, India'
+   ✅ Success (OK)
+
+======================================
+Total Orders : 36
+Success      : 36
+Failed       : 0
+======================================
+
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "POST /api/orders/upload HTTP/1.1" 200 OK
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "POST /api/routes/generate HTTP/1.1" 200 OK
+INFO:     2402:3a80:42f:2405:d176:65a5:9a27:8bf:0 - "POST /api/routes/generate HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:2086:65ff:fe54:203d:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     157.51.40.25:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     157.51.40.25:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:6427:9c6a:a5f4:6695:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56258 - "GET /health HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:58e0:dee6:1324:6550:0 - "GET /health HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:54e8:89ff:fe77:1ee2:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:54e8:89ff:fe77:1ee2:0 - "GET /api/dashboard HTTP/1.1" 200 OK
+INFO:     2409:40f4:100a:d26c:54e8:89ff:fe77:1ee2:0 - "GET /api/routes/history?limit=50 HTTP/1.1" 200 OK
