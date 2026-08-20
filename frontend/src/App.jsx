@@ -2120,10 +2120,17 @@ function App() {
                         {order.previous_route_name && (
                           <span>Previously: {order.previous_route_name} ({order.previous_vehicle_type})</span>
                         )}
-                        <a className="map-link" href={order.map_link} target="_blank" rel="noopener noreferrer">
-                          <IconPin width={11} height={11} />
-                          View on map
-                        </a>
+                        {(order.map_link || buildStopMapsLink(order)) ? (
+                          <a className="map-link" href={order.map_link || buildStopMapsLink(order)} target="_blank" rel="noopener noreferrer">
+                            <IconPin width={11} height={11} />
+                            View on map
+                          </a>
+                        ) : (
+                          <span className="map-link map-link--disabled" title="No address or coordinates to map">
+                            <IconPin width={11} height={11} />
+                            No location
+                          </span>
+                        )}
                       </div>
                       <select
                         className="stop-move"
@@ -2392,15 +2399,22 @@ function App() {
                                     <span>Slot {order.delivery_time}</span>
                                     {order.eta && <span>ETA {order.eta}</span>}
                                     {seg && <span>{seg.distance_km ?? 0} km · {seg.time_minutes ?? 0} min from previous stop</span>}
-                                    <a
-                                      className="map-link"
-                                      href={order.map_link || buildStopMapsLink(order)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      <IconPin width={11} height={11} />
-                                      View on map
-                                    </a>
+                                    {(order.map_link || buildStopMapsLink(order)) ? (
+                                      <a
+                                        className="map-link"
+                                        href={order.map_link || buildStopMapsLink(order)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        <IconPin width={11} height={11} />
+                                        View on map
+                                      </a>
+                                    ) : (
+                                      <span className="map-link map-link--disabled" title="No address or coordinates to map">
+                                        <IconPin width={11} height={11} />
+                                        No location
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>

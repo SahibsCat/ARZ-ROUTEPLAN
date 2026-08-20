@@ -1474,6 +1474,12 @@ body { min-height: 100vh; }
 }
 .map-link:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 3px 10px rgba(46, 139, 99, 0.35); }
 .map-link:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+.map-link--disabled {
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: default;
+}
+.map-link--disabled:hover { transform: none; filter: none; box-shadow: none; }
 
 .download-link {
   position: relative;
