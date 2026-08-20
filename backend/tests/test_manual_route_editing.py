@@ -171,6 +171,46 @@ def test_get_or_create_draft_route_plan_reuses_existing_draft(db_session):
     assert first.id == second.id
 
 
+def test_delete_route_unassigns_its_orders_without_deleting_them(db_session):
+    batch = _batch(db_session, 2)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "bike", order_ids=["1", "2"])
+
+    freed = crud.delete_route(db_session, route.id)
+
+    assert {o.order_id for o in freed} == {"1", "2"}
+    assert all(o.status == "unassigned" for o in freed)
+    assert all(o.previous_route_name == route.route_name for o in freed)
+    assert db_session.query(crud.Route).filter_by(id=route.id).first() is None
+    order1 = db_session.query(crud.Order).filter_by(batch_id=batch.id, order_id="1").first()
+    assert order1 is not None  # never deleted
+
+
+def test_delete_route_rejects_unknown_route(db_session):
+    with pytest.raises(crud.RouteNotFoundError):
+        crud.delete_route(db_session, 999999)
+
+
+def test_derive_area_extracts_locality_from_comma_separated_address():
+    assert crud.derive_area("12, 4th Main Road, Velachery, Chennai - 600042") == "Velachery"
+    assert crud.derive_area("5th Street, Adambakkam, Chennai, Tamil Nadu 600088") == "Adambakkam"
+    assert crud.derive_area("1 Main St") is None
+    assert crud.derive_area("") is None
+    assert crud.derive_area(None) is None
+
+
+def test_order_summary_and_route_summary_include_area(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "12, 4th Main Road, Velachery, Chennai - 600042", "delivery_time": "18:00", "lat": 13.0, "lng": 80.2},
+    ])
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "bike", order_ids=["1"])
+
+    summary = crud.route_summary(route)
+    assert summary["orders"][0]["area"] == "Velachery"
+    assert summary["areas"] == ["Velachery"]
+
+
 def test_change_route_vehicle_type_updates_capacity(db_session):
     batch = _batch(db_session, 2)
     plan = crud.get_or_create_draft_route_plan(db_session, batch.id)

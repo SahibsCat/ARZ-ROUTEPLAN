@@ -30,6 +30,8 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         sync: false # the backend service's Render URL, e.g. https://rootplan-backend.onrender.com
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false # optional - browser-restricted Maps JavaScript API key; unset shows a link instead of a live map (see frontend/.env.example)
     routes:
       - type: rewrite
         source: /*

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import ExcelJS from 'exceljs';
+import RouteWorkspace from './routes/RouteWorkspace';
 import './App.css';
 import arzLogo from './assets/arz-logo.png';
 import arzLogoDark from './assets/arz-logo-dark.png';
@@ -1096,22 +1097,56 @@ function App() {
     }
   };
 
-  // Assign one unassigned order straight to an existing route from the
-  // Unassigned Orders board.
-  const handleAssignUnassignedOrder = async (orderId, targetRouteName) => {
+  // Assign one or more unassigned orders straight to an existing route
+  // (single-order picker, or the Unassigned Orders panel's bulk-select).
+  // Capacity is validated atomically server-side for the whole batch - see
+  // add_orders_to_route in crud.py - so a batch that doesn't fit is
+  // rejected as a whole, never partially applied.
+  const handleAssignUnassignedOrders = async (orderIds, targetRouteName) => {
     const targetRoute = routes.find((r) => r.route_name === targetRouteName);
     if (!targetRoute) return;
-    const idStr = String(orderId);
+    const ids = orderIds.map(String);
     try {
-      const res = await postJson(`/api/routes/${targetRoute.route_id}/orders`, 'POST', { order_ids: [idStr] });
-      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to assign this order. Please try again.'));
+      const res = await postJson(`/api/routes/${targetRoute.route_id}/orders`, 'POST', { order_ids: ids });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to assign these orders. Please try again.'));
       const data = await res.json();
       patchRouteInState(data.route);
-      setPendingOrders((prev) => prev.filter((o) => String(o.order_id) !== idStr));
-      setStatus(`Assigned order #${orderId} to ${targetRouteName}.`);
+      setPendingOrders((prev) => prev.filter((o) => !ids.includes(String(o.order_id))));
+      setStatus(ids.length === 1
+        ? `Assigned order #${ids[0]} to ${targetRouteName}.`
+        : `Assigned ${ids.length} orders to ${targetRouteName}.`);
     } catch (err) {
       console.error('Assign failed:', err);
-      setWarnings([err.message || 'Unable to assign this order. Please try again.']);
+      setWarnings([err.message || 'Unable to assign these orders. Please try again.']);
+    }
+  };
+  const handleAssignUnassignedOrder = (orderId, targetRouteName) => handleAssignUnassignedOrders([orderId], targetRouteName);
+
+  // Removes one order from a route back to Unassigned Orders - the
+  // confirmation prompt lives in the RouteWorkspace UI; this just does the
+  // call once confirmed.
+  const handleRemoveFromRoute = (orderId, routeName) => handleReassignOrder(orderId, routeName, 'pending');
+
+  // Deletes a route outright (not the whole plan). Every order on it comes
+  // back as Unassigned - never deleted - which is exactly what the backend
+  // guarantees atomically; this just applies the confirmed response.
+  const [isDeletingRoute, setIsDeletingRoute] = useState(null);
+  const handleDeleteRoute = async (route) => {
+    setIsDeletingRoute(route.route_name);
+    try {
+      const res = await apiFetch(`/api/route/${route.route_id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to delete this route. Please try again.'));
+      const data = await res.json();
+      setRoutes((prev) => prev.filter((r) => r.route_name !== route.route_name));
+      if (data.freed_orders?.length) {
+        setPendingOrders((prev) => [...data.freed_orders, ...prev]);
+      }
+      setStatus(`${route.route_name} deleted. ${data.freed_orders?.length || 0} order(s) moved to Unassigned Orders.`);
+    } catch (err) {
+      console.error('Delete route failed:', err);
+      setWarnings([err.message || 'Unable to delete this route. Please try again.']);
+    } finally {
+      setIsDeletingRoute(null);
     }
   };
 
@@ -2080,362 +2115,23 @@ function App() {
             </div>
           </div>
 
-          {/* UNASSIGNED ORDERS BOARD: newly-imported orders never routed, plus
-              orders removed from a route - never deleted, always live here
-              until re-assigned. See brief §9. */}
-          <div className="board board--unassigned" id="unassigned-board">
-            <div className="board__header">
-              <h2 className="board__title">Unassigned Orders</h2>
-              <span className="board__count mono-num">Total Unassigned: {pendingOrders.length}</span>
-            </div>
-            <div className="board__body">
-              {isProcessing && pendingOrders.length === 0 ? (
-                <>
-                  <SkeletonCard />
-                  <SkeletonCard />
-                </>
-              ) : pendingOrders.length === 0 ? (
-                <div className="empty-state empty-state--ok">
-                  <IconCheck width={22} height={22} />
-                  No unassigned orders
-                </div>
-              ) : displayedPendingOrders.length === 0 ? (
-                <div className="empty-state">
-                  <IconSearch width={22} height={22} />
-                  No orders match "{searchTerm}"
-                </div>
-              ) : (
-                <div className="failed-split__list">
-                  {displayedPendingOrders.map((order) => (
-                    <div key={order.order_id} className="failed-row failed-row--static">
-                      <div className="timeline-node__row">
-                        <span className="stop__id">#{order.order_id}</span>
-                        <span className="failed-row__name">{order.customer_name}</span>
-                        <span className={`tag ${order.status === 'unassigned' ? 'tag--edited' : 'tag--auto'}`}>
-                          {order.status === 'unassigned' ? 'Removed from route' : 'Never routed'}
-                        </span>
-                      </div>
-                      <div className="timeline-node__meta">
-                        <span>{order.address}</span>
-                        {order.previous_route_name && (
-                          <span>Previously: {order.previous_route_name} ({order.previous_vehicle_type})</span>
-                        )}
-                        {(order.map_link || buildStopMapsLink(order)) ? (
-                          <a className="map-link" href={order.map_link || buildStopMapsLink(order)} target="_blank" rel="noopener noreferrer">
-                            <IconPin width={11} height={11} />
-                            View on map
-                          </a>
-                        ) : (
-                          <span className="map-link map-link--disabled" title="No address or coordinates to map">
-                            <IconPin width={11} height={11} />
-                            No location
-                          </span>
-                        )}
-                      </div>
-                      <select
-                        className="stop-move"
-                        value=""
-                        title="Assign this order to a route"
-                        onChange={(e) => {
-                          const target = e.target.value;
-                          if (target) handleAssignUnassignedOrder(order.order_id, target);
-                        }}
-                      >
-                        <option value="">Assign to…</option>
-                        {routes.map((r) => {
-                          const full = isRouteFull(r);
-                          return (
-                            <option key={r.route_name} value={r.route_name} disabled={full}>
-                              {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)}){full ? ' — FULL' : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* DISPATCH BOARD: routes */}
-          <div className="board board--dispatch">
-            <div className="board__header">
-              <h2 className="board__title">Dispatch board</h2>
-              <span className="board__count mono-num">{routes.length} routes</span>
-              <span className="manifest__actions">
-                <select
-                  className="stop-move add-route-select"
-                  value=""
-                  disabled={isCreatingRoute}
-                  title="Create a new route"
-                  onChange={(e) => {
-                    const vehicleType = e.target.value;
-                    if (vehicleType) handleCreateRoute(vehicleType);
-                    e.target.value = '';
-                  }}
-                >
-                  <option value="">{isCreatingRoute ? 'Creating…' : '+ Add Route'}</option>
-                  <option value="bike">Bike</option>
-                  <option value="car">Car</option>
-                </select>
-              </span>
-            </div>
-            <div className="board__body">
-              {isProcessing && routes.length === 0 ? (
-                <>
-                  <SkeletonCard />
-                  <SkeletonCard />
-                </>
-              ) : routes.length === 0 ? (
-                <div className="empty-state">
-                  <IconInbox width={22} height={22} />
-                  Upload an Excel manifest above to generate OSRM road routes.
-                </div>
-              ) : displayedRoutes.length === 0 ? (
-                <div className="empty-state">
-                  <IconSearch width={22} height={22} />
-                  No routes match "{searchTerm}"
-                </div>
-              ) : (
-                <div>
-                  {displayedRoutes.map((route, routeIdx) => {
-                    const utilPct = route.utilization_percent;
-                    const utilClass = utilPct == null ? '' : utilPct >= 70 ? ' stat-good' : utilPct >= 40 ? ' stat-warn' : ' stat-low';
-                    const fullCount = route.orders.length;
-                    const capacity = capacityFor(route.vehicle_type);
-                    const slotMins = route.orders.map((o) => parseSlotMinutes(o.delivery_time)).filter((m) => m != null);
-                    const formatSlot = (total) => {
-                      let h = Math.floor(total / 60);
-                      const m = total % 60;
-                      const ap = h >= 12 ? 'PM' : 'AM';
-                      h %= 12; if (h === 0) h = 12;
-                      return `${h}:${String(m).padStart(2, '0')} ${ap}`;
-                    };
-                    const slotRange = slotMins.length
-                      ? (Math.min(...slotMins) === Math.max(...slotMins)
-                        ? formatSlot(slotMins[0])
-                        : `${formatSlot(Math.min(...slotMins))} – ${formatSlot(Math.max(...slotMins))}`)
-                      : '—';
-                    return (
-                    <div key={route.route_name} className={`manifest route-hue-${routeIdx % ROUTE_HUES}`}>
-                      <div className="manifest__head">
-                        <div className="manifest__head-left">
-                          <button
-                            type="button"
-                            className="vehicle-chip vehicle-chip--toggle"
-                            title="Switch this route's vehicle type"
-                            disabled={isChangingVehicle === route.route_name}
-                            onClick={() => handleToggleVehicleType(route)}
-                          >
-                            {route.vehicle_type === 'car' ? <IconCar width={14} height={14} /> : <IconBike width={14} height={14} />}
-                            {route.vehicle_type === 'car' ? 'Car' : 'Bike'}
-                            <IconRefresh width={11} height={11} className="vehicle-chip__swap" />
-                          </button>
-                          <h3 className="manifest__name">{route.route_name}</h3>
-                          <span className="driver-chip" title="No driver roster is tracked yet">
-                            <IconUsers width={11} height={11} />
-                            Unassigned
-                          </span>
-                          <span className="tag tag--capacity mono-num">{fullCount}/{capacity}</span>
-                          {route.is_auto_created && (
-                            <span className="tag tag--auto"><IconPlus width={11} height={11} />Auto-added</span>
-                          )}
-                          {route.late_deliveries && route.late_deliveries.length > 0 && (
-                            <span className="tag tag--late"><IconClock width={11} height={11} />{route.late_deliveries.length} late</span>
-                          )}
-                          {editedRoutes.includes(route.route_name) && (
-                            <span className="tag tag--edited"><IconAlert width={11} height={11} />Manually edited</span>
-                          )}
-                        </div>
-
-                        <div className="manifest__actions">
-                          <select
-                            className="stop-move add-delivery-select"
-                            value=""
-                            disabled={fullCount >= capacity || pendingOrders.length === 0}
-                            title={fullCount >= capacity ? 'This route is full' : 'Add an unassigned order to this route'}
-                            onChange={(e) => {
-                              const orderId = e.target.value;
-                              if (orderId) handleAssignUnassignedOrder(orderId, route.route_name);
-                              e.target.value = '';
-                            }}
-                          >
-                            <option value="">
-                              {fullCount >= capacity ? 'Route full' : pendingOrders.length === 0 ? 'No unassigned orders' : '+ Add Delivery'}
-                            </option>
-                            {pendingOrders.map((order) => (
-                              <option key={order.order_id} value={order.order_id}>
-                                #{order.order_id} — {order.customer_name || 'Unnamed'}
-                              </option>
-                            ))}
-                          </select>
-                          <button className="download-link" onClick={() => handleDownloadRoute(route)}>
-                            <IconDownload width={14} height={14} />
-                            Download sheet
-                          </button>
-                          {route.google_maps_url && (
-                            <a className="map-link" href={route.google_maps_url} target="_blank" rel="noopener noreferrer">
-                              <IconPin width={14} height={14} />
-                              Open in Google Maps
-                            </a>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="data-strip">
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconRoute width={11} height={11} />Road distance</span>
-                          <span className="data-strip__value">{route.route_distance_km ?? 0} km</span>
-                        </div>
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconClock width={11} height={11} />Travel time</span>
-                          <span className="data-strip__value">{route.route_time_minutes ?? 0} min</span>
-                        </div>
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconPin width={11} height={11} />Stops</span>
-                          <span className="data-strip__value">{route.number_of_stops}</span>
-                        </div>
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconClock width={11} height={11} />Delivery slot</span>
-                          <span className="data-strip__value">{slotRange}</span>
-                        </div>
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconFlag width={11} height={11} />Finish ETA</span>
-                          <span className="data-strip__value">{route.estimated_finish_time ?? '—'}</span>
-                        </div>
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconClock width={11} height={11} />Avg stop time</span>
-                          <span className="data-strip__value">{route.average_stop_time ?? '—'} min</span>
-                        </div>
-                        <div className="data-strip__item">
-                          <span className="data-strip__label"><IconGauge width={11} height={11} />Utilization</span>
-                          <span className={`data-strip__value${utilClass}`}>{route.utilization_percent ?? '—'}%</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="details-toggle"
-                        onClick={() => toggleRouteDetails(route.route_name)}
-                        aria-expanded={!collapsedRoutes[route.route_name]}
-                      >
-                        <IconChevron className={`ticket__chevron${collapsedRoutes[route.route_name] ? '' : ' ticket__chevron--open'}`} width={14} height={14} />
-                        {collapsedRoutes[route.route_name]
-                          ? `Show route timeline (${fullCount} stop${fullCount === 1 ? '' : 's'})`
-                          : 'Hide route timeline'}
-                      </button>
-
-                      {!collapsedRoutes[route.route_name] && (
-                        <div className="route-timeline">
-                          <div className="timeline-node timeline-node--terminal">
-                            <span className="timeline-node__dot timeline-node__dot--depot"><IconInbox width={12} height={12} /></span>
-                            <span className="timeline-node__terminal-label">Warehouse</span>
-                          </div>
-
-                          {route.orders.map((order, stopIdx) => {
-                            const seg = route.route_segments?.[stopIdx];
-                            return (
-                              <div
-                                key={order.order_id}
-                                className="timeline-node timeline-node--draggable"
-                                draggable
-                                title="Drag to reorder this delivery within the route"
-                                onDragStart={() => handleStopDragStart(route.route_name, order.order_id)}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={() => handleStopDrop(route, order.order_id)}
-                              >
-                                <span className={`timeline-node__dot${order.is_late ? ' timeline-node__dot--late' : ''}`}>{stopIdx + 1}</span>
-                                <div className="timeline-node__body">
-                                  <div className="timeline-node__row">
-                                    <span className="stop-reorder">
-                                      <button
-                                        type="button"
-                                        className="stop-reorder__btn"
-                                        disabled={stopIdx === 0}
-                                        title="Move earlier in the delivery sequence"
-                                        onClick={() => handleReorderStop(route.route_name, order.order_id, 'up')}
-                                      >
-                                        <IconArrowUp width={12} height={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="stop-reorder__btn"
-                                        disabled={stopIdx === route.orders.length - 1}
-                                        title="Move later in the delivery sequence"
-                                        onClick={() => handleReorderStop(route.route_name, order.order_id, 'down')}
-                                      >
-                                        <IconArrowDown width={12} height={12} />
-                                      </button>
-                                    </span>
-                                    <span className="stop__id">#{order.order_id}</span>
-                                    <span className="timeline-node__name">{order.customer_name}</span>
-                                    <span className={`stop-status${order.is_late ? ' stop-status--late' : ''}`}>
-                                      {order.is_late ? 'Late' : 'On time'}
-                                    </span>
-                                    <select
-                                      className="stop-move"
-                                      value=""
-                                      title="Move this stop to another route"
-                                      onChange={(e) => {
-                                        const target = e.target.value;
-                                        if (target) handleReassignOrder(order.order_id, route.route_name, target);
-                                      }}
-                                    >
-                                      <option value="">Move to…</option>
-                                      {routes.filter((r) => r.route_name !== route.route_name).map((r) => {
-                                        const full = isRouteFull(r);
-                                        return (
-                                          <option key={r.route_name} value={r.route_name} disabled={full}>
-                                            {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)}){full ? ' — full' : ''}
-                                          </option>
-                                        );
-                                      })}
-                                      <option value="pending">Pending / unassigned</option>
-                                    </select>
-                                  </div>
-                                  <div className="timeline-node__meta">
-                                    <span>{order.address}</span>
-                                    <span>Slot {order.delivery_time}</span>
-                                    {order.eta && <span>ETA {order.eta}</span>}
-                                    {seg && <span>{seg.distance_km ?? 0} km · {seg.time_minutes ?? 0} min from previous stop</span>}
-                                    {(order.map_link || buildStopMapsLink(order)) ? (
-                                      <a
-                                        className="map-link"
-                                        href={order.map_link || buildStopMapsLink(order)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        <IconPin width={11} height={11} />
-                                        View on map
-                                      </a>
-                                    ) : (
-                                      <span className="map-link map-link--disabled" title="No address or coordinates to map">
-                                        <IconPin width={11} height={11} />
-                                        No location
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          <div className="timeline-node timeline-node--terminal">
-                            <span className="timeline-node__dot timeline-node__dot--end"><IconFlag width={12} height={12} /></span>
-                            <span className="timeline-node__terminal-label">
-                              Finish{route.estimated_finish_time ? ` · ${route.estimated_finish_time}` : ''}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+          <RouteWorkspace
+            routes={routes}
+            pendingOrders={pendingOrders}
+            isProcessing={isProcessing}
+            capacityFor={capacityFor}
+            isRouteFull={isRouteFull}
+            isCreatingRoute={isCreatingRoute}
+            isChangingVehicle={isChangingVehicle}
+            isDeletingRoute={isDeletingRoute}
+            onCreateRoute={handleCreateRoute}
+            onToggleVehicle={handleToggleVehicleType}
+            onDeleteRoute={handleDeleteRoute}
+            onRemoveFromRoute={handleRemoveFromRoute}
+            onReorderRoute={persistReorder}
+            onAssignOrders={handleAssignUnassignedOrders}
+            onDownloadRoute={handleDownloadRoute}
+          />
 
         </div>
       </div>

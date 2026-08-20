@@ -665,6 +665,25 @@ def reorder_route_endpoint(
     return {"route": crud.route_summary(route)}
 
 
+@app.delete("/api/route/{route_id}")
+def delete_single_route_endpoint(route_id: int, db: Session = Depends(get_db)):
+    """Deletes one route (not the whole plan - see DELETE /api/routes/{route_plan_id}
+    above for that). Singular '/api/route/' is deliberate - '/api/routes/{id}'
+    is already taken by the whole-plan delete above and FastAPI can't
+    disambiguate two path templates that differ only in param name. Every
+    order on the deleted route moves to Unassigned first - never deleted."""
+    try:
+        freed_orders = crud.delete_route(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    batch_id = freed_orders[0].batch_id if freed_orders else None
+    return {
+        "message": "Route deleted",
+        "freed_orders": [crud.unassigned_order_summary(o) for o in freed_orders],
+        "unassigned_total": crud.count_unassigned_orders(db, batch_id) if batch_id is not None else None,
+    }
+
+
 @app.patch("/api/routes/{route_id}/vehicle")
 def change_route_vehicle_endpoint(
     route_id: int, payload: ChangeVehicleTypeRequest = Body(...), db: Session = Depends(get_db),

@@ -33,6 +33,7 @@ class RouteItem(BaseModel):
     capacity: Optional[int] = None
     available_capacity: Optional[int] = None
     is_full: Optional[bool] = None
+    areas: List[str] = []
     route_segments: List[dict] = []
     google_maps_url: Optional[str] = None
     estimated_finish_time: Optional[str] = None

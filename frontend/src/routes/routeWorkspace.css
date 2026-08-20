@@ -1,0 +1,265 @@
+/* Route Management workspace - a self-contained redesign of the old
+   Dispatch/Unassigned boards. Reuses App.css's design tokens (--ink,
+   --surface, --accent, --good, --critical, --radius-*, --shadow-*, ...) so
+   it reads as the same product in both themes, rather than inventing a
+   second visual language. */
+
+.board--workspace { padding: 0; }
+
+/* Buttons inside this workspace are inline, not the app-wide full-width
+   default - scoped override instead of touching the shared .btn class. */
+.board--workspace .btn { width: auto; }
+.btn--danger-ghost {
+  background: transparent;
+  color: var(--critical);
+  border: 1px solid var(--critical-soft);
+}
+.btn--danger-ghost:hover:not(:disabled) { background: var(--critical-soft); filter: none; }
+
+.workspace-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.75rem 1.1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.workspace-tab:hover { color: var(--ink); }
+.workspace-tab--active { color: var(--accent-strong); border-bottom-color: var(--accent-strong); }
+.workspace-tab__count {
+  padding: 0.1rem 0.45rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+.workspace-tab__count--warn { background: var(--signal-soft); color: var(--signal); }
+
+/* --- Three-pane grid: sidebar / delivery list / map --- */
+.route-workspace-grid {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) minmax(260px, 380px);
+  min-height: 560px;
+  max-height: 82vh;
+}
+.route-workspace-pane { overflow-y: auto; padding: 1rem; }
+.route-workspace-pane--sidebar {
+  border-right: 1px solid var(--rule);
+  background: var(--sidebar-bg, var(--surface-2));
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.route-workspace-pane--deliveries { padding: 0; display: flex; flex-direction: column; }
+.route-workspace-pane--map { padding: 0; border-left: 1px solid var(--rule); }
+
+@media (max-width: 1100px) {
+  .route-workspace-grid { grid-template-columns: 220px minmax(0, 1fr); }
+  .route-workspace-pane--map { display: none; }
+}
+@media (max-width: 760px) {
+  .route-workspace-grid { grid-template-columns: 1fr; max-height: none; }
+  .route-workspace-pane--sidebar { border-right: none; border-bottom: 1px solid var(--rule); max-height: 220px; }
+}
+
+/* --- Search field --- */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-faint);
+}
+.search-field input {
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--ink);
+  font-size: 0.85rem;
+  width: 100%;
+}
+.search-field--compact { padding: 0.4rem 0.6rem; }
+
+/* --- Route sidebar cards --- */
+.route-nav-list { display: flex; flex-direction: column; gap: 0.55rem; overflow-y: auto; }
+.route-nav-card {
+  text-align: left;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 0.7rem 0.8rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.route-nav-card:hover { border-color: var(--accent); }
+.route-nav-card--selected { border-color: var(--accent-strong); box-shadow: 0 0 0 2px var(--accent-soft); background: var(--accent-soft); }
+.route-nav-card__top { display: flex; align-items: center; justify-content: space-between; }
+.route-nav-card__name { font-weight: 700; font-size: 0.92rem; color: var(--ink); }
+.route-nav-card__stops { font-size: 0.78rem; color: var(--ink-soft); }
+.route-nav-card__areas { font-size: 0.78rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-nav-card__status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--ink-soft); }
+
+.vehicle-pill {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0.15rem 0.45rem; border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--ink-soft);
+}
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); }
+.status-dot--edited { background: var(--accent-strong); }
+.status-dot--planned { background: var(--good); }
+.status-badge {
+  display: inline-block; margin-top: 0.2rem;
+  font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: var(--radius-sm);
+  background: var(--good-soft); color: var(--good);
+}
+.status-badge--edited { background: var(--accent-soft); color: var(--accent-strong); }
+
+/* --- Capacity bar --- */
+.capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.capacity-bar__fill { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.2s ease; }
+.capacity-bar__fill--warn { background: var(--signal); }
+.capacity-bar__fill--full { background: var(--critical); }
+
+/* --- Route header --- */
+.route-header { padding: 1.1rem 1.4rem; border-bottom: 1px solid var(--rule); }
+.route-header__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.route-header__title { font-family: var(--font-display); font-size: 1.4rem; font-weight: 800; margin: 0 0 0.3rem; color: var(--ink); }
+.route-header__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.route-header__stats { display: flex; gap: 1.4rem; flex-wrap: wrap; margin-top: 1rem; align-items: flex-start; }
+.route-header__stat { display: flex; flex-direction: column; gap: 0.25rem; min-width: 90px; }
+.route-header__stat-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; }
+.route-header__stat-value { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+.route-header__stat .capacity-bar { width: 90px; margin-top: 0.15rem; }
+.route-header__areas { margin-top: 0.9rem; font-size: 0.82rem; color: var(--ink-soft); }
+
+/* --- Delivery list & cards --- */
+.delivery-list { display: flex; flex-direction: column; gap: 0.6rem; padding: 1rem 1.4rem 1.4rem; overflow-y: auto; }
+.delivery-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: grab;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.delivery-card:active { cursor: grabbing; }
+.delivery-card:hover { border-color: var(--accent); }
+.delivery-card--selected { border-color: var(--accent-strong); box-shadow: 0 0 0 2px var(--accent-soft); }
+.delivery-card--late { border-left: 3px solid var(--critical); }
+.delivery-card__seq {
+  flex: none;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+/* The shared identity block: Customer -> AREA -> full address, in that
+   visual weight - see brief. Address text is NEVER low-contrast. */
+.delivery-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.18rem; }
+.delivery-identity__customer { font-size: 0.95rem; font-weight: 600; color: var(--ink); }
+.delivery-identity__area {
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+.delivery-identity__address {
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.delivery-identity__meta { display: flex; align-items: center; gap: 0.7rem; font-size: 0.74rem; color: var(--ink-soft); margin-top: 0.15rem; }
+.delivery-identity__located { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--good); }
+.delivery-identity__unlocated { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--signal); }
+
+.delivery-card__side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+.delivery-card__eta { font-size: 0.72rem; color: var(--ink-soft); font-family: var(--font-mono); }
+.delivery-card__reorder { display: flex; gap: 0.2rem; }
+.delivery-card__reorder button {
+  border: 1px solid var(--rule); background: var(--surface); border-radius: var(--radius-sm);
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft);
+}
+.delivery-card__reorder button:disabled { opacity: 0.35; cursor: not-allowed; }
+.delivery-card__reorder button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.delivery-card__actions { display: flex; gap: 0.3rem; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: var(--radius-sm);
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink-soft);
+  cursor: pointer; text-decoration: none;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.icon-btn--danger:hover { border-color: var(--critical); color: var(--critical); background: var(--critical-soft); }
+
+/* --- Map panel --- */
+.route-map { width: 100%; height: 100%; min-height: 400px; }
+.route-map__canvas { width: 100%; height: 100%; }
+.route-map--placeholder {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; padding: 2rem; text-align: center; color: var(--ink-soft); background: var(--surface-2);
+}
+.route-map__hint { font-size: 0.78rem; max-width: 260px; }
+.map-marker {
+  width: 34px; height: 34px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(45deg);
+  background: var(--accent-strong);
+  border: 2px solid #fff;
+  box-shadow: var(--shadow-md);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+.map-marker span, .map-marker { line-height: 1; }
+.map-marker::after { content: attr(title); display: none; }
+.map-marker { position: relative; }
+.map-marker > * { transform: rotate(-45deg); }
+.map-marker--selected { background: var(--critical); transform: rotate(45deg) scale(1.15); z-index: 2; }
+.map-marker--late { box-shadow: 0 0 0 3px var(--critical-soft), var(--shadow-md); }
+
+/* --- Unassigned Orders panel --- */
+.unassigned-panel { padding: 1rem 1.4rem 1.4rem; display: flex; flex-direction: column; gap: 0.9rem; }
+.unassigned-panel__toolbar { display: flex; gap: 0.6rem; align-items: center; }
+.unassigned-panel__toolbar .search-field { flex: 1; }
+.unassigned-panel__list { display: flex; flex-direction: column; gap: 0.55rem; }
+.unassigned-row {
+  display: flex; align-items: flex-start; gap: 0.85rem;
+  padding: 0.8rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface);
+}
+.unassigned-row__meta { flex: none; display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; font-size: 0.74rem; color: var(--ink-soft); }
+.unassigned-row__prev { white-space: nowrap; }
+.bulk-assign-bar {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.6rem 0.9rem; border-radius: var(--radius-md);
+  background: var(--accent-soft); color: var(--accent-strong); font-size: 0.85rem; font-weight: 600;
+}
+.bulk-assign-bar select { padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }

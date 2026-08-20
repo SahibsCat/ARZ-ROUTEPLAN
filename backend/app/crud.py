@@ -23,6 +23,37 @@ from app.route_service import recompute_route_metrics, single_stop_maps_link, ve
 
 SETTINGS_ROW_ID = 1
 
+_CITY_NOISE_WORDS = {"chennai", "tamil nadu", "tamilnadu", "tn", "india"}
+
+
+def derive_area(address: Optional[str]) -> Optional[str]:
+    """Best-effort area/locality extraction from a full delivery address,
+    for the UI's AREA hierarchy and Excel export - never fabricated, always
+    a literal substring of the address the admin actually uploaded.
+    Chennai delivery addresses are almost always comma-separated
+    "door/street, AREA, city, pincode", so the area is reliably the last
+    remaining segment once the city name and pincode are stripped out.
+    Returns None if the address is too sparse to say anything useful
+    (single-segment addresses just show as-is in the UI instead)."""
+    if not address:
+        return None
+    segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+
+    def is_noise(segment: str) -> bool:
+        low = segment.lower()
+        if low in _CITY_NOISE_WORDS:
+            return True
+        if re.fullmatch(r"\d{6}", segment):  # bare pincode
+            return True
+        if re.search(r"\b\d{6}\b", segment) and len(segment.split()) <= 3:  # "Chennai - 600042"
+            return True
+        return False
+
+    candidates = [s for s in segments if not is_noise(s)]
+    if len(candidates) < 2:  # nothing distinct from the full address to show
+        return None
+    return candidates[-1]
+
 
 # --------------------------------------------------------------------------
 # Manual route editing errors - raised by the functions in the "Manual route
@@ -750,6 +781,42 @@ def change_route_vehicle_type(db: Session, route_id: int, vehicle_type: str) -> 
     return route
 
 
+def delete_route(db: Session, route_id: int) -> List[Order]:
+    """Deletes a single route (not the whole plan - see crud.delete_route_plan
+    for that). Every order on it goes back to Unassigned first, with
+    previous-route history recorded, exactly like removing them one at a
+    time - the route itself is what's discarded, never an order."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    route_plan = route.route_plan
+    batch_id = route_plan.batch_id if route_plan else None
+
+    freed_orders: List[Order] = []
+    if batch_id is not None:
+        for stop in route.stops:
+            order = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == str(stop.order_id)).first()
+            if order is not None:
+                order.status = "unassigned"
+                order.previous_route_name = route.route_name
+                order.previous_vehicle_type = route.vehicle_type
+                order.unassigned_at = datetime.now(timezone.utc)
+                order.route_id = None
+                order.sequence_position = None
+                order.assigned_vehicle = None
+                freed_orders.append(order)
+
+    db.delete(route)  # cascades to its RouteStop rows
+    db.flush()
+    if route_plan is not None:
+        route_plan.route_count = len(route_plan.routes)
+
+    db.commit()
+    for order in freed_orders:
+        db.refresh(order)
+    return freed_orders
+
+
 def reorder_route(db: Session, route_id: int, ordered_order_ids: List[str]) -> Route:
     """Persists a drag-and-drop reorder: `ordered_order_ids` must be exactly
     this route's current stops, just in a new order. Recomputes ETAs/
@@ -926,6 +993,7 @@ def order_summary(order: Order) -> Dict[str, object]:
         "extra_fields": order.extra_fields or {},
     }
     data["map_link"] = single_stop_maps_link(data)
+    data["area"] = derive_area(data.get("address"))
     return data
 
 
@@ -947,6 +1015,7 @@ def _route_stop_to_order_dict(stop: RouteStop) -> Dict[str, object]:
     data["eta"] = stop.eta
     data["is_late"] = stop.status == "late"
     data["map_link"] = single_stop_maps_link(data)
+    data["area"] = derive_area(data.get("address"))
     return data
 
 
@@ -954,6 +1023,15 @@ def route_summary(route: Route) -> Dict[str, object]:
     stops = sorted(route.stops, key=lambda s: s.sequence)
     orders = [_route_stop_to_order_dict(stop) for stop in stops]
     capacity = vehicle_capacity(route.vehicle_type)
+    # De-duplicated, in-order list of areas this route touches - "Velachery,
+    # Adambakkam, Guindy" for the route sidebar/summary panel. Falls back to
+    # the order's address when derive_area() couldn't isolate one, so an
+    # address-only order still contributes something rather than a blank.
+    seen_areas: List[str] = []
+    for order in orders:
+        label = order.get("area") or order.get("address")
+        if label and label not in seen_areas:
+            seen_areas.append(label)
 
     segments: List[Dict[str, object]] = []
     from_label = "Depot"
@@ -979,6 +1057,7 @@ def route_summary(route: Route) -> Dict[str, object]:
         "capacity": capacity,
         "available_capacity": max(capacity - len(stops), 0),
         "is_full": len(stops) >= capacity,
+        "areas": seen_areas,
         "route_segments": segments,
         "google_maps_url": route.google_maps_url,
         "estimated_finish_time": route.estimated_finish_time,
