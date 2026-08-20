@@ -137,3 +137,7 @@ class ReorderRouteRequest(BaseModel):
 class AssignOrdersRequest(BaseModel):
     order_ids: List[str]
     route_id: int
+
+
+class ChangeVehicleTypeRequest(BaseModel):
+    vehicle_type: str

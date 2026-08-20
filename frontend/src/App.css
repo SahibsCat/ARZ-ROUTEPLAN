@@ -1402,6 +1402,16 @@ body { min-height: 100vh; }
   color: #fff;
   background: var(--route-color, var(--accent-strong));
 }
+.vehicle-chip--toggle {
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.vehicle-chip--toggle:hover:not(:disabled) { filter: brightness(1.12); }
+.vehicle-chip--toggle:disabled { cursor: wait; opacity: 0.7; }
+.vehicle-chip__swap { opacity: 0.75; }
+
+.add-route-select { font-weight: 600; }
 
 /* Deliberately muted/dashed - honestly signals "not tracked yet" rather
    than presenting an invented driver as real assigned data. */

@@ -32,6 +32,7 @@ from app.route_service import generate_routes
 from app.schemas import (
     AddOrdersRequest,
     AssignOrdersRequest,
+    ChangeVehicleTypeRequest,
     CreateRouteRequest,
     DashboardResponse,
     ReorderRouteRequest,
@@ -659,6 +660,17 @@ def reorder_route_endpoint(
 ):
     try:
         route = crud.reorder_route(db, route_id, payload.order_ids)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {"route": crud.route_summary(route)}
+
+
+@app.patch("/api/routes/{route_id}/vehicle")
+def change_route_vehicle_endpoint(
+    route_id: int, payload: ChangeVehicleTypeRequest = Body(...), db: Session = Depends(get_db),
+):
+    try:
+        route = crud.change_route_vehicle_type(db, route_id, payload.vehicle_type)
     except crud.RootplanError as e:
         _raise_for_crud_error(e)
     return {"route": crud.route_summary(route)}

@@ -715,6 +715,41 @@ def remove_order_from_route(db: Session, route_id: int, order_id: str) -> Dict[s
     return {"route": route, "order": order}
 
 
+def change_route_vehicle_type(db: Session, route_id: int, vehicle_type: str) -> Route:
+    """Toggles a route between car/bike after the fact. Rejected if the
+    route currently carries more stops than the new vehicle type's
+    capacity - the admin has to remove some deliveries first rather than
+    silently having some knocked off."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    if vehicle_type not in ("car", "bike"):
+        raise RootplanError("vehicle_type must be 'car' or 'bike'")
+    if vehicle_type == route.vehicle_type:
+        return route
+
+    route_plan = route.route_plan
+    batch_id = route_plan.batch_id if route_plan else None
+
+    stops = sorted(route.stops, key=lambda stop: stop.sequence)
+    new_capacity = vehicle_capacity(vehicle_type)
+    if len(stops) > new_capacity:
+        raise RootplanError(
+            f"This route has {len(stops)} deliveries - more than a {vehicle_type}'s capacity "
+            f"of {new_capacity}. Remove some deliveries before switching vehicle type."
+        )
+
+    order_dicts = [dict(stop.order_snapshot or {}) for stop in stops]
+    route.vehicle_type = vehicle_type
+    metrics = recompute_route_metrics(order_dicts, vehicle_type)
+    _apply_route_metrics(route, metrics)
+    _persist_route_stops(db, route, batch_id, metrics)
+
+    db.commit()
+    db.refresh(route)
+    return route
+
+
 def reorder_route(db: Session, route_id: int, ordered_order_ids: List[str]) -> Route:
     """Persists a drag-and-drop reorder: `ordered_order_ids` must be exactly
     this route's current stops, just in a new order. Recomputes ETAs/

@@ -171,6 +171,27 @@ def test_get_or_create_draft_route_plan_reuses_existing_draft(db_session):
     assert first.id == second.id
 
 
+def test_change_route_vehicle_type_updates_capacity(db_session):
+    batch = _batch(db_session, 2)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "bike", order_ids=["1", "2"])
+
+    updated = crud.change_route_vehicle_type(db_session, route.id, "car")
+
+    assert updated.vehicle_type == "car"
+    order1 = db_session.query(crud.Order).filter_by(batch_id=batch.id, order_id="1").first()
+    assert order1.route_id == route.id  # still on the route, just a different vehicle now
+
+
+def test_change_route_vehicle_type_rejects_when_over_new_capacity(db_session):
+    batch = _batch(db_session, 4)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "car", order_ids=["1", "2", "3", "4"])
+
+    with pytest.raises(crud.RootplanError):
+        crud.change_route_vehicle_type(db_session, route.id, "bike")  # BIKE_CAPACITY == 3
+
+
 def test_list_unassigned_orders_search_filters_by_customer_name(db_session):
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 2, True, [], [
         {"order_id": "1", "customer_name": "Alice Kumar", "address": "1 Main", "delivery_time": "18:00", "lat": 13.0, "lng": 80.2},

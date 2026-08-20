@@ -34,6 +34,7 @@ const ROUTE_HUES = 6;
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid, anchor: 'top' },
   { key: 'generate', label: 'Generate Routes', icon: IconRoute, anchor: 'toolbar-section' },
+  { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
   { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
   { key: 'history', label: 'Route History', icon: IconHistory },
 ];
@@ -1070,6 +1071,31 @@ function App() {
     }
   };
 
+  // Toggles a route's vehicle type (car <-> bike). Rejected server-side (and
+  // the button disabled client-side) if the route currently carries more
+  // stops than the new type's capacity.
+  const [isChangingVehicle, setIsChangingVehicle] = useState(null);
+  const handleToggleVehicleType = async (route) => {
+    const nextType = route.vehicle_type === 'car' ? 'bike' : 'car';
+    if (nextType === 'bike' && route.orders.length > BIKE_CAPACITY) {
+      setWarnings([`${route.route_name} has ${route.orders.length} deliveries - more than a bike's capacity of ${BIKE_CAPACITY}. Remove some deliveries first.`]);
+      return;
+    }
+    setIsChangingVehicle(route.route_name);
+    try {
+      const res = await postJson(`/api/routes/${route.route_id}/vehicle`, 'PATCH', { vehicle_type: nextType });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to change this route’s vehicle. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      setStatus(`${data.route.route_name} switched to ${nextType}.`);
+    } catch (err) {
+      console.error('Vehicle change failed:', err);
+      setWarnings([err.message || 'Unable to change this route’s vehicle. Please try again.']);
+    } finally {
+      setIsChangingVehicle(null);
+    }
+  };
+
   // Assign one unassigned order straight to an existing route from the
   // Unassigned Orders board.
   const handleAssignUnassignedOrder = async (orderId, targetRouteName) => {
@@ -1124,7 +1150,7 @@ function App() {
   const XLSX_GOOD = 'FF059669';
   const XLSX_CRITICAL = 'FFDC2626';
   const XLSX_SIGNAL = 'FFD97706';
-  const XLSX_COL_COUNT = 8;
+  const XLSX_COL_COUNT = 10;
   const XLSX_THIN_BORDER_SIDE = { style: 'thin', color: { argb: 'FFE2DFF0' } };
   const XLSX_THIN_BORDER = {
     top: XLSX_THIN_BORDER_SIDE, bottom: XLSX_THIN_BORDER_SIDE,
@@ -1165,7 +1191,7 @@ function App() {
 
     sheet.columns = [
       { width: 8 }, { width: 12 }, { width: 20 }, { width: 38 },
-      { width: 14 }, { width: 10 }, { width: 10 }, { width: 20 },
+      { width: 14 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 20 },
     ];
 
     // --- Title bar ---
@@ -1226,7 +1252,7 @@ function App() {
     // --- Stops table ---
     sectionHeader(11, 'DELIVERY STOPS');
     const HEADER_ROW = 12;
-    const headers = ['Stop #', 'Order ID', 'Customer', 'Address', 'Delivery Slot', 'ETA', 'Status', 'Google Maps'];
+    const headers = ['Stop #', 'Order ID', 'Customer', 'Address', 'Delivery Slot', 'ETA', 'Status', 'Latitude', 'Longitude', 'Google Maps'];
     headers.forEach((label, c) => {
       const cell = sheet.getCell(HEADER_ROW, c + 1);
       cell.value = label;
@@ -1247,25 +1273,33 @@ function App() {
         order.delivery_time,
         order.eta || '—',
         order.is_late ? 'LATE' : 'On time',
+        order.lat != null ? order.lat : '—',
+        order.lng != null ? order.lng : '—',
       ];
       values.forEach((value, c) => {
         const cell = sheet.getCell(rowNum, c + 1);
         cell.value = value;
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
-        cell.alignment = { horizontal: c === 0 ? 'center' : 'left', vertical: 'middle' };
+        cell.alignment = { horizontal: c === 0 || c >= 7 ? 'center' : 'left', vertical: 'middle' };
         cell.border = XLSX_THIN_BORDER;
         cell.font = { color: { argb: XLSX_INK } };
       });
       sheet.getCell(rowNum, 7).font = { bold: true, color: { argb: order.is_late ? XLSX_CRITICAL : XLSX_GOOD } };
 
-      const mapsCell = sheet.getCell(rowNum, 8);
+      // order.map_link is the backend's precise single-pin link (lat/lng
+      // when geocoded - always resolves exactly, no address parsing);
+      // buildStopMapsLink is only a client-side fallback for an order that
+      // predates that field (e.g. a route plan generated before this was
+      // added and not yet re-saved).
+      const mapsCell = sheet.getCell(rowNum, 10);
       mapsCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
       mapsCell.border = XLSX_THIN_BORDER;
       mapsCell.alignment = { horizontal: 'left', vertical: 'middle' };
-      if (order.address || (order.lat != null && order.lng != null)) {
+      const mapLink = order.map_link || buildStopMapsLink(order);
+      if (mapLink) {
         mapsCell.value = {
           text: 'Open in Maps →',
-          hyperlink: buildStopMapsLink(order),
+          hyperlink: mapLink,
           tooltip: `Open ${order.customer_name || order.order_id} in Google Maps`,
         };
         mapsCell.font = { color: { argb: XLSX_VIOLET }, underline: true, bold: true };
@@ -2123,12 +2157,21 @@ function App() {
               <h2 className="board__title">Dispatch board</h2>
               <span className="board__count mono-num">{routes.length} routes</span>
               <span className="manifest__actions">
-                <button type="button" className="btn btn--ghost" disabled={isCreatingRoute} onClick={() => handleCreateRoute('bike')}>
-                  <IconBike width={14} height={14} /> Add Route (bike)
-                </button>
-                <button type="button" className="btn btn--ghost" disabled={isCreatingRoute} onClick={() => handleCreateRoute('car')}>
-                  <IconCar width={14} height={14} /> Add Route (car)
-                </button>
+                <select
+                  className="stop-move add-route-select"
+                  value=""
+                  disabled={isCreatingRoute}
+                  title="Create a new route"
+                  onChange={(e) => {
+                    const vehicleType = e.target.value;
+                    if (vehicleType) handleCreateRoute(vehicleType);
+                    e.target.value = '';
+                  }}
+                >
+                  <option value="">{isCreatingRoute ? 'Creating…' : '+ Add Route'}</option>
+                  <option value="bike">Bike</option>
+                  <option value="car">Car</option>
+                </select>
               </span>
             </div>
             <div className="board__body">
@@ -2171,10 +2214,17 @@ function App() {
                     <div key={route.route_name} className={`manifest route-hue-${routeIdx % ROUTE_HUES}`}>
                       <div className="manifest__head">
                         <div className="manifest__head-left">
-                          <span className="vehicle-chip">
+                          <button
+                            type="button"
+                            className="vehicle-chip vehicle-chip--toggle"
+                            title="Switch this route's vehicle type"
+                            disabled={isChangingVehicle === route.route_name}
+                            onClick={() => handleToggleVehicleType(route)}
+                          >
                             {route.vehicle_type === 'car' ? <IconCar width={14} height={14} /> : <IconBike width={14} height={14} />}
                             {route.vehicle_type === 'car' ? 'Car' : 'Bike'}
-                          </span>
+                            <IconRefresh width={11} height={11} className="vehicle-chip__swap" />
+                          </button>
                           <h3 className="manifest__name">{route.route_name}</h3>
                           <span className="driver-chip" title="No driver roster is tracked yet">
                             <IconUsers width={11} height={11} />
