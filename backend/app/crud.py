@@ -23,14 +23,21 @@ from app.route_service import recompute_route_metrics, single_stop_maps_link, ve
 
 SETTINGS_ROW_ID = 1
 
-_CITY_NOISE_WORDS = {"chennai", "tamil nadu", "tamilnadu", "tn", "india"}
-# Building/flat descriptors and landmark references - real parts of the
-# address, just never the area name itself, and they tend to sit in the
-# same trailing position an area would (right before the city), which was
-# throwing off "the area is the last non-noise segment" for addresses like
-# "Adyar, Independent House, near CSI church, Chennai - 600020".
+_CITY_NOISE_WORDS = ("chennai", "tamil nadu", "tamilnadu", "tn", "india")
+# Building/flat/apartment-complex descriptors and landmark references - real
+# parts of the address, just never the area name itself, and they tend to
+# sit in the same trailing position an area would (right before the city),
+# which was throwing off "the area is the last usable segment" for
+# addresses like "Adyar, Independent House, near CSI church, Chennai - 600020"
+# or "..., F2 Krish Homes, Chennai - 600028".
 _BUILDING_NOISE_WORDS = {"independent house", "flat", "ground floor", "first floor", "second floor"}
+_BUILDING_NOISE_SUBSTRINGS = ("homes", "apartment", "apartments", "towers", "tower", "residency", "enclave", "heights", "flats", "nest", "block")
 _LANDMARK_PREFIXES = ("opp", "opposite", "near", "behind", "beside", "next to", "backside", "above", "below", "adjacent", "close to", "front of")
+_DOOR_NUMBER_PREFIX = re.compile(r"^(plot|door|flat|house)\b\s*(no\.?)?\s*[:\-]?\s*\d", re.IGNORECASE)
+# "S2", "F2", "A1" ... - a block/unit code at the start of a segment
+# ("S2 Probity Shantha") reliably marks it as a building name, not a locality.
+_BLOCK_CODE_PREFIX = re.compile(r"^[A-Za-z]{1,2}\d{1,3}\b")
+_TRAILING_PINCODE = re.compile(r"\s*-?\s*\d{6}\b")
 
 
 def derive_area(address: Optional[str]) -> Optional[str]:
@@ -38,38 +45,48 @@ def derive_area(address: Optional[str]) -> Optional[str]:
     for the UI's AREA hierarchy and Excel export - never fabricated, always
     a literal substring of the address the admin actually uploaded.
     Chennai delivery addresses are almost always comma-separated
-    "door/street, AREA, city, pincode" (with the occasional building name
-    or "near <landmark>" thrown in too), so the area is reliably the last
-    remaining segment once the city name, pincode, and those descriptors
-    are stripped out. Returns None if the address is too sparse to say
+    "door/street, AREA, city, pincode" (with the occasional building name,
+    phone number, or "near <landmark>" thrown in too, and sometimes the
+    city/pincode sharing a segment with the real area - "Velachery
+    600042"), so the area is reliably the last usable segment once the
+    city, pincode, phone number, and those descriptors are stripped *from*
+    each segment (not the whole segment discarded - "Velachery 600042"
+    keeps "Velachery"). Returns None if the address is too sparse to say
     anything useful (single-segment addresses just show as-is in the UI
     instead of a wrong guess)."""
     if not address:
         return None
-    segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+    raw_segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+    if len(raw_segments) < 2:
+        return None
 
-    def is_noise(segment: str) -> bool:
-        low = segment.lower()
-        if low in _CITY_NOISE_WORDS or low in _BUILDING_NOISE_WORDS:
+    def clean(segment: str) -> str:
+        s = _TRAILING_PINCODE.sub("", segment).strip(" ,-")
+        for city in _CITY_NOISE_WORDS:
+            s = re.sub(rf"\b{re.escape(city)}\b\.?", "", s, flags=re.IGNORECASE).strip(" ,-")
+        return s.strip()
+
+    def is_noise(cleaned: str) -> bool:
+        if not cleaned:
+            return True
+        low = cleaned.lower()
+        if low in _BUILDING_NOISE_WORDS:
             return True
         if low.startswith(_LANDMARK_PREFIXES):
             return True
-        if re.fullmatch(r"\d{6}", segment):  # bare pincode
+        if any(word in low for word in _BUILDING_NOISE_SUBSTRINGS):
             return True
-        if re.search(r"\b\d{6}\b", segment) and len(segment.split()) <= 3:  # "Chennai - 600042"
+        if _BLOCK_CODE_PREFIX.match(cleaned) or _DOOR_NUMBER_PREFIX.match(cleaned):
+            return True
+        if re.fullmatch(r"[+\d][\d\s-]*", cleaned):  # phone number / country code fragment
             return True
         return False
 
-    # Needs at least 2 *original* segments (comma-structured address) before
-    # trusting a result - a single-segment address ("1 Main St") has nothing
-    # to distinguish an area from, so returns None rather than echoing the
-    # whole address back as if it were one. Once that structural bar is
-    # cleared, even a single surviving candidate after noise-filtering is a
-    # confident answer (e.g. "Adyar, Independent House, Chennai" - 1 of 3
-    # segments survives and it's exactly right), not a weak one.
-    if len(segments) < 2:
-        return None
-    candidates = [s for s in segments if not is_noise(s)]
+    candidates = []
+    for segment in raw_segments:
+        cleaned = clean(segment)
+        if not is_noise(cleaned):
+            candidates.append(cleaned)
     if not candidates:
         return None
     return candidates[-1]

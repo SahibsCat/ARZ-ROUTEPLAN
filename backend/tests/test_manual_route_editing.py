@@ -205,6 +205,15 @@ def test_derive_area_skips_building_and_landmark_descriptors():
     assert crud.derive_area("RA Puram, Opp to CSI St.Lukes church, Chennai - 600028") == "RA Puram"
 
 
+def test_derive_area_keeps_area_that_shares_a_segment_with_pincode_or_city():
+    assert crud.derive_area("Plot No-169, 3rd Main road, AGS Colony, Velachery 600042, Chennai TN") == "Velachery"
+    assert crud.derive_area("F2 Krish Homes, Velachery, Chennai 96, +91 9876543210") == "Velachery"
+
+
+def test_derive_area_skips_block_codes_and_phone_numbers():
+    assert crud.derive_area("6/30, Secretariat Colony, Adambakkam, S2 Probity Shantha, 600088, Adambakkam, TN") == "Adambakkam"
+
+
 def test_order_summary_and_route_summary_include_area(db_session):
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
         {"order_id": "1", "customer_name": "Alice", "address": "12, 4th Main Road, Velachery, Chennai - 600042", "delivery_time": "18:00", "lat": 13.0, "lng": 80.2},

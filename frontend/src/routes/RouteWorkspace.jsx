@@ -43,10 +43,11 @@ function matchesQuery(order, query) {
 }
 
 // The shared identity block every delivery card (route list, unassigned
-// list, map popup context) uses: Customer -> AREA -> full address, in that
-// visual weight, then order id / secondary info last. One component so a
+// list) uses: Customer -> AREA -> full address, in that visual weight, then
+// order id / a prominent map pin / secondary info last. One component so a
 // future hierarchy tweak only changes one place.
 function DeliveryIdentityBlock({ order }) {
+  const mapLink = order.map_link || '';
   return (
     <div className="delivery-identity">
       <span className="delivery-identity__customer">{order.customer_name || 'Unnamed customer'}</span>
@@ -55,9 +56,15 @@ function DeliveryIdentityBlock({ order }) {
       <span className="delivery-identity__meta">
         <span>Order #{order.order_id}</span>
         {order.lat != null && order.lng != null ? (
-          <span className="delivery-identity__located"><IconPin width={11} height={11} />Located</span>
+          <span className="delivery-identity__located"><IconCheck width={11} height={11} />Located</span>
         ) : (
           <span className="delivery-identity__unlocated"><IconAlert width={11} height={11} />Needs geocoding</span>
+        )}
+        {mapLink && (
+          <a className="pin-badge" href={mapLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+            <IconPin width={13} height={13} />
+            View pin
+          </a>
         )}
       </span>
     </div>
@@ -67,7 +74,6 @@ function DeliveryIdentityBlock({ order }) {
 function DeliveryCard({
   order, sequenceIndex, isSelected, onSelect, onRemove, draggable, onDragStart, onDragOver, onDrop, onMoveUp, onMoveDown, canMoveUp, canMoveDown,
 }) {
-  const mapLink = order.map_link || '';
   return (
     <div
       className={`delivery-card${isSelected ? ' delivery-card--selected' : ''}${order.is_late ? ' delivery-card--late' : ''}`}
@@ -92,11 +98,6 @@ function DeliveryCard({
           </span>
         )}
         <div className="delivery-card__actions">
-          {mapLink ? (
-            <a className="icon-btn" href={mapLink} target="_blank" rel="noopener noreferrer" title="View on map" onClick={(e) => e.stopPropagation()}>
-              <IconPin width={13} height={13} />
-            </a>
-          ) : null}
           {typeof onRemove === 'function' && (
             <button type="button" className="icon-btn icon-btn--danger" title="Remove from route" onClick={(e) => { e.stopPropagation(); onRemove(); }}>
               <IconX width={13} height={13} />

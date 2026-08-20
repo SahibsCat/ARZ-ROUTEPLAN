@@ -49,43 +49,42 @@
 }
 .workspace-tab__count--warn { background: var(--signal-soft); color: var(--signal); }
 
-/* --- Three-pane grid: sidebar / delivery list / map ---
-   A concrete `height` (not max-height) on the grid is what makes each
-   pane's own overflow:auto actually kick in - grid items stretch to fill
-   a defined row height by default, but with only max-height and no real
-   height the implicit row just grows to fit content and nothing ever
-   scrolls. Each pane then owns exactly one scrolling region; anything
-   inside that needs a fixed header (route header, sidebar search/add-route)
-   uses flex + min-height:0 on the scrollable child so the header itself
-   never scrolls out of view - min-height:0 is required here because flex
-   items default to min-height:auto, which silently defeats overflow:auto
-   on a flex child otherwise. */
+/* --- Two-pane grid: route sidebar / delivery list ---
+   No fixed height and no internal overflow here on purpose - both panes
+   grow to their natural content height and the page itself scrolls, same
+   as every other board on this dashboard. A route caps at 10 stops, so the
+   delivery list is never actually long enough to need its own scroll
+   region; the sidebar shows every route in full, un-truncated. */
 .route-workspace-grid {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  height: 78vh;
-  min-height: 480px;
+  grid-template-columns: 300px minmax(0, 1fr);
+  align-items: start;
 }
-.route-workspace-pane { overflow-y: auto; padding: 1rem; min-height: 0; }
+.route-workspace-pane { padding: 1rem; }
 .route-workspace-pane--sidebar {
   border-right: 1px solid var(--rule);
   background: var(--sidebar-bg, var(--surface-2));
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  overflow: hidden;
 }
-.route-workspace-pane--deliveries { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.route-workspace-pane--deliveries { padding: 0; display: flex; flex-direction: column; }
 
-.route-nav-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.55rem; }
+.route-nav-list { display: flex; flex-direction: column; gap: 0.55rem; }
 
 @media (max-width: 1100px) {
-  .route-workspace-grid { grid-template-columns: 220px minmax(0, 1fr); }
+  .route-workspace-grid { grid-template-columns: 260px minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
-  .route-workspace-grid { grid-template-columns: 1fr; max-height: none; }
-  .route-workspace-pane--sidebar { border-right: none; border-bottom: 1px solid var(--rule); max-height: 220px; }
+  .route-workspace-grid { grid-template-columns: 1fr; }
+  .route-workspace-pane--sidebar { border-right: none; border-bottom: 1px solid var(--rule); }
 }
+
+/* Any scrollable region left in this workspace (currently just the
+   Unassigned Orders list, which can genuinely be long) keeps working with
+   the mouse wheel / trackpad / touch - it just doesn't show a track. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 /* --- Search field --- */
 .search-field {
@@ -126,7 +125,7 @@
 .route-nav-card__top { display: flex; align-items: center; justify-content: space-between; }
 .route-nav-card__name { font-weight: 700; font-size: 0.92rem; color: var(--ink); }
 .route-nav-card__stops { font-size: 0.78rem; color: var(--ink-soft); }
-.route-nav-card__areas { font-size: 0.78rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-nav-card__areas { font-size: 0.78rem; color: var(--ink-soft); line-height: 1.4; }
 .route-nav-card__status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--ink-soft); }
 
 .vehicle-pill {
@@ -164,7 +163,7 @@
 .route-header__areas { margin-top: 0.9rem; font-size: 0.82rem; color: var(--ink-soft); }
 
 /* --- Delivery list & cards --- */
-.delivery-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.6rem; padding: 1rem 1.4rem 1.4rem; overflow-y: auto; }
+.delivery-list { display: flex; flex-direction: column; gap: 0.6rem; padding: 1rem 1.4rem 1.4rem; }
 .delivery-card {
   display: flex;
   align-items: flex-start;
@@ -208,9 +207,28 @@
   color: var(--ink);
   line-height: 1.4;
 }
-.delivery-identity__meta { display: flex; align-items: center; gap: 0.7rem; font-size: 0.74rem; color: var(--ink-soft); margin-top: 0.15rem; }
+.delivery-identity__meta { display: flex; align-items: center; gap: 0.7rem; font-size: 0.74rem; color: var(--ink-soft); margin-top: 0.15rem; flex-wrap: wrap; }
 .delivery-identity__located { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--good); }
 .delivery-identity__unlocated { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--signal); }
+
+/* A real, recognizable map pin (the same red as Google's own marker) on
+   every delivery that has one - not a muted icon tucked in a corner. Opens
+   the precise single-pin Google Maps link (route_service.single_stop_maps_link
+   on the backend) in a new tab. */
+.pin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem 0.15rem 0.4rem;
+  border-radius: 20px;
+  background: #ea4335;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-decoration: none;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.pin-badge:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
 .delivery-card__side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
 .delivery-card__eta { font-size: 0.72rem; color: var(--ink-soft); font-family: var(--font-mono); }
