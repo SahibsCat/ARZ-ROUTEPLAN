@@ -108,3 +108,21 @@ class RoutePlanHistoryResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class CreateRouteRequest(BaseModel):
+    vehicle_type: str
+    order_ids: List[str] = []
+
+
+class AddOrdersRequest(BaseModel):
+    order_ids: List[str]
+
+
+class ReorderRouteRequest(BaseModel):
+    order_ids: List[str]
+
+
+class AssignOrdersRequest(BaseModel):
+    order_ids: List[str]
+    route_id: int

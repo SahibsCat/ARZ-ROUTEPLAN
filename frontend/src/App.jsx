@@ -436,6 +436,24 @@ function App() {
     return fetch(`${API_BASE_URL}${endpoint}`, options);
   };
 
+  // The authoritative Unassigned Orders list - GET /api/orders/unassigned,
+  // scoped server-side to the current session, includes previous-route
+  // history and a precise per-delivery map link that the plan-snapshot
+  // dicts elsewhere don't carry. Called after every action that can change
+  // who's unassigned (upload, generate/regenerate, retry-geocode, and every
+  // manual add/remove already reconciles pendingOrders itself).
+  const refreshUnassignedOrders = async (search) => {
+    try {
+      const params = search ? `?search=${encodeURIComponent(search)}` : '';
+      const res = await apiFetch(`/api/orders/unassigned${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPendingOrders(data.orders || []);
+    } catch (err) {
+      console.error('Could not refresh Unassigned Orders:', err);
+    }
+  };
+
   // On first load, ask the backend for whatever the last session left
   // behind - a refresh, a backend restart, or reopening the browser should
   // never lose an upload, its routes, its pending pool, or its failed
@@ -477,6 +495,7 @@ function App() {
           setEditingAddresses(initialEdits);
 
           setStatus('Restored your last session.');
+          refreshUnassignedOrders();
         }
       } catch (err) {
         console.error('Could not restore previous session:', err);
@@ -721,6 +740,7 @@ function App() {
         setPlanId(routeData.plan_id ?? null);
         setIsPlanSaved(routeData.is_saved ?? false);
       }
+      refreshUnassignedOrders();
     } catch (error) {
       setStatus('Upload failed. Please try again.');
       setErrors(['Unable to reach the backend service.']);
@@ -813,6 +833,7 @@ function App() {
       setEditedRoutes([]);
       setPlanId(data.plan_id ?? null);
       setIsPlanSaved(data.is_saved ?? false);
+      refreshUnassignedOrders();
     } catch (err) {
       console.error('Retry failed:', err);
       alert('Retry request failed. Please check backend connection.');
@@ -830,6 +851,14 @@ function App() {
     }
     if (successfulOrders.length === 0) {
       setWarnings(['No geocoded orders to route yet - upload a manifest first.']);
+      return;
+    }
+    // Regenerate re-solves the whole draft from scratch and will discard any
+    // manually added/removed/reordered/created routes made since the last
+    // generate - warn before silently throwing that work away.
+    if (editedRoutes.length > 0 && !window.confirm(
+      'Regenerating will discard your manual route edits (moved, reordered, or newly created routes) and rebuild everything from scratch. Continue?'
+    )) {
       return;
     }
 
@@ -854,6 +883,7 @@ function App() {
       setPlanId(data.plan_id ?? null);
       setIsPlanSaved(data.is_saved ?? false);
       setStatus('Routes regenerated with the current fleet.');
+      refreshUnassignedOrders();
     } catch (err) {
       console.error('Regenerate failed:', err);
       setWarnings(['Unable to reach the backend to regenerate routes.']);
@@ -872,99 +902,175 @@ function App() {
     });
   };
 
-  // Manually move one stop between routes, into Pending, or out of Pending
-  // into an existing / brand-new route. Pure client-side reassignment - no
-  // OSRM recompute, so distance/time on touched routes go stale until the
-  // admin hits "Regenerate routes".
-  const handleReassignOrder = (orderId, fromKey, toKey) => {
+  // Every route/order mutation below follows the same pattern: call the
+  // backend, wait for the confirmed updated object(s), then patch local
+  // state from *that response* - never from an optimistic guess left
+  // uncorrected. Nothing is removed from Unassigned Orders, added to a
+  // route, etc. in the UI until the backend has actually confirmed it.
+  const patchRouteInState = (updatedRoute) => {
+    setRoutes((prev) => {
+      const exists = prev.some((r) => r.route_name === updatedRoute.route_name);
+      return exists
+        ? prev.map((r) => (r.route_name === updatedRoute.route_name ? updatedRoute : r))
+        : [...prev, updatedRoute];
+    });
+  };
+
+  const parseErrorDetail = async (response, fallback) => {
+    try {
+      const body = await response.json();
+      return body.detail || fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const postJson = (endpoint, method, body) => apiFetch(endpoint, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  // Manually move one stop between routes, into Unassigned Orders, or out
+  // of Unassigned Orders into an existing / brand-new route. Every branch
+  // calls the real backend (app/main.py's manual-editing endpoints) and
+  // reconciles from the confirmed response - see brief §5's synchronization
+  // rules. On failure, nothing optimistic is left applied.
+  const handleReassignOrder = async (orderId, fromKey, toKey) => {
     if (!toKey || fromKey === toKey) return;
     const idStr = String(orderId);
 
-    const sourceOrder = fromKey === 'pending'
-      ? pendingOrders.find((o) => String(o.order_id) === idStr)
-      : routes.find((r) => r.route_name === fromKey)?.orders.find((o) => String(o.order_id) === idStr);
-    if (!sourceOrder) return;
+    try {
+      if (fromKey !== 'pending') {
+        const fromRoute = routes.find((r) => r.route_name === fromKey);
+        if (!fromRoute) return;
+        const res = await apiFetch(`/api/routes/${fromRoute.route_id}/orders/${idStr}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to remove the delivery from its route. Please try again.'));
+        const data = await res.json();
+        patchRouteInState(data.route);
+        if (data.order) setPendingOrders((prev) => [data.order, ...prev.filter((o) => String(o.order_id) !== idStr)]);
+        markRoutesEdited(fromKey);
+      }
 
-    // Capacity check applies to every vehicle type - a route can't take a
-    // stop past its car/bike limit, full stop.
-    if (toKey !== 'pending' && toKey !== 'new-car' && toKey !== 'new-bike') {
-      const targetRoute = routes.find((r) => r.route_name === toKey);
-      if (targetRoute && isRouteFull(targetRoute)) {
-        setWarnings([`${toKey} is already full (${targetRoute.orders.length}/${capacityFor(targetRoute.vehicle_type)} orders) - move a stop out first or start a new route.`]);
+      if (toKey === 'pending') {
+        setStatus(`Moved order #${orderId} to Unassigned Orders.`);
         return;
       }
-    }
 
-    if (fromKey === 'pending') {
+      if (toKey === 'new-car' || toKey === 'new-bike') {
+        const vehicleType = toKey === 'new-car' ? 'car' : 'bike';
+        const res = await postJson('/api/routes', 'POST', { vehicle_type: vehicleType, order_ids: [idStr] });
+        if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to create the new route. Please try again.'));
+        const data = await res.json();
+        patchRouteInState(data.route);
+        setPendingOrders((prev) => prev.filter((o) => String(o.order_id) !== idStr));
+        markRoutesEdited(fromKey, data.route.route_name);
+        setStatus(`Started ${data.route.route_name} for order #${orderId}.`);
+        return;
+      }
+
+      const targetRoute = routes.find((r) => r.route_name === toKey);
+      if (!targetRoute) return;
+      const res = await postJson(`/api/routes/${targetRoute.route_id}/orders`, 'POST', { order_ids: [idStr] });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to add the delivery to that route. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
       setPendingOrders((prev) => prev.filter((o) => String(o.order_id) !== idStr));
-    } else {
-      setRoutes((prev) => {
-        const next = prev.map((r) => {
-          if (r.route_name !== fromKey) return r;
-          const remaining = r.orders.filter((o) => String(o.order_id) !== idStr);
-          return { ...r, orders: remaining, number_of_stops: remaining.length };
-        });
-        // Drop routes left with no stops rather than showing an empty manifest.
-        return next.filter((r) => r.orders.length > 0);
-      });
-    }
-
-    const movedOrder = { ...sourceOrder, is_late: false };
-
-    if (toKey === 'pending') {
-      setPendingOrders((prev) => [...prev, movedOrder]);
-      markRoutesEdited(fromKey);
-      setStatus(`Moved order #${orderId} to Pending.`);
-    } else if (toKey === 'new-car' || toKey === 'new-bike') {
-      const vehicleType = toKey === 'new-car' ? 'car' : 'bike';
-      const countOfType = routes.filter((r) => r.vehicle_type === vehicleType).length;
-      const newRouteName = `${vehicleType === 'car' ? 'Car' : 'Bike'} ${countOfType + 1} (Manual)`;
-      const newRoute = {
-        route_name: newRouteName,
-        vehicle_type: vehicleType,
-        is_auto_created: true,
-        late_deliveries: [],
-        // Same rule as the backend: coordinates when available (always
-        // resolves), address text as a fallback otherwise.
-        google_maps_url: buildStopMapsLink(movedOrder) || null,
-        route_distance_km: 0,
-        route_time_minutes: 0,
-        number_of_stops: 1,
-        estimated_finish_time: null,
-        average_stop_time: null,
-        utilization_percent: null,
-        route_segments: [],
-        orders: [movedOrder],
-      };
-      setRoutes((prev) => [...prev, newRoute]);
-      if (vehicleType === 'car') setCars((c) => c + 1); else setBikes((b) => b + 1);
-      markRoutesEdited(fromKey, newRouteName);
-      setStatus(`Started ${newRouteName} for order #${orderId}. Hit Regenerate routes to fill in real distance & time.`);
-    } else {
-      setRoutes((prev) => prev.map((r) => {
-        if (r.route_name !== toKey) return r;
-        const updated = [...r.orders, movedOrder];
-        return { ...r, orders: updated, number_of_stops: updated.length };
-      }));
       markRoutesEdited(fromKey, toKey);
-      setStatus(`Moved order #${orderId} to ${toKey}. Hit Regenerate routes for fresh distance & time stats.`);
+      setStatus(`Moved order #${orderId} to ${toKey}.`);
+    } catch (err) {
+      console.error('Reassign failed:', err);
+      setWarnings([err.message || 'Unable to update the route. Please try again.']);
+    }
+  };
+
+  // Persists a reorder (drag-and-drop, or the up/down buttons) via
+  // PATCH /api/routes/:id/reorder and reconciles from the confirmed
+  // response - sequence letters, ETAs, distance/time and the Excel export
+  // all derive from this same server-confirmed order.
+  const persistReorder = async (route, newOrderIds) => {
+    try {
+      const res = await postJson(`/api/routes/${route.route_id}/reorder`, 'PATCH', { order_ids: newOrderIds });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to reorder this route. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      markRoutesEdited(route.route_name);
+    } catch (err) {
+      console.error('Reorder failed:', err);
+      setWarnings([err.message || 'Unable to reorder this route. Please try again.']);
     }
   };
 
   // Move a stop earlier/later in its own route's delivery sequence.
   const handleReorderStop = (routeName, orderId, direction) => {
+    const route = routes.find((r) => r.route_name === routeName);
+    if (!route) return;
     const idStr = String(orderId);
-    setRoutes((prev) => prev.map((r) => {
-      if (r.route_name !== routeName) return r;
-      const idx = r.orders.findIndex((o) => String(o.order_id) === idStr);
-      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (idx === -1 || targetIdx < 0 || targetIdx >= r.orders.length) return r;
-      const reordered = [...r.orders];
-      [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
-      return { ...r, orders: reordered };
-    }));
-    markRoutesEdited(routeName);
-    setStatus(`Reordered delivery position for order #${orderId}.`);
+    const idx = route.orders.findIndex((o) => String(o.order_id) === idStr);
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx === -1 || targetIdx < 0 || targetIdx >= route.orders.length) return;
+    const reordered = [...route.orders];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    persistReorder(route, reordered.map((o) => o.order_id));
+  };
+
+  // Drag-and-drop reorder within a route (native HTML5 DnD - no extra
+  // dependency). Cross-route drags aren't handled here; use "Move to…" for
+  // that, which goes through handleReassignOrder instead.
+  const dragStopRef = useRef(null);
+  const handleStopDragStart = (routeName, orderId) => {
+    dragStopRef.current = { routeName, orderId: String(orderId) };
+  };
+  const handleStopDrop = (route, targetOrderId) => {
+    const drag = dragStopRef.current;
+    dragStopRef.current = null;
+    if (!drag || drag.routeName !== route.route_name) return;
+    const ids = route.orders.map((o) => String(o.order_id));
+    const fromIdx = ids.indexOf(drag.orderId);
+    const toIdx = ids.indexOf(String(targetOrderId));
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+    const reordered = [...route.orders];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    persistReorder(route, reordered.map((o) => o.order_id));
+  };
+
+  // Manual "Add Route" - spins up an empty route with a chosen vehicle type,
+  // for a mid-day isolated order or extra on-demand rider (brief §17).
+  const [isCreatingRoute, setIsCreatingRoute] = useState(false);
+  const handleCreateRoute = async (vehicleType) => {
+    setIsCreatingRoute(true);
+    try {
+      const res = await postJson('/api/routes', 'POST', { vehicle_type: vehicleType, order_ids: [] });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to create a new route. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      setStatus(`Created ${data.route.route_name} (${vehicleType}). Assign deliveries to it from Unassigned Orders.`);
+    } catch (err) {
+      console.error('Create route failed:', err);
+      setWarnings([err.message || 'Unable to create a new route. Please try again.']);
+    } finally {
+      setIsCreatingRoute(false);
+    }
+  };
+
+  // Assign one unassigned order straight to an existing route from the
+  // Unassigned Orders board.
+  const handleAssignUnassignedOrder = async (orderId, targetRouteName) => {
+    const targetRoute = routes.find((r) => r.route_name === targetRouteName);
+    if (!targetRoute) return;
+    const idStr = String(orderId);
+    try {
+      const res = await postJson(`/api/routes/${targetRoute.route_id}/orders`, 'POST', { order_ids: [idStr] });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to assign this order. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      setPendingOrders((prev) => prev.filter((o) => String(o.order_id) !== idStr));
+      setStatus(`Assigned order #${orderId} to ${targetRouteName}.`);
+    } catch (err) {
+      console.error('Assign failed:', err);
+      setWarnings([err.message || 'Unable to assign this order. Please try again.']);
+    }
   };
 
   // Mirrors _sanitize_address_for_link in the backend's route_service.py -
@@ -1358,6 +1464,7 @@ function App() {
   const displayedRoutes = searchQuery
     ? routes.filter((r) => r.route_name.toLowerCase().includes(searchQuery) || r.orders.some(matchesSearch))
     : routes;
+  const displayedPendingOrders = searchQuery ? pendingOrders.filter(matchesSearch) : pendingOrders;
   const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   const alertCount = errors.length + warnings.length;
 
@@ -1919,11 +2026,90 @@ function App() {
             </div>
           </div>
 
+          {/* UNASSIGNED ORDERS BOARD: newly-imported orders never routed, plus
+              orders removed from a route - never deleted, always live here
+              until re-assigned. See brief §9. */}
+          <div className="board board--unassigned" id="unassigned-board">
+            <div className="board__header">
+              <h2 className="board__title">Unassigned Orders</h2>
+              <span className="board__count mono-num">Total Unassigned: {pendingOrders.length}</span>
+            </div>
+            <div className="board__body">
+              {isProcessing && pendingOrders.length === 0 ? (
+                <>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </>
+              ) : pendingOrders.length === 0 ? (
+                <div className="empty-state empty-state--ok">
+                  <IconCheck width={22} height={22} />
+                  No unassigned orders
+                </div>
+              ) : displayedPendingOrders.length === 0 ? (
+                <div className="empty-state">
+                  <IconSearch width={22} height={22} />
+                  No orders match "{searchTerm}"
+                </div>
+              ) : (
+                <div className="failed-split__list">
+                  {displayedPendingOrders.map((order) => (
+                    <div key={order.order_id} className="failed-row failed-row--static">
+                      <div className="timeline-node__row">
+                        <span className="stop__id">#{order.order_id}</span>
+                        <span className="failed-row__name">{order.customer_name}</span>
+                        <span className={`tag ${order.status === 'unassigned' ? 'tag--edited' : 'tag--auto'}`}>
+                          {order.status === 'unassigned' ? 'Removed from route' : 'Never routed'}
+                        </span>
+                      </div>
+                      <div className="timeline-node__meta">
+                        <span>{order.address}</span>
+                        {order.previous_route_name && (
+                          <span>Previously: {order.previous_route_name} ({order.previous_vehicle_type})</span>
+                        )}
+                        <a className="map-link" href={order.map_link} target="_blank" rel="noopener noreferrer">
+                          <IconPin width={11} height={11} />
+                          View on map
+                        </a>
+                      </div>
+                      <select
+                        className="stop-move"
+                        value=""
+                        title="Assign this order to a route"
+                        onChange={(e) => {
+                          const target = e.target.value;
+                          if (target) handleAssignUnassignedOrder(order.order_id, target);
+                        }}
+                      >
+                        <option value="">Assign to…</option>
+                        {routes.map((r) => {
+                          const full = isRouteFull(r);
+                          return (
+                            <option key={r.route_name} value={r.route_name} disabled={full}>
+                              {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)}){full ? ' — FULL' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* DISPATCH BOARD: routes */}
           <div className="board board--dispatch">
             <div className="board__header">
               <h2 className="board__title">Dispatch board</h2>
               <span className="board__count mono-num">{routes.length} routes</span>
+              <span className="manifest__actions">
+                <button type="button" className="btn btn--ghost" disabled={isCreatingRoute} onClick={() => handleCreateRoute('bike')}>
+                  <IconBike width={14} height={14} /> Add Route (bike)
+                </button>
+                <button type="button" className="btn btn--ghost" disabled={isCreatingRoute} onClick={() => handleCreateRoute('car')}>
+                  <IconCar width={14} height={14} /> Add Route (car)
+                </button>
+              </span>
             </div>
             <div className="board__body">
               {isProcessing && routes.length === 0 ? (
@@ -2053,7 +2239,15 @@ function App() {
                           {route.orders.map((order, stopIdx) => {
                             const seg = route.route_segments?.[stopIdx];
                             return (
-                              <div key={order.order_id} className="timeline-node">
+                              <div
+                                key={order.order_id}
+                                className="timeline-node timeline-node--draggable"
+                                draggable
+                                title="Drag to reorder this delivery within the route"
+                                onDragStart={() => handleStopDragStart(route.route_name, order.order_id)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => handleStopDrop(route, order.order_id)}
+                              >
                                 <span className={`timeline-node__dot${order.is_late ? ' timeline-node__dot--late' : ''}`}>{stopIdx + 1}</span>
                                 <div className="timeline-node__body">
                                   <div className="timeline-node__row">
@@ -2108,6 +2302,15 @@ function App() {
                                     <span>Slot {order.delivery_time}</span>
                                     {order.eta && <span>ETA {order.eta}</span>}
                                     {seg && <span>{seg.distance_km ?? 0} km · {seg.time_minutes ?? 0} min from previous stop</span>}
+                                    <a
+                                      className="map-link"
+                                      href={order.map_link || buildStopMapsLink(order)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <IconPin width={11} height={11} />
+                                      View on map
+                                    </a>
                                   </div>
                                 </div>
                               </div>

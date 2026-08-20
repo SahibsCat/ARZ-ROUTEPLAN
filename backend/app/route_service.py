@@ -411,6 +411,20 @@ def _stop_link_target(order: Dict[str, object]) -> str:
     return _sanitize_address_for_link(order.get("address"))
 
 
+def single_stop_maps_link(order: Dict[str, object]) -> str:
+    """A precise, single-pin Google Maps link for one delivery - lat/lng
+    when the order has coordinates (a literal point, always resolves to
+    exactly that spot), sanitized address text as a fallback for orders
+    that failed geocoding. Distinct from build_google_maps_url below, which
+    is a full multi-stop *directions* link for an entire route - this one
+    is for "View on Map" on a single delivery card, where the admin needs
+    to see one clear dropped pin, not turn-by-turn directions."""
+    target = _stop_link_target(order)
+    if not target:
+        return ""
+    return f"https://www.google.com/maps/search/?api=1&query={quote(target)}"
+
+
 def build_google_maps_url(route_orders: List[Dict[str, object]], depot: Dict[str, float]) -> str:
     """One stop per waypoint, each resolved via coordinates when available
     (always reliable) or sanitized address text as a fallback. See
@@ -431,6 +445,59 @@ def build_google_maps_url(route_orders: List[Dict[str, object]], depot: Dict[str
     if waypoints:
         url += f"&waypoints={waypoints}"
     return url
+
+
+VEHICLE_CAPACITIES = {"car": CAR_CAPACITY, "bike": BIKE_CAPACITY}
+
+
+def vehicle_capacity(vehicle_type: str) -> int:
+    return VEHICLE_CAPACITIES.get(vehicle_type, BIKE_CAPACITY)
+
+
+def recompute_route_metrics(route_orders: List[Dict[str, object]], vehicle_type: str) -> Dict[str, object]:
+    """Recomputes everything derived from a route's stop list - distance,
+    duration, per-stop ETA/lateness, segments, Maps link, utilization - from
+    scratch given the (possibly just-edited) ordered list of order dicts.
+    Called after every manual add/remove/reorder so a route's cached
+    aggregate fields are never left stale relative to its current stops;
+    mirrors the per-route math generate_routes() does for the auto-build
+    path so both stay consistent with each other."""
+    depot = VELOCHERY_DEPOT
+    capacity = vehicle_capacity(vehicle_type)
+    route_start_minutes = compute_route_start_minutes(route_orders)
+    etas, distance_km, time_minutes, _ = _simulate_route(route_orders, depot, route_start_minutes)
+
+    annotated_orders: List[Dict[str, object]] = []
+    late_order_ids: List[object] = []
+    for order, eta in zip(route_orders, etas):
+        annotated = dict(order)
+        annotated["eta"] = format_minutes_as_clock(eta)
+        deadline = parse_delivery_slot_minutes(order)
+        is_late = eta is not None and deadline != float("inf") and eta > deadline + LATE_GRACE_MINUTES
+        annotated["is_late"] = is_late
+        if is_late:
+            late_order_ids.append(order.get("order_id"))
+        annotated_orders.append(annotated)
+
+    segments = build_route_segments(route_orders, depot)
+    maps_url = build_google_maps_url(route_orders, depot)
+    stops = len(route_orders)
+    finish_eta = etas[-1] if etas else None
+
+    return {
+        "orders": annotated_orders,
+        "route_distance_km": distance_km,
+        "route_time_minutes": time_minutes,
+        "number_of_stops": stops,
+        "route_segments": segments,
+        "google_maps_url": maps_url,
+        "estimated_finish_time": format_minutes_as_clock(finish_eta),
+        "average_stop_time": round(time_minutes / stops, 1) if time_minutes is not None and stops else None,
+        "delivery_sequence": [order.get("order_id") for order in route_orders],
+        "late_deliveries": late_order_ids,
+        "utilization_percent": round(stops / capacity * 100, 1) if capacity else None,
+        "capacity": capacity,
+    }
 
 
 def generate_routes(orders: List[Dict[str, object]], available_cars: int, available_bikes: int) -> Dict[str, object]:

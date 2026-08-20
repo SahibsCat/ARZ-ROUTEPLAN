@@ -2,8 +2,9 @@
 function here. API routes call these; they never build SQLAlchemy queries
 themselves."""
 
+import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -18,8 +19,38 @@ from app.models import (
     RouteStop,
     UploadBatch,
 )
+from app.route_service import recompute_route_metrics, single_stop_maps_link, vehicle_capacity
 
 SETTINGS_ROW_ID = 1
+
+
+# --------------------------------------------------------------------------
+# Manual route editing errors - raised by the functions in the "Manual route
+# editing" section below and translated to HTTP responses in main.py.
+# --------------------------------------------------------------------------
+
+class RootplanError(Exception):
+    """Base class for crud-layer errors the API layer knows how to turn into
+    a clear HTTP response, instead of a raw 500."""
+
+
+class RouteNotFoundError(RootplanError):
+    pass
+
+
+class OrderNotFoundError(RootplanError):
+    pass
+
+
+class CapacityError(RootplanError):
+    def __init__(self, capacity: int, available: int, requested: int):
+        self.capacity = capacity
+        self.available = available
+        self.requested = requested
+        super().__init__(
+            f"This route has only {available} available space(s) (capacity {capacity}). "
+            f"{requested} order(s) were selected."
+        )
 
 
 # --------------------------------------------------------------------------
@@ -155,28 +186,47 @@ def delete_upload_batch(db: Session, batch_id: int) -> bool:
     return True
 
 
-def sync_orders_with_route_plan(db: Session, batch_id: Optional[int], plan: Dict[str, object]) -> None:
+def sync_orders_with_route_plan(db: Session, batch_id: Optional[int], route_plan: "RoutePlan", plan: Dict[str, object]) -> None:
     """After a route plan is generated for a real batch, update each
-    persisted Order's status/assigned_vehicle so the dashboard can be
-    rebuilt from `orders` alone without re-reading the plan's JSON."""
+    persisted Order's status/assigned_vehicle/route_id/sequence_position so
+    the dashboard - and the manual add/remove/reorder endpoints below - can
+    be driven from `orders` alone without re-reading the plan's JSON.
+    `route_plan` must already be committed (real Route ids) - called right
+    after db.refresh(route_plan) in save_route_plan."""
     if batch_id is None:
         return
 
-    assigned_vehicle_by_order: Dict[str, str] = {}
+    route_id_by_name = {route.route_name: route.id for route in route_plan.routes}
+
+    assigned_info_by_order: Dict[str, Dict[str, object]] = {}
     for route in plan.get("routes", []):
-        for order in route.get("orders", []):
-            assigned_vehicle_by_order[str(order.get("order_id"))] = route.get("route_name", "")
+        route_name = route.get("route_name", "")
+        route_id = route_id_by_name.get(route_name)
+        for index, order in enumerate(route.get("orders", [])):
+            assigned_info_by_order[str(order.get("order_id"))] = {
+                "route_name": route_name,
+                "route_id": route_id,
+                "sequence_position": index + 1,
+            }
 
     pending_ids = {str(o.get("order_id")) for o in plan.get("pending_orders", [])}
 
     orders = db.query(Order).filter(Order.batch_id == batch_id).all()
     for order in orders:
-        if order.order_id in assigned_vehicle_by_order:
+        info = assigned_info_by_order.get(order.order_id)
+        if info is not None:
             order.status = "assigned"
-            order.assigned_vehicle = assigned_vehicle_by_order[order.order_id]
+            order.assigned_vehicle = info["route_name"]
+            order.route_id = info["route_id"]
+            order.sequence_position = info["sequence_position"]
+            order.unassigned_at = None
+            order.previous_route_name = None
+            order.previous_vehicle_type = None
         elif order.order_id in pending_ids:
             order.status = "pending"
             order.assigned_vehicle = None
+            order.route_id = None
+            order.sequence_position = None
     db.commit()
 
 
@@ -265,7 +315,7 @@ def save_route_plan(
     set_current_session(db, batch_id=batch_id, plan_id=route_plan.id)
     db.commit()
     db.refresh(route_plan)
-    sync_orders_with_route_plan(db, batch_id, plan)
+    sync_orders_with_route_plan(db, batch_id, route_plan, plan)
     return route_plan
 
 
@@ -388,6 +438,309 @@ def route_plan_list_item(route_plan: RoutePlan) -> Dict[str, object]:
         "pending_count": len(route_plan.pending_stops),
         "total_distance_km": total_distance_km,
     }
+
+
+# --------------------------------------------------------------------------
+# Manual route editing - Unassigned Orders pool, add/remove/reorder, create
+# route, bulk-assign. Everything here mutates the batch's current *draft*
+# route plan directly and keeps Order.route_id/sequence_position/status and
+# the corresponding RouteStop rows in sync in the same transaction, per the
+# "update the existing order row, never delete-and-recreate" rule - this is
+# what the manual editing surface is built on. Requires a real batch_id
+# (persisted Order rows) - the legacy no-upload/manual-orders-body route
+# generation path (batch_id=None) isn't editable order-by-order because
+# there's no Order table row to update.
+# --------------------------------------------------------------------------
+
+def get_or_create_draft_route_plan(db: Session, batch_id: int) -> RoutePlan:
+    """The plan any manual edit (add/remove/reorder/create-route) attaches
+    to - the batch's current unsaved draft, same one Generate/Regenerate
+    writes to. Created empty on first use if the admin creates a route by
+    hand before ever clicking Generate."""
+    existing = (
+        db.query(RoutePlan)
+        .filter(RoutePlan.batch_id == batch_id, RoutePlan.is_saved.is_(False))
+        .order_by(RoutePlan.id.desc())
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    route_plan = RoutePlan(batch_id=batch_id, is_saved=False, route_count=0)
+    db.add(route_plan)
+    set_current_session(db, batch_id=batch_id, plan_id=None)
+    db.flush()
+    set_current_session(db, batch_id=batch_id, plan_id=route_plan.id)
+    db.commit()
+    db.refresh(route_plan)
+    return route_plan
+
+
+def _next_route_number(route_names: List[str]) -> int:
+    numbers = []
+    for name in route_names:
+        match = re.search(r"(\d+)\s*$", name or "")
+        if match:
+            numbers.append(int(match.group(1)))
+    return (max(numbers) + 1) if numbers else 1
+
+
+def unassigned_order_summary(order: Order) -> Dict[str, object]:
+    return {
+        **order_summary(order),
+        "map_link": single_stop_maps_link(order_summary(order)),
+        "previous_route_name": order.previous_route_name,
+        "previous_vehicle_type": order.previous_vehicle_type,
+        "unassigned_at": order.unassigned_at.isoformat() if order.unassigned_at else None,
+    }
+
+
+def list_unassigned_orders(
+    db: Session,
+    batch_id: Optional[int],
+    search: Optional[str] = None,
+    previous_route_name: Optional[str] = None,
+    order_status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Tuple[List[Order], int]:
+    """Everything not currently sitting on a route: newly-imported orders
+    that were never routed ("pending") and orders removed from a route
+    ("unassigned") - both belong in the same pool from the admin's point of
+    view. Scoped to one batch since this is a single-session tool (see
+    AppSettings.current_session_batch_id)."""
+    query = db.query(Order).filter(Order.status.in_(["pending", "unassigned"]))
+    if batch_id is not None:
+        query = query.filter(Order.batch_id == batch_id)
+    else:
+        query = query.filter(Order.batch_id.is_(None))  # no active session -> no results, not "everything ever uploaded"
+    if search:
+        like = f"%{search.strip()}%"
+        query = query.filter(
+            (Order.customer_name.ilike(like))
+            | (Order.order_id.ilike(like))
+            | (Order.address.ilike(like))
+        )
+    if previous_route_name:
+        query = query.filter(Order.previous_route_name == previous_route_name)
+    if order_status:
+        query = query.filter(Order.status == order_status)
+
+    total = query.count()
+    rows = (
+        query.order_by(Order.id.desc())
+        .offset(max(offset, 0))
+        .limit(max(min(limit, 200), 1))
+        .all()
+    )
+    return rows, total
+
+
+def count_unassigned_orders(db: Session, batch_id: Optional[int]) -> int:
+    query = db.query(Order).filter(Order.status.in_(["pending", "unassigned"]))
+    query = query.filter(Order.batch_id == batch_id) if batch_id is not None else query.filter(Order.batch_id.is_(None))
+    return query.count()
+
+
+def _persist_route_stops(db: Session, route: Route, batch_id: Optional[int], metrics: Dict[str, object]) -> None:
+    """The one place that writes a route's stop list. Replaces this route's
+    RouteStop rows wholesale (cheap - at most 10 rows) and, in the same
+    transaction, updates every order in the new list's route_id/
+    sequence_position/status - so RouteStop and Order can never disagree
+    about which orders are on this route or in what order."""
+    for stop in list(route.stops):
+        db.delete(stop)
+    db.flush()
+
+    segments = metrics.get("route_segments") or []
+    for index, order_dict in enumerate(metrics["orders"]):
+        order_id = str(order_dict.get("order_id"))
+        segment = segments[index] if index < len(segments) else {}
+        db.add(RouteStop(
+            route_id=route.id,
+            order_id=order_id,
+            sequence=index + 1,
+            travel_distance_km=segment.get("distance_km"),
+            travel_time_minutes=segment.get("time_minutes"),
+            eta=order_dict.get("eta"),
+            status="late" if order_dict.get("is_late") else "on_time",
+            order_snapshot=order_dict,
+        ))
+        if batch_id is not None:
+            order_row = (
+                db.query(Order)
+                .filter(Order.batch_id == batch_id, Order.order_id == order_id)
+                .first()
+            )
+            if order_row is not None:
+                order_row.status = "assigned"
+                order_row.assigned_vehicle = route.route_name
+                order_row.route_id = route.id
+                order_row.sequence_position = index + 1
+                order_row.unassigned_at = None
+                order_row.previous_route_name = None
+                order_row.previous_vehicle_type = None
+
+
+def _apply_route_metrics(route: Route, metrics: Dict[str, object]) -> None:
+    route.total_distance_km = metrics.get("route_distance_km")
+    route.total_duration_minutes = metrics.get("route_time_minutes")
+    route.estimated_finish_time = metrics.get("estimated_finish_time")
+    route.utilization_percent = metrics.get("utilization_percent")
+    route.google_maps_url = metrics.get("google_maps_url")
+    route.status = "manually_edited"
+
+
+def create_route(
+    db: Session, route_plan_id: int, vehicle_type: str, order_ids: Optional[List[str]] = None,
+) -> Route:
+    """Manual "Add Route" - spins up an empty route with a chosen vehicle
+    type (car/bike), optionally pre-populated with selected unassigned
+    orders in one step (the "create new route from selection" flow). Also
+    how a genuinely isolated order gets its own single-delivery route - no
+    minimum stop count is enforced here."""
+    route_plan = db.query(RoutePlan).filter(RoutePlan.id == route_plan_id).first()
+    if route_plan is None:
+        raise RouteNotFoundError("Route plan not found")
+    if vehicle_type not in ("car", "bike"):
+        raise RootplanError("vehicle_type must be 'car' or 'bike'")
+
+    existing_names = [r.route_name for r in route_plan.routes]
+    next_number = _next_route_number(existing_names)
+    route = Route(
+        route_plan_id=route_plan.id,
+        route_name=f"Route {next_number}",
+        vehicle_type=vehicle_type,
+        status="planned",
+        is_auto_created=False,
+    )
+    db.add(route)
+    route_plan.route_count = len(existing_names) + 1
+    db.flush()
+
+    if order_ids:
+        return add_orders_to_route(db, route.id, order_ids)
+
+    db.commit()
+    db.refresh(route)
+    return route
+
+
+def add_orders_to_route(db: Session, route_id: int, order_ids: List[str]) -> Route:
+    """Adds one or more currently-unassigned orders to an existing route -
+    powers both the single-order "Assign" action and bulk assignment.
+    Capacity is validated for the whole batch before anything is written,
+    so a batch that doesn't fit is rejected atomically rather than
+    partially applied."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    route_plan = route.route_plan
+    batch_id = route_plan.batch_id if route_plan else None
+    if batch_id is None:
+        raise RootplanError("This route belongs to a session with no upload behind it and can't be edited order-by-order.")
+
+    existing_stops = sorted(route.stops, key=lambda s: s.sequence)
+    capacity = vehicle_capacity(route.vehicle_type)
+    available = capacity - len(existing_stops)
+    if len(order_ids) > available:
+        raise CapacityError(capacity=capacity, available=max(available, 0), requested=len(order_ids))
+
+    orders_to_add: List[Order] = []
+    seen_ids = set()
+    for order_id in order_ids:
+        key = str(order_id)
+        if key in seen_ids:
+            continue
+        seen_ids.add(key)
+        order = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == key).first()
+        if order is None:
+            raise OrderNotFoundError(f"Order {key} not found in the current session")
+        if order.status == "assigned":
+            raise RootplanError(f"Order {key} is already assigned to a route")
+        orders_to_add.append(order)
+
+    existing_order_dicts = [dict(stop.order_snapshot or {}) for stop in existing_stops]
+    new_order_dicts = [order_summary(order) for order in orders_to_add]
+    full_orders = existing_order_dicts + new_order_dicts
+
+    metrics = recompute_route_metrics(full_orders, route.vehicle_type)
+    _apply_route_metrics(route, metrics)
+    _persist_route_stops(db, route, batch_id, metrics)
+
+    db.commit()
+    db.refresh(route)
+    return route
+
+
+def remove_order_from_route(db: Session, route_id: int, order_id: str) -> Dict[str, object]:
+    """The single atomic "remove from route" operation (brief §4/§9): moves
+    the order to Unassigned - never deletes it - and returns both the
+    updated route and the now-unassigned order so the caller can refresh
+    every dependent screen from one confirmed response."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    route_plan = route.route_plan
+    batch_id = route_plan.batch_id if route_plan else None
+    if batch_id is None:
+        raise RootplanError("This route belongs to a session with no upload behind it and can't be edited order-by-order.")
+
+    stops = sorted(route.stops, key=lambda s: s.sequence)
+    target_stop = next((s for s in stops if str(s.order_id) == str(order_id)), None)
+    if target_stop is None:
+        raise OrderNotFoundError(f"Order {order_id} is not on this route")
+
+    remaining_order_dicts = [
+        dict(stop.order_snapshot or {}) for stop in stops if stop.id != target_stop.id
+    ]
+    metrics = recompute_route_metrics(remaining_order_dicts, route.vehicle_type)
+    _apply_route_metrics(route, metrics)
+    _persist_route_stops(db, route, batch_id, metrics)
+
+    order = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == str(order_id)).first()
+    if order is not None:
+        order.status = "unassigned"
+        order.previous_route_name = route.route_name
+        order.previous_vehicle_type = route.vehicle_type
+        order.unassigned_at = datetime.now(timezone.utc)
+        order.route_id = None
+        order.sequence_position = None
+        order.assigned_vehicle = None
+
+    db.commit()
+    db.refresh(route)
+    if order is not None:
+        db.refresh(order)
+    return {"route": route, "order": order}
+
+
+def reorder_route(db: Session, route_id: int, ordered_order_ids: List[str]) -> Route:
+    """Persists a drag-and-drop reorder: `ordered_order_ids` must be exactly
+    this route's current stops, just in a new order. Recomputes ETAs/
+    distance/lateness for the new sequence, since reordering can change all
+    of them."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    route_plan = route.route_plan
+    batch_id = route_plan.batch_id if route_plan else None
+    if batch_id is None:
+        raise RootplanError("This route belongs to a session with no upload behind it and can't be edited order-by-order.")
+
+    stops_by_order_id = {str(stop.order_id): stop for stop in route.stops}
+    requested_ids = [str(order_id) for order_id in ordered_order_ids]
+    if set(requested_ids) != set(stops_by_order_id.keys()) or len(requested_ids) != len(stops_by_order_id):
+        raise RootplanError("The reordered list must contain exactly this route's current stops")
+
+    ordered_dicts = [dict(stops_by_order_id[order_id].order_snapshot or {}) for order_id in requested_ids]
+    metrics = recompute_route_metrics(ordered_dicts, route.vehicle_type)
+    _apply_route_metrics(route, metrics)
+    _persist_route_stops(db, route, batch_id, metrics)
+
+    db.commit()
+    db.refresh(route)
+    return route
 
 
 # --------------------------------------------------------------------------
@@ -524,7 +877,7 @@ def update_settings(db: Session, **fields: object) -> AppSettings:
 # --------------------------------------------------------------------------
 
 def order_summary(order: Order) -> Dict[str, object]:
-    return {
+    data = {
         "order_id": order.order_id,
         "customer_name": order.customer_name,
         "address": order.address,
@@ -537,6 +890,8 @@ def order_summary(order: Order) -> Dict[str, object]:
         "assigned_vehicle": order.assigned_vehicle,
         "extra_fields": order.extra_fields or {},
     }
+    data["map_link"] = single_stop_maps_link(data)
+    return data
 
 
 def failed_address_summary(failed: FailedAddress) -> Dict[str, object]:
@@ -556,12 +911,14 @@ def _route_stop_to_order_dict(stop: RouteStop) -> Dict[str, object]:
     data = dict(stop.order_snapshot or {})
     data["eta"] = stop.eta
     data["is_late"] = stop.status == "late"
+    data["map_link"] = single_stop_maps_link(data)
     return data
 
 
 def route_summary(route: Route) -> Dict[str, object]:
     stops = sorted(route.stops, key=lambda s: s.sequence)
     orders = [_route_stop_to_order_dict(stop) for stop in stops]
+    capacity = vehicle_capacity(route.vehicle_type)
 
     segments: List[Dict[str, object]] = []
     from_label = "Depot"
@@ -576,6 +933,7 @@ def route_summary(route: Route) -> Dict[str, object]:
         from_label = to_label
 
     return {
+        "route_id": route.id,
         "route_name": route.route_name,
         "vehicle_type": route.vehicle_type,
         "driver": route.driver,
@@ -583,6 +941,9 @@ def route_summary(route: Route) -> Dict[str, object]:
         "route_distance_km": route.total_distance_km,
         "route_time_minutes": route.total_duration_minutes,
         "number_of_stops": len(stops),
+        "capacity": capacity,
+        "available_capacity": max(capacity - len(stops), 0),
+        "is_full": len(stops) >= capacity,
         "route_segments": segments,
         "google_maps_url": route.google_maps_url,
         "estimated_finish_time": route.estimated_finish_time,

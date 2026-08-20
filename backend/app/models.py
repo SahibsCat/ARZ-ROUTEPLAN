@@ -55,10 +55,36 @@ class Order(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     delivery_slot = Column(String, nullable=True)
-    # pending (not yet routed) | assigned (on a route) | failed (geocode failed)
+    # pending (not yet routed) | assigned (on a route) | unassigned (was on a
+    # route, removed by the admin - distinct from "pending" so the
+    # Unassigned Orders screen can show where it came from) | failed
+    # (geocode failed)
     status = Column(String, default="pending", nullable=False)
     assigned_vehicle = Column(String, nullable=True)
     geocode_error = Column(String, nullable=True)
+    # Which route (if any) this order currently sits on. Nullable - null
+    # whenever status is pending/unassigned/failed. This plus
+    # sequence_position is the single source of truth for route membership;
+    # RouteStop rows are kept in sync with these in the same transaction
+    # (see crud.add_orders_to_route / remove_order_from_route /
+    # reorder_route) rather than being an independently-drifting copy.
+    # ondelete="SET NULL": a Regenerate replaces the whole unsaved draft
+    # plan (cascade-deletes its Route/RouteStop rows) - without this, that
+    # delete would fail with a foreign-key violation on Postgres the moment
+    # any order had been manually assigned to one of those routes.
+    # sync_orders_with_route_plan() then re-derives the correct route_id
+    # for the new plan in the same call.
+    route_id = Column(Integer, ForeignKey("routes.id", ondelete="SET NULL"), nullable=True)
+    sequence_position = Column(Integer, nullable=True)
+    # Set the moment an order is removed from a route (status -> unassigned)
+    # so the Unassigned Orders screen can filter/sort by it. Cleared again if
+    # the order is reassigned to a route.
+    unassigned_at = Column(DateTime(timezone=True), nullable=True)
+    # Informational only, per the brief's "Previously: Route 1 / bike" note
+    # on the Unassigned Orders screen - not a live FK (the route it names may
+    # itself have since been deleted), so it survives that.
+    previous_route_name = Column(String, nullable=True)
+    previous_vehicle_type = Column(String, nullable=True)
     # Columns from the upload that don't map to order_id/customer_name/
     # address/delivery_time - contact number, amount, payment mode,
     # remarks, box counts, whatever else a business tracks - kept under

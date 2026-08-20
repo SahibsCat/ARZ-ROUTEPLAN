@@ -30,7 +30,11 @@ from app.excel_service import validate_excel_file
 from app.geocode_service import geocode_orders
 from app.route_service import generate_routes
 from app.schemas import (
+    AddOrdersRequest,
+    AssignOrdersRequest,
+    CreateRouteRequest,
     DashboardResponse,
+    ReorderRouteRequest,
     RoutePlanHistoryResponse,
     RoutePlanResponse,
     RoutePlanSaveRequest,
@@ -536,6 +540,116 @@ def get_route_history_detail(route_plan_id: int, db: Session = Depends(get_db)):
     if route_plan is None:
         raise HTTPException(status_code=404, detail="Route plan not found")
     return crud.route_plan_summary(route_plan)
+
+
+def _current_batch_id(db: Session) -> Optional[int]:
+    return crud.get_settings(db).current_session_batch_id
+
+
+def _raise_for_crud_error(e: Exception) -> None:
+    """Translates the crud-layer manual-editing exceptions (app/crud.py) to
+    the right HTTP status - 404 for "doesn't exist", 409 for "won't fit"
+    (capacity), 400 for everything else - so the frontend gets a specific,
+    actionable error instead of a generic 500."""
+    if isinstance(e, crud.RouteNotFoundError) or isinstance(e, crud.OrderNotFoundError):
+        raise HTTPException(status_code=404, detail=str(e))
+    if isinstance(e, crud.CapacityError):
+        raise HTTPException(status_code=409, detail=str(e))
+    if isinstance(e, crud.RootplanError):
+        raise HTTPException(status_code=400, detail=str(e))
+    raise
+
+
+@app.get("/api/orders/unassigned")
+def get_unassigned_orders(
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None),
+    previous_route: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    batch_id = _current_batch_id(db)
+    rows, total = crud.list_unassigned_orders(
+        db, batch_id=batch_id, search=search, previous_route_name=previous_route,
+        order_status=status_filter, limit=limit, offset=offset,
+    )
+    return {
+        "orders": [crud.unassigned_order_summary(o) for o in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.post("/api/routes")
+def create_route_endpoint(payload: CreateRouteRequest = Body(...), db: Session = Depends(get_db)):
+    batch_id = _current_batch_id(db)
+    if batch_id is None:
+        raise HTTPException(status_code=400, detail="No active upload session - upload an Excel file first.")
+    try:
+        route_plan = crud.get_or_create_draft_route_plan(db, batch_id)
+        route = crud.create_route(db, route_plan.id, payload.vehicle_type, order_ids=payload.order_ids or None)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {
+        "route": crud.route_summary(route),
+        "unassigned_total": crud.count_unassigned_orders(db, batch_id),
+    }
+
+
+@app.post("/api/routes/{route_id}/orders")
+def add_orders_to_route_endpoint(
+    route_id: int, payload: AddOrdersRequest = Body(...), db: Session = Depends(get_db),
+):
+    try:
+        route = crud.add_orders_to_route(db, route_id, payload.order_ids)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    batch_id = route.route_plan.batch_id if route.route_plan else None
+    return {
+        "route": crud.route_summary(route),
+        "unassigned_total": crud.count_unassigned_orders(db, batch_id),
+    }
+
+
+@app.delete("/api/routes/{route_id}/orders/{order_id}")
+def remove_order_from_route_endpoint(route_id: int, order_id: str, db: Session = Depends(get_db)):
+    try:
+        result = crud.remove_order_from_route(db, route_id, order_id)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    route = result["route"]
+    batch_id = route.route_plan.batch_id if route.route_plan else None
+    return {
+        "route": crud.route_summary(route),
+        "order": crud.unassigned_order_summary(result["order"]) if result["order"] else None,
+        "unassigned_total": crud.count_unassigned_orders(db, batch_id),
+    }
+
+
+@app.patch("/api/routes/{route_id}/reorder")
+def reorder_route_endpoint(
+    route_id: int, payload: ReorderRouteRequest = Body(...), db: Session = Depends(get_db),
+):
+    try:
+        route = crud.reorder_route(db, route_id, payload.order_ids)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {"route": crud.route_summary(route)}
+
+
+@app.post("/api/orders/assign")
+def assign_orders_endpoint(payload: AssignOrdersRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        route = crud.add_orders_to_route(db, payload.route_id, payload.order_ids)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    batch_id = route.route_plan.batch_id if route.route_plan else None
+    return {
+        "route": crud.route_summary(route),
+        "unassigned_total": crud.count_unassigned_orders(db, batch_id),
+    }
 
 
 @app.get("/api/debug/geocode")

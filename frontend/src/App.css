@@ -1007,7 +1007,28 @@ body { min-height: 100vh; }
   overflow: hidden;
   width: 100%;
 }
-.board--dispatch { order: -1; }
+.board--dispatch { order: -2; }
+.board--unassigned { order: -1; }
+.board--unassigned .board__header { border-top-color: var(--signal, var(--accent)); }
+.board--unassigned .failed-row {
+  cursor: default;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+}
+.board--unassigned .failed-row:hover { border-color: var(--accent); }
+.board--unassigned .timeline-node__row { flex-wrap: wrap; }
+.board--unassigned .timeline-node__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  width: 100%;
+}
+.timeline-node--draggable { cursor: grab; }
+.timeline-node--draggable:active { cursor: grabbing; }
 
 .board__header {
   display: flex;
