@@ -2243,6 +2243,26 @@ function App() {
                         </div>
 
                         <div className="manifest__actions">
+                          <select
+                            className="stop-move add-delivery-select"
+                            value=""
+                            disabled={fullCount >= capacity || pendingOrders.length === 0}
+                            title={fullCount >= capacity ? 'This route is full' : 'Add an unassigned order to this route'}
+                            onChange={(e) => {
+                              const orderId = e.target.value;
+                              if (orderId) handleAssignUnassignedOrder(orderId, route.route_name);
+                              e.target.value = '';
+                            }}
+                          >
+                            <option value="">
+                              {fullCount >= capacity ? 'Route full' : pendingOrders.length === 0 ? 'No unassigned orders' : '+ Add Delivery'}
+                            </option>
+                            {pendingOrders.map((order) => (
+                              <option key={order.order_id} value={order.order_id}>
+                                #{order.order_id} — {order.customer_name || 'Unnamed'}
+                              </option>
+                            ))}
+                          </select>
                           <button className="download-link" onClick={() => handleDownloadRoute(route)}>
                             <IconDownload width={14} height={14} />
                             Download sheet
