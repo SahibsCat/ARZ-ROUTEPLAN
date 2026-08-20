@@ -2,12 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
-  IconUsers,
+  IconUsers, IconChevron,
 } from '../icons';
 import './routeWorkspace.css';
-
-const SEQUENCE_LETTERS = 'ABCDEFGHIJ';
-const sequenceLabel = (idx) => SEQUENCE_LETTERS[idx] || String(idx + 1);
 
 // No embedded live map here by design - "View on map" / "Open in Maps"
 // deep-links straight to Google Maps with a precise pin (see
@@ -42,10 +39,9 @@ function matchesQuery(order, query) {
   );
 }
 
-// The shared identity block every delivery card (route list, unassigned
-// list) uses: Customer -> AREA -> full address, in that visual weight, then
-// order id / a prominent map pin / secondary info last. One component so a
-// future hierarchy tweak only changes one place.
+// The shared identity block for the Unassigned Orders list: Customer ->
+// AREA -> full address, in that visual weight, then order id / a
+// prominent map pin / secondary info last.
 function DeliveryIdentityBlock({ order }) {
   const mapLink = order.map_link || '';
   return (
@@ -67,44 +63,6 @@ function DeliveryIdentityBlock({ order }) {
           </a>
         )}
       </span>
-    </div>
-  );
-}
-
-function DeliveryCard({
-  order, sequenceIndex, isSelected, onSelect, onRemove, draggable, onDragStart, onDragOver, onDrop, onMoveUp, onMoveDown, canMoveUp, canMoveDown,
-}) {
-  return (
-    <div
-      className={`delivery-card${isSelected ? ' delivery-card--selected' : ''}${order.is_late ? ' delivery-card--late' : ''}`}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onClick={onSelect}
-    >
-      <div className="delivery-card__seq" title="Delivery sequence">{sequenceLabel(sequenceIndex)}</div>
-      <DeliveryIdentityBlock order={order} />
-      <div className="delivery-card__side">
-        {order.eta && <span className="delivery-card__eta">ETA {order.eta}{order.is_late && ' · LATE'}</span>}
-        {typeof onMoveUp === 'function' && (
-          <span className="delivery-card__reorder">
-            <button type="button" disabled={!canMoveUp} title="Move earlier" onClick={(e) => { e.stopPropagation(); onMoveUp(); }}>
-              <IconArrowUp width={12} height={12} />
-            </button>
-            <button type="button" disabled={!canMoveDown} title="Move later" onClick={(e) => { e.stopPropagation(); onMoveDown(); }}>
-              <IconArrowDown width={12} height={12} />
-            </button>
-          </span>
-        )}
-        <div className="delivery-card__actions">
-          {typeof onRemove === 'function' && (
-            <button type="button" className="icon-btn icon-btn--danger" title="Remove from route" onClick={(e) => { e.stopPropagation(); onRemove(); }}>
-              <IconX width={13} height={13} />
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -133,23 +91,82 @@ function RouteSidebarCard({ route, isSelected, onSelect, capacityFor }) {
   );
 }
 
-function RouteHeader({
-  route, capacityFor, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
-  pendingOrders, onAssignOrders,
+// Faithful reconstruction of the original route card design (vehicle chip,
+// data-strip stats, collapsible route-timeline with a depot -> stops ->
+// finish line) for the selected route, per feedback asking for the old
+// look back - now living inside the workspace's delivery pane instead of a
+// page-wide stacked list. The AREA line, red map pin, vehicle toggle, Add
+// Delivery and Delete Route additions (all requested separately, after the
+// original design shipped) are kept.
+function RouteManifest({
+  route, routeIdx, routes, capacityFor, pendingOrders,
+  onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
+  onReassignOrder, onAssignOrders, onReorderRoute,
 }) {
+  const [collapsed, setCollapsed] = useState(false);
   const capacity = capacityFor(route.vehicle_type);
   const count = route.orders.length;
   const isFull = count >= capacity;
+  const isEdited = route.status === 'manually_edited';
+
+  const dragRef = useRef(null);
+  const handleDragStart = (orderId) => { dragRef.current = String(orderId); };
+  const handleDrop = (targetOrderId) => {
+    const draggedId = dragRef.current;
+    dragRef.current = null;
+    if (!draggedId || draggedId === String(targetOrderId)) return;
+    const ids = route.orders.map((o) => String(o.order_id));
+    const fromIdx = ids.indexOf(draggedId);
+    const toIdx = ids.indexOf(String(targetOrderId));
+    if (fromIdx === -1 || toIdx === -1) return;
+    const reordered = [...ids];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    onReorderRoute(route, reordered);
+  };
+  const moveStop = (orderId, direction) => {
+    const ids = route.orders.map((o) => String(o.order_id));
+    const idx = ids.indexOf(String(orderId));
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx === -1 || targetIdx < 0 || targetIdx >= ids.length) return;
+    const reordered = [...ids];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    onReorderRoute(route, reordered);
+  };
+
   return (
-    <div className="route-header">
-      <div className="route-header__top">
-        <div>
-          <h2 className="route-header__title">{route.route_name}</h2>
-          <span className={`status-badge status-badge--${route.status === 'manually_edited' ? 'edited' : 'planned'}`}>
-            {route.status === 'manually_edited' ? 'Manually edited' : 'Assigned'}
+    <div className={`manifest route-hue-${routeIdx % 6}`}>
+      <div className="manifest__head">
+        <div className="manifest__head-left">
+          <button
+            type="button"
+            className="vehicle-chip vehicle-chip--toggle"
+            disabled={isChangingVehicle === route.route_name}
+            title="Switch this route's vehicle type"
+            onClick={() => onToggleVehicle(route)}
+          >
+            {route.vehicle_type === 'car' ? <IconCar width={14} height={14} /> : <IconBike width={14} height={14} />}
+            {route.vehicle_type === 'car' ? 'Car' : 'Bike'}
+            <IconRefresh width={11} height={11} className="vehicle-chip__swap" />
+          </button>
+          <h3 className="manifest__name">{route.route_name}</h3>
+          <span className="driver-chip" title="No driver roster is tracked yet">
+            <IconUsers width={11} height={11} />
+            Unassigned
           </span>
+          <span className="tag tag--capacity mono-num">{count}/{capacity}</span>
+          {route.is_auto_created && (
+            <span className="tag tag--auto"><IconPlus width={11} height={11} />Auto-added</span>
+          )}
+          {route.late_deliveries && route.late_deliveries.length > 0 && (
+            <span className="tag tag--late"><IconClock width={11} height={11} />{route.late_deliveries.length} late</span>
+          )}
+          {isEdited && (
+            <span className="tag tag--edited"><IconAlert width={11} height={11} />Manually edited</span>
+          )}
         </div>
-        <div className="route-header__actions">
+
+        <div className="manifest__actions">
           <select
             className="stop-move add-delivery-select"
             value=""
@@ -166,14 +183,14 @@ function RouteHeader({
               </option>
             ))}
           </select>
-          <button className="btn btn--outline" onClick={() => onDownload(route)}>
+          <button className="download-link" onClick={() => onDownload(route)}>
             <IconDownload width={14} height={14} />
-            Download Excel
+            Download sheet
           </button>
           {route.google_maps_url && (
-            <a className="btn btn--outline" href={route.google_maps_url} target="_blank" rel="noopener noreferrer">
+            <a className="map-link" href={route.google_maps_url} target="_blank" rel="noopener noreferrer">
               <IconPin width={14} height={14} />
-              Open in Maps
+              Open in Google Maps
             </a>
           )}
           <button
@@ -191,43 +208,136 @@ function RouteHeader({
         </div>
       </div>
 
-      <div className="route-header__stats">
-        <button
-          type="button"
-          className="vehicle-chip vehicle-chip--toggle"
-          disabled={isChangingVehicle === route.route_name}
-          title="Switch this route's vehicle type"
-          onClick={() => onToggleVehicle(route)}
-        >
-          {route.vehicle_type === 'car' ? <IconCar width={14} height={14} /> : <IconBike width={14} height={14} />}
-          {route.vehicle_type === 'car' ? 'Car' : 'Bike'}
-          <IconRefresh width={11} height={11} className="vehicle-chip__swap" />
-        </button>
-        <div className="route-header__stat">
-          <span className="route-header__stat-label"><IconUsers width={12} height={12} />Deliveries</span>
-          <span className="route-header__stat-value mono-num">{capacityText(count, capacity)}</span>
-          <CapacityBar count={count} capacity={capacity} />
+      <div className="data-strip">
+        <div className="data-strip__item">
+          <span className="data-strip__label"><IconRoute width={11} height={11} />Road distance</span>
+          <span className="data-strip__value">{route.route_distance_km ?? 0} km</span>
         </div>
-        <div className="route-header__stat">
-          <span className="route-header__stat-label"><IconRoute width={12} height={12} />Distance</span>
-          <span className="route-header__stat-value mono-num">{route.route_distance_km ?? '—'} km</span>
+        <div className="data-strip__item">
+          <span className="data-strip__label"><IconClock width={11} height={11} />Travel time</span>
+          <span className="data-strip__value">{route.route_time_minutes ?? 0} min</span>
         </div>
-        <div className="route-header__stat">
-          <span className="route-header__stat-label"><IconClock width={12} height={12} />Duration</span>
-          <span className="route-header__stat-value mono-num">{route.route_time_minutes ?? '—'} min</span>
+        <div className="data-strip__item">
+          <span className="data-strip__label"><IconPin width={11} height={11} />Stops</span>
+          <span className="data-strip__value">{count}</span>
         </div>
-        <div className="route-header__stat">
-          <span className="route-header__stat-label"><IconFlag width={12} height={12} />Finish ETA</span>
-          <span className="route-header__stat-value mono-num">{route.estimated_finish_time ?? '—'}</span>
+        <div className="data-strip__item">
+          <span className="data-strip__label"><IconFlag width={11} height={11} />Finish ETA</span>
+          <span className="data-strip__value">{route.estimated_finish_time ?? '—'}</span>
         </div>
-        <div className="route-header__stat">
-          <span className="route-header__stat-label"><IconGauge width={12} height={12} />Utilization</span>
-          <span className="route-header__stat-value mono-num">{route.utilization_percent ?? '—'}%</span>
+        <div className="data-strip__item">
+          <span className="data-strip__label"><IconClock width={11} height={11} />Avg stop time</span>
+          <span className="data-strip__value">{route.average_stop_time ?? '—'} min</span>
+        </div>
+        <div className="data-strip__item">
+          <span className="data-strip__label"><IconGauge width={11} height={11} />Utilization</span>
+          <span className="data-strip__value">{route.utilization_percent ?? '—'}%</span>
         </div>
       </div>
 
       {route.areas && route.areas.length > 0 && (
         <div className="route-header__areas">{route.areas.length} area{route.areas.length === 1 ? '' : 's'}: {route.areas.join(', ')}</div>
+      )}
+
+      <button
+        type="button"
+        className="details-toggle"
+        onClick={() => setCollapsed((c) => !c)}
+        aria-expanded={!collapsed}
+      >
+        <IconChevron className={`ticket__chevron${collapsed ? '' : ' ticket__chevron--open'}`} width={14} height={14} />
+        {collapsed ? `Show route timeline (${count} stop${count === 1 ? '' : 's'})` : 'Hide route timeline'}
+      </button>
+
+      {!collapsed && (
+        <div className="route-timeline">
+          <div className="timeline-node timeline-node--terminal">
+            <span className="timeline-node__dot timeline-node__dot--depot"><IconInbox width={12} height={12} /></span>
+            <span className="timeline-node__terminal-label">Warehouse</span>
+          </div>
+
+          {route.orders.map((order, stopIdx) => (
+            <div
+              key={order.order_id}
+              className="timeline-node timeline-node--draggable"
+              draggable
+              title="Drag to reorder this delivery within the route"
+              onDragStart={() => handleDragStart(order.order_id)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => handleDrop(order.order_id)}
+            >
+              <span className={`timeline-node__dot${order.is_late ? ' timeline-node__dot--late' : ''}`}>{stopIdx + 1}</span>
+              <div className="timeline-node__body">
+                <div className="timeline-node__row">
+                  <span className="stop-reorder">
+                    <button
+                      type="button"
+                      className="stop-reorder__btn"
+                      disabled={stopIdx === 0}
+                      title="Move earlier in the delivery sequence"
+                      onClick={() => moveStop(order.order_id, 'up')}
+                    >
+                      <IconArrowUp width={12} height={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="stop-reorder__btn"
+                      disabled={stopIdx === route.orders.length - 1}
+                      title="Move later in the delivery sequence"
+                      onClick={() => moveStop(order.order_id, 'down')}
+                    >
+                      <IconArrowDown width={12} height={12} />
+                    </button>
+                  </span>
+                  <span className="stop__id">#{order.order_id}</span>
+                  <span className="timeline-node__name">{order.customer_name}</span>
+                  <span className={`stop-status${order.is_late ? ' stop-status--late' : ''}`}>
+                    {order.is_late ? 'Late' : 'On time'}
+                  </span>
+                  <select
+                    className="stop-move"
+                    value=""
+                    title="Move this stop to another route"
+                    onChange={(e) => {
+                      const target = e.target.value;
+                      if (target) onReassignOrder(order.order_id, route.route_name, target);
+                    }}
+                  >
+                    <option value="">Move to…</option>
+                    {routes.filter((r) => r.route_name !== route.route_name).map((r) => {
+                      const full = r.orders.length >= capacityFor(r.vehicle_type);
+                      return (
+                        <option key={r.route_name} value={r.route_name} disabled={full}>
+                          {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)}){full ? ' — full' : ''}
+                        </option>
+                      );
+                    })}
+                    <option value="pending">Pending / unassigned</option>
+                  </select>
+                </div>
+                <div className="timeline-node__meta">
+                  {order.area && <span className="delivery-identity__area">{order.area}</span>}
+                  <span>{order.address}</span>
+                  <span>Slot {order.delivery_time}</span>
+                  {order.eta && <span>ETA {order.eta}</span>}
+                  {order.map_link && (
+                    <a className="pin-badge" href={order.map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                      <IconPin width={12} height={12} />
+                      View pin
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div className="timeline-node timeline-node--terminal">
+            <span className="timeline-node__dot timeline-node__dot--end"><IconFlag width={12} height={12} /></span>
+            <span className="timeline-node__terminal-label">
+              Finish{route.estimated_finish_time ? ` · ${route.estimated_finish_time}` : ''}
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -350,14 +460,12 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
 export default function RouteWorkspace({
   routes, pendingOrders, isProcessing, capacityFor, isRouteFull,
   isCreatingRoute, isChangingVehicle, isDeletingRoute,
-  onCreateRoute, onToggleVehicle, onDeleteRoute, onRemoveFromRoute, onReorderRoute,
+  onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute,
 }) {
   const [tab, setTab] = useState('routes');
   const [selectedRouteName, setSelectedRouteName] = useState(null);
-  const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [routeSearch, setRouteSearch] = useState('');
-  const cardRefs = useRef({});
 
   useEffect(() => {
     if (routes.length === 0) { setSelectedRouteName(null); return; }
@@ -368,12 +476,7 @@ export default function RouteWorkspace({
   }, [routes]);
 
   const selectedRoute = routes.find((r) => r.route_name === selectedRouteName) || null;
-
-  useEffect(() => {
-    if (selectedRoute && selectedOrderId && cardRefs.current[selectedOrderId]) {
-      cardRefs.current[selectedOrderId].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [selectedOrderId, selectedRoute]);
+  const selectedRouteIdx = selectedRoute ? routes.findIndex((r) => r.route_name === selectedRoute.route_name) : 0;
 
   const filteredRoutes = useMemo(() => {
     if (!routeSearch.trim()) return routes;
@@ -384,32 +487,6 @@ export default function RouteWorkspace({
       || r.orders.some((o) => matchesQuery(o, q))
     ));
   }, [routes, routeSearch]);
-
-  const dragRef = useRef(null);
-  const handleDragStart = (orderId) => { dragRef.current = String(orderId); };
-  const handleDrop = (targetOrderId) => {
-    const draggedId = dragRef.current;
-    dragRef.current = null;
-    if (!selectedRoute || !draggedId || draggedId === String(targetOrderId)) return;
-    const ids = selectedRoute.orders.map((o) => String(o.order_id));
-    const fromIdx = ids.indexOf(draggedId);
-    const toIdx = ids.indexOf(String(targetOrderId));
-    if (fromIdx === -1 || toIdx === -1) return;
-    const reordered = [...ids];
-    const [moved] = reordered.splice(fromIdx, 1);
-    reordered.splice(toIdx, 0, moved);
-    onReorderRoute(selectedRoute, reordered);
-  };
-  const moveStop = (direction) => {
-    if (!selectedOrderId || !selectedRoute) return;
-    const ids = selectedRoute.orders.map((o) => String(o.order_id));
-    const idx = ids.indexOf(String(selectedOrderId));
-    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (idx === -1 || targetIdx < 0 || targetIdx >= ids.length) return;
-    const reordered = [...ids];
-    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
-    onReorderRoute(selectedRoute, reordered);
-  };
 
   return (
     <div className="board board--workspace" id="route-workspace">
@@ -481,7 +558,7 @@ export default function RouteWorkspace({
                   route={route}
                   capacityFor={capacityFor}
                   isSelected={route.route_name === selectedRouteName}
-                  onSelect={() => { setSelectedRouteName(route.route_name); setSelectedOrderId(null); }}
+                  onSelect={() => setSelectedRouteName(route.route_name)}
                 />
               ))}
             </div>
@@ -489,48 +566,21 @@ export default function RouteWorkspace({
 
           <div className="route-workspace-pane route-workspace-pane--deliveries">
             {selectedRoute && (
-              <>
-                <RouteHeader
-                  route={selectedRoute}
-                  capacityFor={capacityFor}
-                  onToggleVehicle={onToggleVehicle}
-                  isChangingVehicle={isChangingVehicle}
-                  onDeleteRoute={onDeleteRoute}
-                  isDeletingRoute={isDeletingRoute}
-                  onDownload={onDownloadRoute}
-                  pendingOrders={pendingOrders}
-                  onAssignOrders={onAssignOrders}
-                />
-                {selectedRoute.orders.length === 0 ? (
-                  <div className="empty-state">No deliveries assigned to this route. Add one from Unassigned Orders.</div>
-                ) : (
-                  <div className="delivery-list">
-                    {selectedRoute.orders.map((order, idx) => (
-                      <div key={order.order_id} ref={(el) => { cardRefs.current[order.order_id] = el; }}>
-                        <DeliveryCard
-                          order={order}
-                          sequenceIndex={idx}
-                          isSelected={String(order.order_id) === String(selectedOrderId)}
-                          onSelect={() => setSelectedOrderId(order.order_id)}
-                          onRemove={() => {
-                            if (window.confirm(`Remove this delivery from ${selectedRoute.route_name} and move it to Unassigned Orders?`)) {
-                              onRemoveFromRoute(order.order_id, selectedRoute.route_name);
-                            }
-                          }}
-                          draggable
-                          onDragStart={() => handleDragStart(order.order_id)}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={() => handleDrop(order.order_id)}
-                          onMoveUp={() => moveStop('up')}
-                          onMoveDown={() => moveStop('down')}
-                          canMoveUp={idx > 0}
-                          canMoveDown={idx < selectedRoute.orders.length - 1}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
+              <RouteManifest
+                route={selectedRoute}
+                routeIdx={selectedRouteIdx}
+                routes={routes}
+                capacityFor={capacityFor}
+                pendingOrders={pendingOrders}
+                onToggleVehicle={onToggleVehicle}
+                isChangingVehicle={isChangingVehicle}
+                onDeleteRoute={onDeleteRoute}
+                isDeletingRoute={isDeletingRoute}
+                onDownload={onDownloadRoute}
+                onReassignOrder={onReassignOrder}
+                onAssignOrders={onAssignOrders}
+                onReorderRoute={onReorderRoute}
+              />
             )}
           </div>
         </div>

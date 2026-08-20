@@ -1177,8 +1177,8 @@ function App() {
   // Palette mirrors App.css's --btn-fill / --ink / --good / --critical so the
   // sheet reads as the same product, not a plain default-Excel export.
   // ARGB (exceljs requires the leading alpha channel - FF = fully opaque).
-  const XLSX_VIOLET = 'FF7C3AED';
-  const XLSX_VIOLET_DARK = 'FF6D28D9';
+  const XLSX_VIOLET = 'FF2563EB'; // brand blue, kept the historical name to avoid touching every call site below
+  const XLSX_VIOLET_DARK = 'FF1D4ED8';
   const XLSX_ZEBRA = 'FFF3F1FA';
   const XLSX_WHITE = 'FFFFFFFF';
   const XLSX_INK = 'FF1E1B2E';
@@ -2127,7 +2127,7 @@ function App() {
             onCreateRoute={handleCreateRoute}
             onToggleVehicle={handleToggleVehicleType}
             onDeleteRoute={handleDeleteRoute}
-            onRemoveFromRoute={handleRemoveFromRoute}
+            onReassignOrder={handleReassignOrder}
             onReorderRoute={persistReorder}
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}

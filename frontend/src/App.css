@@ -22,20 +22,20 @@
   --ink-faint: #938da8;
   --rule: #e2dff0;
 
-  --primary: #7c3aed;
-  --primary-strong: #6d28d9;
-  --primary-soft: #f3edfd;
-  --accent: #7c3aed;
-  --accent-strong: #6d28d9;
-  --accent-soft: #f3edfd;
+  --primary: #2563eb;
+  --primary-strong: #1d4ed8;
+  --primary-soft: #e8f0fe;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #e8f0fe;
 
   /* Solid button fills - deliberately NOT tied to --primary/--accent.
      Those shift to a lighter tint in dark mode (correct for text/links on
      black), but a light tint painted as a solid fill with white text on
-     top fails contrast. Buttons get one fixed, saturated violet that
-     reads clearly in both themes. */
-  --btn-fill: #7c3aed;
-  --btn-fill-hover: #6d28d9;
+     top fails contrast. Buttons get one fixed, saturated blue that reads
+     clearly in both themes. */
+  --btn-fill: #2563eb;
+  --btn-fill-hover: #1d4ed8;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -69,12 +69,12 @@
     --ink-faint: #6b6580;
     --rule: #2b2733;
 
-    --primary: #a78bfa;
-    --primary-strong: #c4b5fd;
-    --primary-soft: #2a1f47;
-    --accent: #a78bfa;
-    --accent-strong: #c4b5fd;
-    --accent-soft: #2a1f47;
+    --primary: #60a5fa;
+    --primary-strong: #93c5fd;
+    --primary-soft: #16233d;
+    --accent: #60a5fa;
+    --accent-strong: #93c5fd;
+    --accent-soft: #16233d;
 
     --signal: #fbbf24;
     --signal-soft: #2c2210;
@@ -98,12 +98,12 @@
   --ink-faint: #6b6580;
   --rule: #2b2733;
 
-  --primary: #a78bfa;
-  --primary-strong: #c4b5fd;
-  --primary-soft: #2a1f47;
-  --accent: #a78bfa;
-  --accent-strong: #c4b5fd;
-  --accent-soft: #2a1f47;
+  --primary: #60a5fa;
+  --primary-strong: #93c5fd;
+  --primary-soft: #16233d;
+  --accent: #60a5fa;
+  --accent-strong: #93c5fd;
+  --accent-soft: #16233d;
 
   --signal: #fbbf24;
   --signal-soft: #2c2210;
@@ -126,12 +126,12 @@
   --ink-faint: #938da8;
   --rule: #e2dff0;
 
-  --primary: #7c3aed;
-  --primary-strong: #6d28d9;
-  --primary-soft: #f3edfd;
-  --accent: #7c3aed;
-  --accent-strong: #6d28d9;
-  --accent-soft: #f3edfd;
+  --primary: #2563eb;
+  --primary-strong: #1d4ed8;
+  --primary-soft: #e8f0fe;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #e8f0fe;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
