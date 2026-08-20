@@ -1029,6 +1029,13 @@ body { min-height: 100vh; }
 }
 .timeline-node--draggable { cursor: grab; }
 .timeline-node--draggable:active { cursor: grabbing; }
+.timeline-node--selected .timeline-node__body {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px var(--accent-strong);
+  padding: 0.3rem 0.5rem;
+  margin: -0.3rem -0.5rem;
+}
 
 .board__header {
   display: flex;

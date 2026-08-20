@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { GoogleMap, OverlayView, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
@@ -6,10 +7,12 @@ import {
 } from '../icons';
 import './routeWorkspace.css';
 
-// No embedded live map here by design - "View on map" / "Open in Maps"
-// deep-links straight to Google Maps with a precise pin (see
-// route_service.single_stop_maps_link on the backend) instead. Every
-// delivery card and the route header both carry that link.
+// Set VITE_GOOGLE_MAPS_API_KEY (a browser-restricted Google Maps
+// JavaScript API key - a different product from the server-side Geocoding
+// key) to turn on the live marker map. Every other part of this workspace
+// works with or without it - the map panel falls back to a plain "open in
+// Google Maps" link until it's set.
+const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
 
 function capacityText(count, capacity) {
   if (!capacity) return `${count}`;
@@ -91,6 +94,80 @@ function RouteSidebarCard({ route, isSelected, onSelect, capacityFor }) {
   );
 }
 
+// Big red numbered pins (matching the "View pin" red used elsewhere), one
+// per stop, click-synced with the delivery timeline in both directions.
+function RouteMapPanel({ route, selectedOrderId, onSelectOrder }) {
+  // useJsApiLoader must run every render regardless of branch (rules of
+  // hooks) - it only actually injects Google's script tag once a non-empty
+  // key is passed, so an unset key never fires a network request.
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: 'rootplan-google-map',
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+  });
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    return (
+      <div className="route-map route-map--placeholder">
+        <IconPin width={26} height={26} />
+        <p>Live map view needs a Google Maps API key.</p>
+        <p className="route-map__hint">Set VITE_GOOGLE_MAPS_API_KEY (Maps JavaScript API, browser-restricted) to turn this on.</p>
+        {route?.google_maps_url && (
+          <a className="btn btn--outline" href={route.google_maps_url} target="_blank" rel="noopener noreferrer">
+            <IconPin width={14} height={14} />
+            Open full route in Google Maps
+          </a>
+        )}
+      </div>
+    );
+  }
+  if (loadError) {
+    return <div className="route-map route-map--placeholder"><p>Map unavailable.</p></div>;
+  }
+  if (!isLoaded) {
+    return <div className="route-map route-map--placeholder"><div className="skeleton-line" /></div>;
+  }
+  if (!route) {
+    return <div className="route-map route-map--placeholder"><p>Select a route to see it on the map.</p></div>;
+  }
+
+  const stops = route.orders.filter((o) => o.lat != null && o.lng != null);
+  if (stops.length === 0) {
+    return <div className="route-map route-map--placeholder"><p>No located deliveries on this route yet.</p></div>;
+  }
+
+  const center = { lat: stops[0].lat, lng: stops[0].lng };
+
+  return (
+    <GoogleMap
+      mapContainerClassName="route-map__canvas"
+      center={center}
+      zoom={12}
+      options={{ disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'greedy' }}
+    >
+      {stops.map((order, idx) => {
+        const isSelected = String(order.order_id) === String(selectedOrderId);
+        return (
+          <OverlayView
+            key={order.order_id}
+            position={{ lat: order.lat, lng: order.lng }}
+            mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+            getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h })}
+          >
+            <button
+              type="button"
+              className={`map-marker${isSelected ? ' map-marker--selected' : ''}${order.is_late ? ' map-marker--late' : ''}`}
+              onClick={() => onSelectOrder(order.order_id)}
+              title={`${idx + 1} — ${order.customer_name || order.order_id}`}
+            >
+              {idx + 1}
+            </button>
+          </OverlayView>
+        );
+      })}
+    </GoogleMap>
+  );
+}
+
 // Faithful reconstruction of the original route card design (vehicle chip,
 // data-strip stats, collapsible route-timeline with a depot -> stops ->
 // finish line) for the selected route, per feedback asking for the old
@@ -102,12 +179,20 @@ function RouteManifest({
   route, routeIdx, routes, capacityFor, pendingOrders,
   onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
   onReassignOrder, onAssignOrders, onReorderRoute,
+  selectedOrderId, onSelectOrder,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const capacity = capacityFor(route.vehicle_type);
   const count = route.orders.length;
   const isFull = count >= capacity;
   const isEdited = route.status === 'manually_edited';
+  const nodeRefs = useRef({});
+
+  useEffect(() => {
+    if (selectedOrderId && nodeRefs.current[selectedOrderId]) {
+      nodeRefs.current[selectedOrderId].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedOrderId]);
 
   const dragRef = useRef(null);
   const handleDragStart = (orderId) => { dragRef.current = String(orderId); };
@@ -259,9 +344,11 @@ function RouteManifest({
           {route.orders.map((order, stopIdx) => (
             <div
               key={order.order_id}
-              className="timeline-node timeline-node--draggable"
+              className={`timeline-node timeline-node--draggable${String(order.order_id) === String(selectedOrderId) ? ' timeline-node--selected' : ''}`}
+              ref={(el) => { nodeRefs.current[order.order_id] = el; }}
               draggable
               title="Drag to reorder this delivery within the route"
+              onClick={() => onSelectOrder?.(order.order_id)}
               onDragStart={() => handleDragStart(order.order_id)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => handleDrop(order.order_id)}
@@ -465,6 +552,7 @@ export default function RouteWorkspace({
 }) {
   const [tab, setTab] = useState('routes');
   const [selectedRouteName, setSelectedRouteName] = useState(null);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [routeSearch, setRouteSearch] = useState('');
 
   useEffect(() => {
@@ -558,7 +646,7 @@ export default function RouteWorkspace({
                   route={route}
                   capacityFor={capacityFor}
                   isSelected={route.route_name === selectedRouteName}
-                  onSelect={() => setSelectedRouteName(route.route_name)}
+                  onSelect={() => { setSelectedRouteName(route.route_name); setSelectedOrderId(null); }}
                 />
               ))}
             </div>
@@ -580,8 +668,14 @@ export default function RouteWorkspace({
                 onReassignOrder={onReassignOrder}
                 onAssignOrders={onAssignOrders}
                 onReorderRoute={onReorderRoute}
+                selectedOrderId={selectedOrderId}
+                onSelectOrder={setSelectedOrderId}
               />
             )}
+          </div>
+
+          <div className="route-workspace-pane route-workspace-pane--map">
+            <RouteMapPanel route={selectedRoute} selectedOrderId={selectedOrderId} onSelectOrder={setSelectedOrderId} />
           </div>
         </div>
       )}
