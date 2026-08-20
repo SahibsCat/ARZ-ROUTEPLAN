@@ -37,6 +37,16 @@ def test_generate_routes_endpoint_returns_route_plan():
     body = response.json()
     assert body["route_count"] == 3
     assert len(body["routes"]) == 3
+    # Regression: routes returned here must carry a real route_id (the
+    # persisted Route row's id) so the frontend can immediately call the
+    # manual add/remove/reorder endpoints against a just-generated route
+    # without a reload. Before this was fixed, these came straight from
+    # route_service.generate_routes()'s raw in-memory computation, which has
+    # no route_id at all - every manual edit call built a URL like
+    # "/api/routes/undefined/orders" and 422'd.
+    for route in body["routes"]:
+        assert route["route_id"] is not None
+        assert route["capacity"] is not None
 
 
 def test_api_routes_generate_alias_matches_generate_route_plan():

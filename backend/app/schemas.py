@@ -17,12 +17,22 @@ class UploadResponse(BaseModel):
 
 
 class RouteItem(BaseModel):
+    # Nullable/absent for a route straight out of route_service.generate_routes()
+    # (the raw computation, before it's ever hit the DB) - always present once
+    # it's been through crud.route_summary(), which is what every manual-edit
+    # endpoint (add/remove/reorder order, in main.py) needs to target this
+    # route at all. _process_route_generation rebuilds its response from the
+    # persisted plan specifically so these are never missing on screen.
+    route_id: Optional[int] = None
     route_name: str
     vehicle_type: str
     orders: List[dict]
     route_distance_km: Optional[float] = None
     route_time_minutes: Optional[float] = None
     number_of_stops: int = 0
+    capacity: Optional[int] = None
+    available_capacity: Optional[int] = None
+    is_full: Optional[bool] = None
     route_segments: List[dict] = []
     google_maps_url: Optional[str] = None
     estimated_finish_time: Optional[str] = None
@@ -31,6 +41,7 @@ class RouteItem(BaseModel):
     late_deliveries: List[object] = []
     utilization_percent: Optional[float] = None
     is_auto_created: bool = False
+    status: Optional[str] = None
 
 
 class RoutePlanResponse(BaseModel):

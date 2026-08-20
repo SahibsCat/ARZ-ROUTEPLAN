@@ -916,10 +916,26 @@ function App() {
     });
   };
 
+  // FastAPI error bodies aren't always a plain string - a 422 validation
+  // error's `detail` is a list of {msg, loc, ...} objects, not text. Always
+  // returns a plain, readable string so a warning never renders as
+  // "[object Object]" (React stringifies a non-string child via
+  // Object.prototype.toString, not JSON.stringify).
+  const describeErrorDetail = (detail, fallback) => {
+    if (!detail) return fallback;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail.map((d) => (typeof d === 'string' ? d : d?.msg)).filter(Boolean);
+      return messages.length ? messages.join('; ') : fallback;
+    }
+    if (typeof detail === 'object') return detail.msg || fallback;
+    return fallback;
+  };
+
   const parseErrorDetail = async (response, fallback) => {
     try {
       const body = await response.json();
-      return body.detail || fallback;
+      return describeErrorDetail(body.detail, fallback);
     } catch {
       return fallback;
     }
@@ -1885,18 +1901,22 @@ function App() {
           </div>
         )}
 
-        {/* Alerts */}
+        {/* Alerts. describeErrorDetail guards against ever rendering a raw
+            object/array as a message (React stringifies those as
+            "[object Object]") - every entry here is guaranteed plain text
+            by the time it lands in errors/warnings state, but this is the
+            last line of defense right at render time too. */}
         {errors.length > 0 && (
           <div className="alert alert--error">
             <IconAlert />
-            <div>{errors.map((err, idx) => <p key={idx}>{err}</p>)}</div>
+            <div>{errors.map((err, idx) => <p key={idx}>{describeErrorDetail(err, 'Something went wrong.')}</p>)}</div>
           </div>
         )}
 
         {warnings.length > 0 && (
           <div className="alert alert--warn">
             <IconAlert />
-            <div>{warnings.map((warning, idx) => <p key={idx}>{warning}</p>)}</div>
+            <div>{warnings.map((warning, idx) => <p key={idx}>{describeErrorDetail(warning, 'Something needs your attention.')}</p>)}</div>
           </div>
         )}
 

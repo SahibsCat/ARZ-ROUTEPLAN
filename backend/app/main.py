@@ -223,6 +223,30 @@ async def api_upload_excel(file: UploadFile = File(...), db: Session = Depends(g
     return await _process_upload(file, db)
 
 
+def _persisted_plan_response(db: Session, plan_id: Optional[int], fallback_plan: Dict[str, object]) -> RoutePlanResponse:
+    """Builds the response from the *persisted* plan (crud.route_plan_summary,
+    reading back the real Route/RouteStop rows) rather than the raw dict
+    route_service.generate_routes() returned - the raw dict's routes never
+    carry a route_id (they're a pure in-memory computation, not DB rows yet),
+    which broke every manual add/remove/reorder call the moment the admin
+    tried to act on a just-generated route (see RouteItem.route_id). Falls
+    back to the raw plan only if persistence itself failed, so the screen
+    still shows *something* instead of a 500."""
+    if plan_id is not None:
+        route_plan = crud.get_route_plan(db, plan_id)
+        if route_plan is not None:
+            persisted = crud.route_plan_summary(route_plan)
+            return RoutePlanResponse(
+                route_count=persisted["route_count"],
+                routes=persisted["routes"],
+                pending_orders=persisted["pending_orders"],
+                warnings=fallback_plan.get("warnings", []),
+                plan_id=plan_id,
+                is_saved=False,
+            )
+    return RoutePlanResponse(**fallback_plan, plan_id=plan_id, is_saved=False)
+
+
 def _process_route_generation(
     orders: List[Dict[str, object]],
     available_cars: int,
@@ -240,7 +264,7 @@ def _process_route_generation(
     # Always False here - a freshly generated plan is always a new unsaved
     # draft (save_route_plan just replaced any previous draft for this
     # batch with it). The user has to click Save to promote it.
-    return RoutePlanResponse(**plan, plan_id=plan_id, is_saved=False)
+    return _persisted_plan_response(db, plan_id, plan)
 
 
 @app.post("/generate-routes", response_model=RoutePlanResponse)
@@ -324,6 +348,7 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
         )
         plan_id = _safe_save_route_plan(db, batch_id, plan, available_cars, available_bikes)
         _safe_update_fleet_settings(db, available_cars, available_bikes)
+        persisted_response = _persisted_plan_response(db, plan_id, plan)
 
         return {
             "message": "Retry processed successfully",
@@ -332,9 +357,9 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
             "orders": updated_orders,
             "successful_orders": successful_orders,
             "failed_orders": failed_orders,
-            "routes": plan.get("routes", []),
-            "pending_orders": plan.get("pending_orders", []),
-            "warnings": plan.get("warnings", []),
+            "routes": [route.model_dump() for route in persisted_response.routes],
+            "pending_orders": persisted_response.pending_orders,
+            "warnings": persisted_response.warnings,
             "plan_id": plan_id,
             "is_saved": False,
         }
