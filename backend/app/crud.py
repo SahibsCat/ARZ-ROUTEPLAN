@@ -24,6 +24,13 @@ from app.route_service import recompute_route_metrics, single_stop_maps_link, ve
 SETTINGS_ROW_ID = 1
 
 _CITY_NOISE_WORDS = {"chennai", "tamil nadu", "tamilnadu", "tn", "india"}
+# Building/flat descriptors and landmark references - real parts of the
+# address, just never the area name itself, and they tend to sit in the
+# same trailing position an area would (right before the city), which was
+# throwing off "the area is the last non-noise segment" for addresses like
+# "Adyar, Independent House, near CSI church, Chennai - 600020".
+_BUILDING_NOISE_WORDS = {"independent house", "flat", "ground floor", "first floor", "second floor"}
+_LANDMARK_PREFIXES = ("opp", "opposite", "near", "behind", "beside", "next to", "backside", "above", "below", "adjacent", "close to", "front of")
 
 
 def derive_area(address: Optional[str]) -> Optional[str]:
@@ -31,17 +38,21 @@ def derive_area(address: Optional[str]) -> Optional[str]:
     for the UI's AREA hierarchy and Excel export - never fabricated, always
     a literal substring of the address the admin actually uploaded.
     Chennai delivery addresses are almost always comma-separated
-    "door/street, AREA, city, pincode", so the area is reliably the last
-    remaining segment once the city name and pincode are stripped out.
-    Returns None if the address is too sparse to say anything useful
-    (single-segment addresses just show as-is in the UI instead)."""
+    "door/street, AREA, city, pincode" (with the occasional building name
+    or "near <landmark>" thrown in too), so the area is reliably the last
+    remaining segment once the city name, pincode, and those descriptors
+    are stripped out. Returns None if the address is too sparse to say
+    anything useful (single-segment addresses just show as-is in the UI
+    instead of a wrong guess)."""
     if not address:
         return None
     segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
 
     def is_noise(segment: str) -> bool:
         low = segment.lower()
-        if low in _CITY_NOISE_WORDS:
+        if low in _CITY_NOISE_WORDS or low in _BUILDING_NOISE_WORDS:
+            return True
+        if low.startswith(_LANDMARK_PREFIXES):
             return True
         if re.fullmatch(r"\d{6}", segment):  # bare pincode
             return True
@@ -49,8 +60,17 @@ def derive_area(address: Optional[str]) -> Optional[str]:
             return True
         return False
 
+    # Needs at least 2 *original* segments (comma-structured address) before
+    # trusting a result - a single-segment address ("1 Main St") has nothing
+    # to distinguish an area from, so returns None rather than echoing the
+    # whole address back as if it were one. Once that structural bar is
+    # cleared, even a single surviving candidate after noise-filtering is a
+    # confident answer (e.g. "Adyar, Independent House, Chennai" - 1 of 3
+    # segments survives and it's exactly right), not a weak one.
+    if len(segments) < 2:
+        return None
     candidates = [s for s in segments if not is_noise(s)]
-    if len(candidates) < 2:  # nothing distinct from the full address to show
+    if not candidates:
         return None
     return candidates[-1]
 
@@ -1028,10 +1048,12 @@ def route_summary(route: Route) -> Dict[str, object]:
     # the order's address when derive_area() couldn't isolate one, so an
     # address-only order still contributes something rather than a blank.
     seen_areas: List[str] = []
+    seen_areas_lower = set()
     for order in orders:
         label = order.get("area") or order.get("address")
-        if label and label not in seen_areas:
+        if label and label.lower() not in seen_areas_lower:
             seen_areas.append(label)
+            seen_areas_lower.add(label.lower())
 
     segments: List[Dict[str, object]] = []
     from_label = "Depot"

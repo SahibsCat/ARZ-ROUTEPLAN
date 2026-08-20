@@ -199,6 +199,12 @@ def test_derive_area_extracts_locality_from_comma_separated_address():
     assert crud.derive_area(None) is None
 
 
+def test_derive_area_skips_building_and_landmark_descriptors():
+    assert crud.derive_area("Adyar, Independent House, Chennai - 600020") == "Adyar"
+    assert crud.derive_area("9th Cross Street, Adyar, near CSI St.Lukes church, Chennai - 600020") == "Adyar"
+    assert crud.derive_area("RA Puram, Opp to CSI St.Lukes church, Chennai - 600028") == "RA Puram"
+
+
 def test_order_summary_and_route_summary_include_area(db_session):
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
         {"order_id": "1", "customer_name": "Alice", "address": "12, 4th Main Road, Velachery, Chennai - 600042", "delivery_time": "18:00", "lat": 13.0, "lng": 80.2},
