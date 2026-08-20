@@ -135,9 +135,11 @@ function RouteSidebarCard({ route, isSelected, onSelect, capacityFor }) {
 
 function RouteHeader({
   route, capacityFor, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
+  pendingOrders, onAssignOrders,
 }) {
   const capacity = capacityFor(route.vehicle_type);
   const count = route.orders.length;
+  const isFull = count >= capacity;
   return (
     <div className="route-header">
       <div className="route-header__top">
@@ -148,6 +150,22 @@ function RouteHeader({
           </span>
         </div>
         <div className="route-header__actions">
+          <select
+            className="stop-move add-delivery-select"
+            value=""
+            disabled={isFull || pendingOrders.length === 0}
+            title={isFull ? 'This route is full' : 'Add an unassigned order to this route'}
+            onChange={(e) => { const orderId = e.target.value; if (orderId) onAssignOrders([orderId], route.route_name); e.target.value = ''; }}
+          >
+            <option value="">
+              {isFull ? 'Route full' : pendingOrders.length === 0 ? 'No unassigned orders' : '+ Add Delivery'}
+            </option>
+            {pendingOrders.map((order) => (
+              <option key={order.order_id} value={order.order_id}>
+                #{order.order_id} — {order.customer_name || 'Unnamed'}
+              </option>
+            ))}
+          </select>
           <button className="btn btn--outline" onClick={() => onDownload(route)}>
             <IconDownload width={14} height={14} />
             Download Excel
@@ -480,6 +498,8 @@ export default function RouteWorkspace({
                   onDeleteRoute={onDeleteRoute}
                   isDeletingRoute={isDeletingRoute}
                   onDownload={onDownloadRoute}
+                  pendingOrders={pendingOrders}
+                  onAssignOrders={onAssignOrders}
                 />
                 {selectedRoute.orders.length === 0 ? (
                   <div className="empty-state">No deliveries assigned to this route. Add one from Unassigned Orders.</div>
