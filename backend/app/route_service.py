@@ -91,6 +91,26 @@ def build_vehicle_specs(available_cars: int, available_bikes: int) -> List[Dict[
     return specs
 
 
+def dedupe_orders_by_id(orders: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Drops any order whose order_id has already been seen, keeping the
+    first occurrence and its position. excel_service.validate_excel_file
+    now rejects a duplicate order_id at upload time, but this is the
+    choke point every route computation - auto-generate and every manual
+    add/remove/reorder/vehicle-toggle - actually runs through, so it's
+    where an already-duplicated order (from data uploaded before that
+    fix, or from any other caller of these functions) gets caught before
+    it can turn into the same address appearing twice on the same route."""
+    seen = set()
+    deduped: List[Dict[str, object]] = []
+    for order in orders:
+        key = str(order.get("order_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(order)
+    return deduped
+
+
 def has_coordinates(order: Dict[str, object]) -> bool:
     return order.get("lat") is not None and order.get("lng") is not None
 
@@ -462,6 +482,7 @@ def recompute_route_metrics(route_orders: List[Dict[str, object]], vehicle_type:
     aggregate fields are never left stale relative to its current stops;
     mirrors the per-route math generate_routes() does for the auto-build
     path so both stay consistent with each other."""
+    route_orders = dedupe_orders_by_id(route_orders)
     depot = VELOCHERY_DEPOT
     capacity = vehicle_capacity(vehicle_type)
     route_start_minutes = compute_route_start_minutes(route_orders)
@@ -508,6 +529,10 @@ def generate_routes(orders: List[Dict[str, object]], available_cars: int, availa
             "pending_orders": [],
             "warnings": [],
         }
+
+    deduped_orders = dedupe_orders_by_id(orders)
+    duplicate_count = len(orders) - len(deduped_orders)
+    orders = deduped_orders
 
     depot = VELOCHERY_DEPOT
     route_start_minutes = compute_route_start_minutes(orders)
@@ -560,6 +585,11 @@ def generate_routes(orders: List[Dict[str, object]], available_cars: int, availa
         })
 
     warnings: List[str] = []
+    if duplicate_count:
+        warnings.append(
+            f"{duplicate_count} order(s) had a duplicate order_id and were skipped - "
+            "only the first occurrence of each was routed."
+        )
     if available_cars <= 0 and available_bikes <= 0 and pending_orders:
         warnings.append(
             "No vehicles configured - add at least one car or bike to generate routes. "

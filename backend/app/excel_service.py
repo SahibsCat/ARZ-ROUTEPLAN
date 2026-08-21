@@ -102,6 +102,11 @@ def validate_excel_file(file_path: str) -> Dict[str, object]:
         data_rows = rows[header_index + 1 :]
         valid_rows = []
         errors = []
+        # Row number (1-based, matching the error messages below) the
+        # order_id was first seen at - lets a second occurrence of the same
+        # order_id point back to exactly where the original row is, instead
+        # of just saying "duplicate".
+        seen_order_ids: Dict[str, int] = {}
 
         for row_offset, row in enumerate(data_rows, start=header_index + 2):
             if not any(cell is not None and str(cell).strip() for cell in row):
@@ -139,6 +144,24 @@ def validate_excel_file(file_path: str) -> Dict[str, object]:
             if not row_data.get("delivery_time"):
                 errors.append(f"Row {row_offset}: delivery_time is missing")
                 continue
+
+            # Same order_id appearing twice in one upload used to become two
+            # separate stops - same address, same delivery slot, same
+            # everything - silently duplicated onto the same route (or two
+            # routes) with no indication anything was wrong. Checked only
+            # once a row has otherwise passed validation, so a genuinely
+            # invalid earlier row (missing a required field) never blocks a
+            # later, valid row with the same order_id from going through.
+            # The first valid occurrence wins; every later one is dropped
+            # and called out by row number.
+            duplicate_of = seen_order_ids.get(row_data["order_id"])
+            if duplicate_of is not None:
+                errors.append(
+                    f"Row {row_offset}: duplicate order_id '{row_data['order_id']}' "
+                    f"(already seen at row {duplicate_of}) - this row was skipped"
+                )
+                continue
+            seen_order_ids[row_data["order_id"]] = row_offset
 
             # Convert lat / lng if present in excel
             if row_data.get("lat"):

@@ -54,6 +54,27 @@ def test_validate_excel_file_accepts_sample_header_synonyms(tmp_path):
     assert result["orders"][0]["delivery_time"] == "12pm sharp"
 
 
+def test_validate_excel_file_drops_duplicate_order_id(tmp_path):
+    file_path = tmp_path / "orders.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["order_id", "customer_name", "address", "delivery_time"])
+    sheet.append(["17", "praveen", "Ceebros Blvd, Mettukuppam, Chennai", "12pm to 1pm"])
+    sheet.append(["18", "kumar", "Some other street, Chennai", "1pm to 2pm"])
+    # Same order_id as row 2 (a real duplicate row, not a coincidence) - used
+    # to become a second identical stop on whatever route order 17 landed
+    # on. Only the first occurrence should survive.
+    sheet.append(["17", "praveen", "Ceebros Blvd, Mettukuppam, Chennai", "12pm to 1pm"])
+    workbook.save(file_path)
+
+    result = validate_excel_file(str(file_path))
+
+    assert result["total_orders"] == 2
+    order_ids = [o["order_id"] for o in result["orders"]]
+    assert order_ids == ["17", "18"]
+    assert any("duplicate order_id" in e for e in result["errors"])
+
+
 def test_validate_excel_file_preserves_extra_business_columns(tmp_path):
     file_path = tmp_path / "orders.xlsx"
     workbook = Workbook()

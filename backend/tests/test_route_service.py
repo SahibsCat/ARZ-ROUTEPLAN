@@ -1,4 +1,30 @@
-from app.route_service import generate_routes, BIKE_CAPACITY
+from app.route_service import generate_routes, recompute_route_metrics, BIKE_CAPACITY
+
+
+def test_generate_routes_drops_duplicate_order_id_instead_of_double_booking_it():
+    orders = [
+        {"order_id": "17", "customer_name": "Praveen", "address": "1 Main", "delivery_time": "12:00"},
+        {"order_id": "17", "customer_name": "Praveen", "address": "1 Main", "delivery_time": "12:00"},
+        {"order_id": "18", "customer_name": "Kumar", "address": "2 Main", "delivery_time": "12:00"},
+    ]
+
+    result = generate_routes(orders, available_cars=1, available_bikes=1)
+
+    all_order_ids = [o["order_id"] for route in result["routes"] for o in route["orders"]]
+    assert all_order_ids.count("17") == 1
+    assert any("duplicate order_id" in w for w in result["warnings"])
+
+
+def test_recompute_route_metrics_drops_duplicate_order_id():
+    route_orders = [
+        {"order_id": "17", "customer_name": "Praveen", "address": "1 Main", "delivery_time": "12:00"},
+        {"order_id": "17", "customer_name": "Praveen", "address": "1 Main", "delivery_time": "12:00"},
+    ]
+
+    metrics = recompute_route_metrics(route_orders, "car")
+
+    assert len(metrics["orders"]) == 1
+    assert metrics["number_of_stops"] == 1
 
 
 def test_generate_routes_groups_orders_into_priority_routes():
