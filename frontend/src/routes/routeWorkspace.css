@@ -125,7 +125,11 @@
 .capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
 .capacity-bar__fill { display: block; height: 100%; background: #9cd5ff; border-radius: 4px; transition: width 0.2s ease; }
 .capacity-bar__fill--warn { background: var(--signal); }
-.capacity-bar__fill--full { background: var(--critical); }
+/* A full route is a normal, desirable outcome - not an error - so it
+   doesn't get --critical (red, "something's wrong"). Matches the
+   route-status-badge--full color for the same reason: full capacity and
+   a genuinely late/critical route are two different signals. */
+.capacity-bar__fill--full { background: var(--neutral); }
 
 /* =======================================================================
    Routes List page - spacious header, compact summary strip, dedicated
@@ -224,6 +228,22 @@
 .route-row__cell--distance, .route-row__cell--eta { font-size: 0.85rem; color: var(--ink); }
 .route-row__cell--actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .route-row__view { padding: 0.4rem 0.9rem; font-size: 0.8rem; }
+
+/* The header row reuses the same .route-row__cell--* classes as the body
+   rows so the columns line up under the grid - but that meant the
+   per-column body styling (stops/distance/eta set their own font-size and
+   color: var(--ink)) leaked into the header labels too, making "STOPS",
+   "DISTANCE" and "FINISH ETA" render bold and bright while the other
+   headers stayed correctly muted. Every header cell now explicitly
+   inherits from .routes-table__head instead, regardless of which
+   column-specific class it also carries. */
+.routes-table__head .route-row__cell {
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
 
 .route-status-badge {
   display: inline-flex;
