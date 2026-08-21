@@ -2,11 +2,13 @@
    Dispatch/Unassigned boards. Reuses App.css's design tokens (--ink,
    --surface, --accent, --good, --critical, --radius-*, --shadow-*, ...) so
    it reads as the same product in both themes, rather than inventing a
-   second visual language. */
+   second visual language.
 
-/* Sorts this whole board above the Returns (failed-address) board, which
-   sits right after it in the JSX with no order override of its own
-   (default order: 0) - see App.jsx's board-grid. */
+   Structure: a Routes List page (summary strip -> filter bar -> wide
+   table) that drills into a Route Detail page (header -> overview strip ->
+   spacious stop list) on "View" / row click, plus the existing Unassigned
+   Orders tab. No sidebar/dashboard/header changes live here. */
+
 .board--workspace { padding: 0; order: -1; }
 
 /* Buttons inside this workspace are inline, not the app-wide full-width
@@ -18,6 +20,38 @@
   border: 1px solid var(--critical-soft);
 }
 .btn--danger-ghost:hover:not(:disabled) { background: var(--critical-soft); filter: none; }
+
+/* "Create Route" is the one primary call-to-action in this workspace - a
+   native <select> doubles as the car/bike choice, styled to read as a
+   filled primary button rather than a plain form control. */
+.add-route-select {
+  appearance: none;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.6rem 2rem 0.6rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--btn-fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E") no-repeat right 0.6rem center / 14px;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.add-route-select:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.select-compact {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.select-compact:hover { border-color: var(--accent); }
+.select-compact:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .workspace-tabs {
   display: flex;
@@ -49,36 +83,6 @@
 }
 .workspace-tab__count--warn { background: var(--signal-soft); color: var(--signal); }
 
-/* --- Two-pane grid: route sidebar / delivery list ---
-   No fixed height and no internal overflow on purpose - both panes grow
-   to their natural content height and the page itself scrolls, same as
-   every other board on this dashboard. A route caps at 6 stops (car) / 3
-   stops (bike), so the delivery list never needs its own scroll region;
-   the sidebar shows every route in full, un-truncated. There's no embedded
-   map here - each delivery card links straight out to its own precise pin
-   on Google Maps (see .pin-badge below) instead. */
-.route-workspace-grid {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  align-items: start;
-}
-.route-workspace-pane { padding: 1rem; }
-.route-workspace-pane--sidebar {
-  border-right: 1px solid var(--rule);
-  background: var(--sidebar-bg, var(--surface-2));
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-.route-workspace-pane--deliveries { padding: 0; display: flex; flex-direction: column; }
-
-.route-nav-list { display: flex; flex-direction: column; gap: 0.55rem; }
-
-@media (max-width: 760px) {
-  .route-workspace-grid { grid-template-columns: 1fr; }
-  .route-workspace-pane--sidebar { border-right: none; border-bottom: 1px solid var(--rule); }
-}
-
 /* Any scrollable region left in this workspace (currently just the
    Unassigned Orders list, which can genuinely be long) keeps working with
    the mouse wheel / trackpad / touch - it just doesn't show a track. */
@@ -106,42 +110,12 @@
 }
 .search-field--compact { padding: 0.4rem 0.6rem; }
 
-/* --- Route sidebar cards --- */
-.route-nav-card {
-  text-align: left;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  padding: 0.7rem 0.8rem;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.route-nav-card:hover { border-color: var(--accent); }
-.route-nav-card--selected { border-color: var(--accent-strong); box-shadow: 0 0 0 2px var(--accent-soft); background: var(--accent-soft); }
-.route-nav-card__top { display: flex; align-items: center; justify-content: space-between; }
-.route-nav-card__name { font-weight: 700; font-size: 0.92rem; color: var(--ink); }
-.route-nav-card__stops { font-size: 0.78rem; color: var(--ink-soft); }
-.route-nav-card__areas { font-size: 0.78rem; color: var(--ink-soft); line-height: 1.4; }
-.route-nav-card__status { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--ink-soft); }
-
 .vehicle-pill {
   display: inline-flex; align-items: center; gap: 0.25rem;
   font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
   padding: 0.15rem 0.45rem; border-radius: var(--radius-sm);
   background: var(--surface-2); color: var(--ink-soft);
 }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); }
-.status-dot--edited { background: var(--accent-strong); }
-.status-dot--planned { background: var(--good); }
-.status-badge {
-  display: inline-block; margin-top: 0.2rem;
-  font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: var(--radius-sm);
-  background: var(--good-soft); color: var(--good);
-}
-.status-badge--edited { background: var(--accent-soft); color: var(--accent-strong); }
 
 /* --- Capacity bar --- */
 .capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
@@ -149,48 +123,295 @@
 .capacity-bar__fill--warn { background: var(--signal); }
 .capacity-bar__fill--full { background: var(--critical); }
 
-/* --- Route header --- */
-.route-header { padding: 1.1rem 1.4rem; border-bottom: 1px solid var(--rule); }
-.route-header__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.route-header__title { font-family: var(--font-display); font-size: 1.4rem; font-weight: 800; margin: 0 0 0.3rem; color: var(--ink); }
-.route-header__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.route-header__stats { display: flex; gap: 1.4rem; flex-wrap: wrap; margin-top: 1rem; align-items: flex-start; }
-.route-header__stat { display: flex; flex-direction: column; gap: 0.25rem; min-width: 90px; }
-.route-header__stat-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; }
-.route-header__stat-value { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
-.route-header__stat .capacity-bar { width: 90px; margin-top: 0.15rem; }
-.route-header__areas { margin-top: 0.9rem; font-size: 0.82rem; color: var(--ink-soft); }
+/* =======================================================================
+   Routes List page - spacious header, compact summary strip, dedicated
+   filter toolbar, then a wide table (not narrow cards) for the routes
+   themselves.
+======================================================================= */
+.routes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.75rem 2rem 2rem;
+}
 
-/* --- Delivery list & cards --- */
-.delivery-list { display: flex; flex-direction: column; gap: 0.6rem; padding: 1rem 1.4rem 1.4rem; }
-.delivery-card {
+.routes-page__header {
   display: flex;
   align-items: flex-start;
-  gap: 0.85rem;
-  padding: 0.85rem 1rem;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+.routes-page__title { font-family: var(--font-display); font-size: 1.75rem; font-weight: 800; margin: 0 0 0.3rem; color: var(--ink); }
+.routes-page__subtitle { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
+
+/* Compact indicators in a row, not oversized decorative cards - a thin
+   rule under the number is the only "card" styling. */
+.routes-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem 1.25rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   background: var(--surface);
-  cursor: grab;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.delivery-card:active { cursor: grabbing; }
-.delivery-card:hover { border-color: var(--accent); }
-.delivery-card--selected { border-color: var(--accent-strong); box-shadow: 0 0 0 2px var(--accent-soft); }
-.delivery-card--late { border-left: 3px solid var(--critical); }
-.delivery-card__seq {
-  flex: none;
-  width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  background: var(--accent-strong);
-  color: #fff;
-  font-weight: 800;
-  font-size: 0.95rem;
+.routes-summary__item { display: flex; flex-direction: column; gap: 0.2rem; }
+.routes-summary__value { font-size: 1.6rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
+.routes-summary__value--open { color: var(--primary-strong); }
+.routes-summary__value--full { color: var(--good); }
+.routes-summary__value--delayed { color: var(--signal); }
+.routes-summary__value--unassigned { color: var(--critical); }
+.routes-summary__label { font-size: 0.78rem; color: var(--ink-soft); }
+
+.routes-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.routes-filter-bar__search { flex: 1; min-width: 220px; max-width: 420px; }
+.routes-filter-bar__clear { margin-left: auto; }
+
+/* --- Routes table --- */
+.routes-table {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.routes-table__head {
+  display: grid;
+  grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 0.9fr 1fr 1.4fr;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+.routes-table__body { display: flex; flex-direction: column; }
+
+.route-row {
+  display: grid;
+  grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 0.9fr 1fr 1.4fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.route-row:last-child { border-bottom: none; }
+.route-row:hover { background: var(--surface-2); }
+.route-row:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
+
+.route-row__cell { min-width: 0; }
+.route-row__cell--route { display: flex; flex-direction: column; gap: 0.25rem; }
+.route-row__name { font-size: 0.95rem; font-weight: 700; color: var(--ink); }
+.route-row__subtitle { font-size: 0.78rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-row__muted { color: var(--ink-soft); font-size: 0.82rem; }
+.route-row__cell--stops { font-size: 0.88rem; color: var(--ink); }
+.route-row__cell--progress { display: flex; flex-direction: column; gap: 0.3rem; }
+.route-row__progress-text { font-size: 0.76rem; color: var(--ink-soft); }
+.route-row__cell--distance, .route-row__cell--eta { font-size: 0.85rem; color: var(--ink); }
+.route-row__cell--actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+.route-row__view { padding: 0.4rem 0.9rem; font-size: 0.8rem; }
+
+.route-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.route-status-badge--open { background: var(--primary-soft); color: var(--primary-strong); }
+.route-status-badge--full { background: var(--good-soft); color: var(--good); }
+.route-status-badge--delayed { background: var(--signal-soft); color: var(--signal); }
+.route-status-badge--empty { background: var(--surface-2); color: var(--ink-soft); }
+
+/* --- Row "More" menu --- */
+.row-menu { position: relative; }
+.row-menu__trigger { padding: 0.4rem 0.7rem; font-size: 0.8rem; }
+.row-menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  z-index: 5;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.row-menu__panel button, .row-menu__panel a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+  text-align: left;
+}
+.row-menu__panel button:hover, .row-menu__panel a:hover { background: var(--surface-2); }
+.row-menu__panel .row-menu__danger { color: var(--critical); }
+.row-menu__panel .row-menu__danger:hover { background: var(--critical-soft); }
+.row-menu__panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 1100px) {
+  .routes-table__head { display: none; }
+  .route-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "route"
+      "meta"
+      "progress"
+      "actions";
+    gap: 0.6rem;
+  }
+  .route-row__cell--vehicle, .route-row__cell--stops, .route-row__cell--distance, .route-row__cell--eta, .route-row__cell--status {
+    display: inline-flex;
+    margin-right: 0.75rem;
+  }
 }
 
-/* The shared identity block: Customer -> AREA -> full address, in that
-   visual weight - see brief. Address text is NEVER low-contrast. */
+/* =======================================================================
+   Route Detail page.
+======================================================================= */
+.route-detail { display: flex; flex-direction: column; }
+
+.route-detail__header {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 2rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+.route-detail__back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+.route-detail__back:hover { color: var(--accent-strong); }
+.route-detail__back-icon { transform: rotate(90deg); }
+.route-detail__title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.route-detail__title-block { display: flex; flex-direction: column; gap: 0.2rem; margin-right: 0.5rem; }
+.route-detail__title { font-family: var(--font-display); font-size: 1.75rem; font-weight: 800; margin: 0; color: var(--ink); }
+.route-detail__subtitle { font-size: 0.88rem; color: var(--ink-soft); }
+.route-detail__actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+
+/* A clean horizontal information bar, not a row of oversized cards. */
+.route-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 1.5rem;
+  padding: 1.25rem 2rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-2);
+}
+.route-overview__item { display: flex; flex-direction: column; gap: 0.25rem; }
+.route-overview__label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+.route-overview__value { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+
+/* --- Stop list: sequence rail + connecting line + spacious rows --- */
+.route-stop-list { display: flex; flex-direction: column; padding: 1.5rem 2rem 2rem; }
+
+.route-stop-list__terminal {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.4rem 0 0.4rem 0;
+  margin-left: 1px;
+  font-size: 0.82rem; font-weight: 600; color: var(--ink-soft);
+}
+.route-stop-list__terminal-dot {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--ink-soft); flex: none;
+}
+.route-stop-list__terminal-dot--end { background: var(--good-soft); color: var(--good); }
+
+.route-stop {
+  display: flex;
+  gap: 1rem;
+  padding: 1.1rem 0.75rem;
+  border-radius: var(--radius-md);
+  cursor: grab;
+  transition: background 0.12s ease;
+}
+.route-stop:active { cursor: grabbing; }
+.route-stop:hover { background: var(--surface-2); }
+.route-stop--selected { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-strong); }
+
+.route-stop__rail { display: flex; flex-direction: column; align-items: center; flex: none; }
+.route-stop__seq {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--route-color, var(--accent-strong));
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+}
+.route-stop__seq--late { background: var(--critical); }
+.route-stop__connector { flex: 1; width: 2px; min-height: 24px; background: var(--rule); margin: 0.3rem 0; }
+
+.route-stop__body { flex: 1; min-width: 0; padding-top: 0.15rem; }
+.route-stop__top { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
+.route-stop__order-id { font-size: 0.78rem; font-weight: 700; color: var(--ink-soft); font-family: var(--font-mono); }
+.route-stop__customer { font-size: 1rem; font-weight: 700; color: var(--ink); }
+.route-stop__area {
+  display: inline-block;
+  margin-bottom: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+/* Addresses are the most important field on this row - always full dark
+   ink, generous size, allowed to wrap to 2-3 lines. Never truncated. */
+.route-stop__address {
+  margin: 0.1rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink);
+  max-width: 62ch;
+}
+.route-stop__meta {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  font-size: 0.8rem; color: var(--ink-soft); margin-bottom: 0.6rem;
+}
+.route-stop__actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+
+.stop-status {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.78rem; font-weight: 600; color: var(--good);
+}
+.stop-status--late { color: var(--critical); }
+
+/* --- Delivery identity block (Unassigned Orders list only) --- */
 .delivery-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.18rem; }
 .delivery-identity__customer { font-size: 0.95rem; font-weight: 600; color: var(--ink); }
 .delivery-identity__area {
@@ -229,25 +450,6 @@
 }
 .pin-badge:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
-.delivery-card__side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
-.delivery-card__eta { font-size: 0.72rem; color: var(--ink-soft); font-family: var(--font-mono); }
-.delivery-card__reorder { display: flex; gap: 0.2rem; }
-.delivery-card__reorder button {
-  border: 1px solid var(--rule); background: var(--surface); border-radius: var(--radius-sm);
-  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft);
-}
-.delivery-card__reorder button:disabled { opacity: 0.35; cursor: not-allowed; }
-.delivery-card__reorder button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.delivery-card__actions { display: flex; gap: 0.3rem; }
-.icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: var(--radius-sm);
-  border: 1px solid var(--rule); background: var(--surface); color: var(--ink-soft);
-  cursor: pointer; text-decoration: none;
-}
-.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
-.icon-btn--danger:hover { border-color: var(--critical); color: var(--critical); background: var(--critical-soft); }
-
 /* --- Unassigned Orders panel --- */
 .unassigned-panel { padding: 1rem 1.4rem 1.4rem; display: flex; flex-direction: column; gap: 0.9rem; }
 .unassigned-panel__toolbar { display: flex; gap: 0.6rem; align-items: center; }
@@ -265,3 +467,8 @@
   background: var(--accent-soft); color: var(--accent-strong); font-size: 0.85rem; font-weight: 600;
 }
 .bulk-assign-bar select { padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+
+@media (max-width: 900px) {
+  .routes-page { padding: 1.25rem 1.1rem 1.5rem; gap: 1.1rem; }
+  .route-detail__header, .route-overview, .route-stop-list { padding-left: 1.1rem; padding-right: 1.1rem; }
+}
