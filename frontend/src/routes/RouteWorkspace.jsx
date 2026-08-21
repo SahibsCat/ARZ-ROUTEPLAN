@@ -836,8 +836,16 @@ export default function RouteWorkspace({
   isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses,
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders,
+  requestedTab,
 }) {
   const [tab, setTab] = useState('routes');
+  // requestedTab is a one-way "command" from the sidebar nav (clicking
+  // "Unassigned Orders" should actually switch this tab, not just scroll
+  // near it) - a change in this prop jumps the tab; the tab buttons below
+  // still update `tab` directly for an immediate click response.
+  useEffect(() => {
+    if (requestedTab === 'routes' || requestedTab === 'unassigned') setTab(requestedTab);
+  }, [requestedTab]);
   const [view, setView] = useState('list'); // 'list' | 'detail'
   const [selectedRouteName, setSelectedRouteName] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);

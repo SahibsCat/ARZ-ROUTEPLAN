@@ -1229,8 +1229,8 @@ function App() {
   // Palette mirrors App.css's --btn-fill / --ink / --good / --critical so the
   // sheet reads as the same product, not a plain default-Excel export.
   // ARGB (exceljs requires the leading alpha channel - FF = fully opaque).
-  const XLSX_VIOLET = 'FF4F46E5'; // brand indigo, kept the historical name to avoid touching every call site below
-  const XLSX_VIOLET_DARK = 'FF4338CA';
+  const XLSX_VIOLET = 'FF5B7FFF'; // brand accent blue, kept the historical name to avoid touching every call site below
+  const XLSX_VIOLET_DARK = 'FF3D5FE0';
   const XLSX_ZEBRA = 'FFF3F1FA';
   const XLSX_WHITE = 'FFFFFFFF';
   const XLSX_INK = 'FF1E1B2E';
@@ -1618,6 +1618,17 @@ function App() {
   const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   const alertCount = errors.length + warnings.length;
 
+  // The header always said "Dashboard" no matter which section the
+  // sidebar had scrolled to - no way to confirm where you actually were.
+  // Tied to the same activeNav the sidebar highlights, so the two agree.
+  const HEADER_CONTENT = {
+    dashboard: { title: 'Dashboard', subtitle: 'Delivery route planning & vehicle assignment' },
+    generate: { title: 'Routes', subtitle: `${routes.length} route${routes.length === 1 ? '' : 's'} today` },
+    unassigned: { title: 'Unassigned Orders', subtitle: `${pendingOrders.length} order${pendingOrders.length === 1 ? '' : 's'} waiting on assignment` },
+    failed: { title: 'Failed Addresses', subtitle: `${failedOrders.length} address${failedOrders.length === 1 ? '' : 'es'} needing attention` },
+  };
+  const headerContent = HEADER_CONTENT[activeNav] || HEADER_CONTENT.dashboard;
+
   // All nine KPIs below are computed straight from live state - no
   // simulated history, no placeholder numbers.
   const assignedOrdersCount = routes.reduce((sum, r) => sum + (r.orders?.length || 0), 0);
@@ -1651,7 +1662,7 @@ function App() {
           <img src={arzLogoDark} alt="ARZ Food Ventures" className="brand-logo brand-logo--dark" style={{ height: 28 }} />
           <div className="sidebar__brand-text">
             <div className="sidebar__brand-title">OptiRoute</div>
-            <div className="sidebar__brand-sub">ARZ Food Ventures</div>
+            <div className="sidebar__brand-sub" title="ARZ Food Ventures">ARZ Food Ventures</div>
           </div>
           <button
             className="sidebar__toggle"
@@ -1716,8 +1727,8 @@ function App() {
             </button>
 
             <div className="topbar__title">
-              <h1>Dashboard</h1>
-              <p>Delivery route planning &amp; vehicle assignment</p>
+              <h1>{headerContent.title}</h1>
+              <p>{headerContent.subtitle}</p>
             </div>
 
             <div className="topbar__search">
@@ -1824,65 +1835,80 @@ function App() {
         </div>
 
       <div className="kpi-strip">
-          <div className="kpi-strip__inner">
-            <KpiTile
-              variant="orders" icon={IconInbox} value={totalOrders} label="Today's orders"
-              graphic={<MiniProportionBar segments={[
-                { value: assignedOrdersCount, color: 'var(--primary)' },
-                { value: pendingOrders.length, color: 'var(--signal)' },
-                { value: failedOrders.length, color: 'var(--critical)' },
-              ]} />}
-            />
-            <KpiTile
-              variant="assigned" icon={IconCheck} value={assignedOrdersCount} label="Assigned orders"
-              graphic={<MiniProportionBar segments={[
-                { value: assignedOrdersCount, color: 'var(--good)' },
-                { value: Math.max(0, totalOrders - assignedOrdersCount), color: 'var(--rule)' },
-              ]} />}
-            />
-            <KpiTile
-              variant="pending" icon={IconClock} value={pendingOrders.length} label="Pending orders"
-              graphic={<MiniProportionBar segments={[
-                { value: pendingOrders.length, color: 'var(--signal)' },
-                { value: Math.max(0, totalOrders - pendingOrders.length), color: 'var(--rule)' },
-              ]} />}
-            />
-            <KpiTile
-              variant="failed" icon={IconAlert} value={failedOrders.length} label="Failed addresses"
-              graphic={<MiniProportionBar segments={[
-                { value: failedOrders.length, color: 'var(--critical)' },
-                { value: Math.max(0, totalOrders - failedOrders.length), color: 'var(--rule)' },
-              ]} />}
-            />
-            <KpiTile
-              variant="bikes" icon={IconBike} value={bikes} label="Available bikes"
-              graphic={<MiniProportionBar segments={[
-                { value: bikes, color: 'var(--good)' },
-                { value: cars, color: 'var(--rule)' },
-              ]} />}
-            />
-            <KpiTile
-              variant="cars" icon={IconCar} value={cars} label="Available cars"
-              graphic={<MiniProportionBar segments={[
-                { value: cars, color: 'var(--good)' },
-                { value: bikes, color: 'var(--rule)' },
-              ]} />}
-            />
-            <KpiTile
-              variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance"
-              graphic={<MiniSparkBars values={routes.map((r) => r.route_distance_km || 0)} color="var(--primary)" />}
-            />
-            <KpiTile
-              variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA"
-              graphic={<MiniSparkBars values={routes.map((r) => r.route_time_minutes || 0)} color="var(--signal)" />}
-            />
-            <KpiTile
-              variant="routes" icon={IconRoute} value={routes.length} label="Today's routes"
-              graphic={<MiniProportionBar segments={[
-                { value: carRoutesCount, color: 'var(--primary)' },
-                { value: bikeRoutesCount, color: 'var(--good)' },
-              ]} />}
-            />
+          <div className="kpi-cluster">
+            <span className="kpi-cluster__label">Orders</span>
+            <div className="kpi-cluster__grid">
+              <KpiTile
+                variant="orders" icon={IconInbox} value={totalOrders} label="Today's orders"
+                graphic={<MiniProportionBar segments={[
+                  { value: assignedOrdersCount, color: 'var(--primary)' },
+                  { value: pendingOrders.length, color: 'var(--signal)' },
+                  { value: failedOrders.length, color: 'var(--critical)' },
+                ]} />}
+              />
+              <KpiTile
+                variant="assigned" icon={IconCheck} value={assignedOrdersCount} label="Assigned orders"
+                graphic={<MiniProportionBar segments={[
+                  { value: assignedOrdersCount, color: 'var(--primary)' },
+                  { value: Math.max(0, totalOrders - assignedOrdersCount), color: 'var(--rule)' },
+                ]} />}
+              />
+              <KpiTile
+                variant="pending" icon={IconClock} value={pendingOrders.length} label="Pending orders"
+                graphic={<MiniProportionBar segments={[
+                  { value: pendingOrders.length, color: 'var(--signal)' },
+                  { value: Math.max(0, totalOrders - pendingOrders.length), color: 'var(--rule)' },
+                ]} />}
+              />
+              <KpiTile
+                variant="failed" icon={IconAlert} value={failedOrders.length} label="Failed addresses"
+                graphic={<MiniProportionBar segments={[
+                  { value: failedOrders.length, color: 'var(--critical)' },
+                  { value: Math.max(0, totalOrders - failedOrders.length), color: 'var(--rule)' },
+                ]} />}
+              />
+            </div>
+          </div>
+
+          <div className="kpi-cluster">
+            <span className="kpi-cluster__label">Fleet</span>
+            <div className="kpi-cluster__grid">
+              <KpiTile
+                variant="bikes" icon={IconBike} value={bikes} label="Available bikes"
+                graphic={<MiniProportionBar segments={[
+                  { value: bikes, color: 'var(--primary)' },
+                  { value: cars, color: 'var(--rule)' },
+                ]} />}
+              />
+              <KpiTile
+                variant="cars" icon={IconCar} value={cars} label="Available cars"
+                graphic={<MiniProportionBar segments={[
+                  { value: cars, color: 'var(--primary)' },
+                  { value: bikes, color: 'var(--rule)' },
+                ]} />}
+              />
+            </div>
+          </div>
+
+          <div className="kpi-cluster">
+            <span className="kpi-cluster__label">Routes</span>
+            <div className="kpi-cluster__grid">
+              <KpiTile
+                variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance"
+                graphic={<MiniSparkBars values={routes.map((r) => r.route_distance_km || 0)} color="var(--primary)" />}
+              />
+              <KpiTile
+                variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA"
+                graphic={<MiniSparkBars values={routes.map((r) => r.route_time_minutes || 0)} color="var(--primary)" />}
+              />
+              <KpiTile
+                variant="routes" icon={IconRoute} value={routes.length} label="Today's routes"
+                graphic={<MiniProportionBar segments={[
+                  { value: carRoutesCount, color: 'var(--primary)' },
+                  { value: bikeRoutesCount, color: 'var(--neutral)' },
+                ]} />}
+              />
+            </div>
           </div>
       </div>
 
@@ -2199,6 +2225,7 @@ function App() {
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
+            requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
           />
 
         </div>

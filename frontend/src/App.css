@@ -9,50 +9,52 @@
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 
 /* =======================================================================
-   Tokens — an ivory-and-navy identity that threads through both themes
-   instead of two unrelated palettes: light mode is warm ivory paper with
-   deep-navy ink and navy-filled buttons; dark mode inverts it exactly -
-   true-black paper with ivory ink and ivory-filled buttons. --primary-soft
-   (badges, the capacity/progress bar) is the same deep navy in both
-   themes - a light tint on white, a dark fill on black.
+   Tokens — one disciplined dark-first system: near-black canvas/surface
+   scale for structure, a single blue brand accent (buttons, active nav,
+   links, focus rings), and semantic status colors reserved ONLY for real
+   status meaning (on-time/delayed/failed) - never for decorative icon
+   chips or progress bars on metrics that aren't a good/bad signal. Light
+   mode mirrors the same structure with a light neutral scale, keeping the
+   identical accent and status colors so both themes read as one product.
 ======================================================================= */
 :root {
-  --paper: #fbf8f1;
-  --surface: #ffffff;
-  --surface-2: #f2ecdd;
-  --ink: #15173d;
-  --ink-soft: #4b4e74;
-  --ink-faint: #8b8da8;
-  --rule: #e6dfcb;
+  --paper: #ffffff;
+  --surface: #f7f8fa;
+  --surface-2: #eef0f3;
+  --ink: #14171c;
+  --ink-soft: #5c636e;
+  --ink-faint: #9aa1ac;
+  --rule: #e2e5ea;
 
-  --primary: #3a3d82;
-  --primary-strong: #15173d;
-  --primary-soft: #e7e6f5;
-  --accent: #3a3d82;
-  --accent-strong: #15173d;
-  --accent-soft: #e7e6f5;
+  --primary: #5b7fff;
+  --primary-strong: #3d5fe0;
+  --primary-soft: #e8edff;
+  --accent: #5b7fff;
+  --accent-strong: #3d5fe0;
+  --accent-soft: #e8edff;
 
-  /* Solid button fills - the same off-white fill / navy text pairing in
-     every theme, not tinted per-theme like --primary/--accent are. One
-     consistent button identity across light and dark instead of two. */
-  --btn-fill: #fffaf0;
-  --btn-fill-hover: #f2e9d3;
-  --btn-text: #080616;
-  --btn-font-weight: 800;
+  /* Solid button fills - the single accent color, same in every theme -
+     buttons don't shift per theme the way surfaces/text do. */
+  --btn-fill: #5b7fff;
+  --btn-fill-hover: #7295ff;
+  --btn-text: #ffffff;
+  --btn-font-weight: 600;
 
-  --signal: #d97706;
+  --signal: #f5a623;
   --signal-soft: #fef3e2;
-  --good: #059669;
-  --good-soft: #e3f6ee;
-  --critical: #dc2626;
+  --good: #22c55e;
+  --good-soft: #e6f9ed;
+  --critical: #ef4444;
   --critical-soft: #fdecec;
+  --neutral: #6b7280;
+  --neutral-soft: #eef0f3;
 
-  --sidebar-bg: #fdfbf6;
+  --sidebar-bg: #ffffff;
 
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --shadow-sm: 0 1px 2px rgba(20, 23, 28, 0.05);
   --shadow-md: 0 1px 3px rgba(20, 23, 28, 0.04), 0 8px 20px -4px rgba(20, 23, 28, 0.08);
   --shadow-lg: 0 4px 8px rgba(20, 23, 28, 0.04), 0 16px 36px -8px rgba(20, 23, 28, 0.14);
@@ -64,101 +66,107 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #000000;
-    --surface: #000000;
-    --surface-2: #100f14;
-    --ink: #fffaf3;
-    --ink-soft: #b9b3a6;
-    --ink-faint: #726c60;
-    --rule: #232128;
+    --paper: #0b0d11;
+    --surface: #14171c;
+    --surface-2: #1b1f26;
+    --ink: #f2f3f5;
+    --ink-soft: #9aa1ac;
+    --ink-faint: #5c636e;
+    --rule: #262b33;
 
-    --primary: #5b5fa6;
-    --primary-strong: #8a8fd9;
-    --primary-soft: #15173d;
-    --accent: #5b5fa6;
-    --accent-strong: #8a8fd9;
-    --accent-soft: #15173d;
+    --primary: #5b7fff;
+    --primary-strong: #7295ff;
+    --primary-soft: #1a2340;
+    --accent: #5b7fff;
+    --accent-strong: #7295ff;
+    --accent-soft: #1a2340;
 
-    --btn-fill: #fffaf0;
-    --btn-fill-hover: #f2e9d3;
-    --btn-text: #080616;
-    --btn-font-weight: 800;
+    --btn-fill: #5b7fff;
+    --btn-fill-hover: #7295ff;
+    --btn-text: #ffffff;
+    --btn-font-weight: 600;
 
-    --signal: #fbbf24;
-    --signal-soft: #2c2210;
-    --good: #34d399;
-    --good-soft: #0f2b23;
-    --critical: #f87171;
-    --critical-soft: #341717;
+    --signal: #f5a623;
+    --signal-soft: #33270f;
+    --good: #22c55e;
+    --good-soft: #123021;
+    --critical: #ef4444;
+    --critical-soft: #391818;
+    --neutral: #6b7280;
+    --neutral-soft: #1b1f26;
 
-    --sidebar-bg: #000000;
+    --sidebar-bg: #0b0d11;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
   }
 }
 :root[data-theme="dark"] {
-  --paper: #000000;
-  --surface: #000000;
-  --surface-2: #100f14;
-  --ink: #fffaf3;
-  --ink-soft: #b9b3a6;
-  --ink-faint: #726c60;
-  --rule: #232128;
+  --paper: #0b0d11;
+  --surface: #14171c;
+  --surface-2: #1b1f26;
+  --ink: #f2f3f5;
+  --ink-soft: #9aa1ac;
+  --ink-faint: #5c636e;
+  --rule: #262b33;
 
-  --primary: #5b5fa6;
-  --primary-strong: #8a8fd9;
-  --primary-soft: #15173d;
-  --accent: #5b5fa6;
-  --accent-strong: #8a8fd9;
-  --accent-soft: #15173d;
+  --primary: #5b7fff;
+  --primary-strong: #7295ff;
+  --primary-soft: #1a2340;
+  --accent: #5b7fff;
+  --accent-strong: #7295ff;
+  --accent-soft: #1a2340;
 
-  --btn-fill: #fffaf0;
-  --btn-fill-hover: #f2e9d3;
-  --btn-text: #080616;
-  --btn-font-weight: 800;
+  --btn-fill: #5b7fff;
+  --btn-fill-hover: #7295ff;
+  --btn-text: #ffffff;
+  --btn-font-weight: 600;
 
-  --signal: #fbbf24;
-  --signal-soft: #2c2210;
-  --good: #34d399;
-  --good-soft: #0f2b23;
-  --critical: #f87171;
-  --critical-soft: #341717;
+  --signal: #f5a623;
+  --signal-soft: #33270f;
+  --good: #22c55e;
+  --good-soft: #123021;
+  --critical: #ef4444;
+  --critical-soft: #391818;
+  --neutral: #6b7280;
+  --neutral-soft: #1b1f26;
 
-  --sidebar-bg: #000000;
+  --sidebar-bg: #0b0d11;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
 }
 :root[data-theme="light"] {
-  --paper: #fbf8f1;
-  --surface: #ffffff;
-  --surface-2: #f2ecdd;
-  --ink: #15173d;
-  --ink-soft: #4b4e74;
-  --ink-faint: #8b8da8;
-  --rule: #e6dfcb;
+  --paper: #ffffff;
+  --surface: #f7f8fa;
+  --surface-2: #eef0f3;
+  --ink: #14171c;
+  --ink-soft: #5c636e;
+  --ink-faint: #9aa1ac;
+  --rule: #e2e5ea;
 
-  --primary: #3a3d82;
-  --primary-strong: #15173d;
-  --primary-soft: #e7e6f5;
-  --accent: #3a3d82;
-  --accent-strong: #15173d;
-  --accent-soft: #e7e6f5;
+  --primary: #5b7fff;
+  --primary-strong: #3d5fe0;
+  --primary-soft: #e8edff;
+  --accent: #5b7fff;
+  --accent-strong: #3d5fe0;
+  --accent-soft: #e8edff;
 
-  --btn-fill: #fffaf0;
-  --btn-fill-hover: #f2e9d3;
-  --btn-text: #080616;
-  --btn-font-weight: 800;
+  --btn-fill: #5b7fff;
+  --btn-fill-hover: #7295ff;
+  --btn-text: #ffffff;
+  --btn-font-weight: 600;
 
-  --signal: #d97706;
+  --signal: #f5a623;
   --signal-soft: #fef3e2;
-  --good: #059669;
-  --good-soft: #e3f6ee;
-  --critical: #dc2626;
+  --good: #22c55e;
+  --good-soft: #e6f9ed;
+  --critical: #ef4444;
   --critical-soft: #fdecec;
+  --neutral: #6b7280;
+  --neutral-soft: #eef0f3;
 
-  --sidebar-bg: #fdfbf6;
+  --sidebar-bg: #ffffff;
   --shadow-sm: 0 1px 2px rgba(20, 23, 28, 0.05);
   --shadow-md: 0 1px 3px rgba(20, 23, 28, 0.04), 0 8px 20px -4px rgba(20, 23, 28, 0.08);
   --shadow-lg: 0 4px 8px rgba(20, 23, 28, 0.04), 0 16px 36px -8px rgba(20, 23, 28, 0.14);
@@ -196,7 +204,7 @@ body { min-height: 100vh; }
    Sidebar
 ======================================================================= */
 .sidebar {
-  --sidebar-w: 248px;
+  --sidebar-w: 268px;
   width: var(--sidebar-w);
   flex: none;
   position: sticky;
@@ -227,7 +235,7 @@ body { min-height: 100vh; }
   color: var(--ink);
   line-height: 1.2;
 }
-.sidebar__brand-sub { font-size: 0.7rem; color: var(--ink-faint); }
+.sidebar__brand-sub { font-size: 0.7rem; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar--collapsed .sidebar__brand-text { display: none; }
 
 .brand-logo { width: auto; flex: none; }
@@ -479,9 +487,10 @@ body { min-height: 100vh; }
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.45rem 0.8rem;
+  height: 40px;
+  padding: 0 1.1rem;
   font-family: var(--font-body);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: var(--btn-font-weight, 600);
   color: var(--btn-text, #fff);
   background: var(--btn-fill);
@@ -533,8 +542,22 @@ body { min-height: 100vh; }
 ======================================================================= */
 .kpi-strip {
   padding: 1.75rem 2rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
-.kpi-strip__inner {
+/* Three labeled groups instead of one flat 3x3 grid - Orders, Fleet, and
+   Routes each get their own row, so related metrics read together
+   instead of nine equally-loud numbers competing at once. */
+.kpi-cluster { display: flex; flex-direction: column; gap: 0.6rem; }
+.kpi-cluster__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.kpi-cluster__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.25rem;
@@ -562,19 +585,21 @@ body { min-height: 100vh; }
 .kpi-tile__value {
   display: block;
   font-family: var(--font-display);
-  font-size: 1.75rem;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.15;
   color: var(--ink);
 }
-.kpi-tile__suffix { font-size: 1rem; font-weight: 600; margin-left: 0.15rem; color: var(--ink-faint); }
+.kpi-tile__suffix { font-size: 15px; font-weight: 600; margin-left: 0.15rem; color: var(--ink-faint); }
 .kpi-tile__label {
   display: block;
   margin-top: 0.1rem;
-  font-size: 0.78rem;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
 }
 
 /* Every tile shares one clean, flat background - color is spent only on
@@ -582,15 +607,13 @@ body { min-height: 100vh; }
    gradient. Keeps the strip calm and legible instead of a strip of
    differently-colored glowing cards. */
 
-.kpi-tile--orders .kpi-tile__icon { background: var(--surface-2); color: var(--ink-soft); }
-.kpi-tile--routes .kpi-tile__icon { background: var(--primary-soft); color: var(--primary); }
-.kpi-tile--assigned .kpi-tile__icon { background: var(--good-soft); color: var(--good); }
+/* One neutral chip style for every metric that isn't itself a status
+   signal - "available bikes" or "total distance" isn't good/bad, so it
+   doesn't get a status color. Only Pending and Failed genuinely represent
+   something needing attention, so only those two keep semantic color. */
+.kpi-tile__icon { background: var(--surface-2); color: var(--ink-soft); }
 .kpi-tile--pending .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
 .kpi-tile--failed .kpi-tile__icon { background: var(--critical-soft); color: var(--critical); }
-.kpi-tile--cars .kpi-tile__icon { background: var(--good-soft); color: var(--good); }
-.kpi-tile--bikes .kpi-tile__icon { background: var(--good-soft); color: var(--good); }
-.kpi-tile--distance .kpi-tile__icon { background: var(--primary-soft); color: var(--primary); }
-.kpi-tile--eta .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
 
 /* Mini graphics — real proportions/breakdowns from today's data, not a
    simulated history. */
@@ -711,9 +734,10 @@ body { min-height: 100vh; }
   align-items: center;
   gap: 0.4rem;
   align-self: flex-end;
-  padding: 0.55rem 0.95rem;
+  height: 40px;
+  padding: 0 1.1rem;
   font-family: var(--font-body);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: var(--btn-font-weight, 600);
   color: var(--btn-text, #fff);
   background: var(--btn-fill);
@@ -734,14 +758,15 @@ body { min-height: 100vh; }
 .toolbar-btn--ghost:hover:not(:disabled) { filter: none; background: var(--accent-soft); box-shadow: none; color: var(--ink); }
 .toolbar-btn--ghost:disabled { background: transparent; color: var(--ink-faint); }
 
-/* Save/Delete sit on saturated semantic fills (green/red), not the
-   near-white --btn-fill the base button uses - they need their own fixed
-   white text rather than inheriting --btn-text (which is a dark navy,
-   meant for the light --btn-fill and unreadable on these). */
-.toolbar-btn--save { background: var(--good); color: #fff; }
-.toolbar-btn--save:disabled { background: var(--good); color: #fff; opacity: 0.6; cursor: default; }
+/* Three variants only: Primary (solid accent - Regenerate, Save),
+   Secondary (outline - Download all), Destructive (solid danger -
+   Delete). Save used to be solid green ("success"), which made it look
+   like a status confirmation rather than an action - it's just the
+   primary action here, same as Regenerate, so it gets the same treatment
+   instead of its own fourth color. */
+.toolbar-btn--save:disabled { background: var(--ink-faint); color: var(--paper); opacity: 0.6; cursor: default; }
 .toolbar-btn--danger { background: var(--critical); color: #fff; }
-.toolbar-btn--danger:hover:not(:disabled) { box-shadow: 0 4px 10px rgba(220, 38, 38, 0.35); }
+.toolbar-btn--danger:hover:not(:disabled) { box-shadow: 0 4px 10px rgba(239, 68, 68, 0.35); }
 
 .icon-spin { animation: rp-spin 0.8s linear infinite; }
 @keyframes rp-spin { to { transform: rotate(360deg); } }
@@ -1069,8 +1094,8 @@ body { min-height: 100vh; }
 }
 .board__title {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.05rem;
+  font-weight: 600;
+  font-size: 18px;
   letter-spacing: -0.01em;
   margin: 0;
 }

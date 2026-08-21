@@ -234,7 +234,11 @@
   font-weight: 700;
 }
 .route-status-badge--open { background: var(--primary-soft); color: var(--primary-strong); }
-.route-status-badge--full { background: var(--good-soft); color: var(--good); }
+/* Deliberately NOT --good (green) - that already means "on time" on the
+   delivery-status pill below. Route capacity and delivery timing are two
+   different signals; sharing green would make them look like the same
+   thing when a route can be full AND late, or open AND on time. */
+.route-status-badge--full { background: var(--neutral-soft); color: var(--neutral); }
 .route-status-badge--delayed { background: var(--signal-soft); color: var(--signal); }
 .route-status-badge--empty { background: var(--surface-2); color: var(--ink-soft); }
 
@@ -397,8 +401,8 @@
    ink, generous size, allowed to wrap to 2-3 lines. Never truncated. */
 .route-stop__address {
   margin: 0.15rem 0 0.6rem;
-  font-size: 1.02rem;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   line-height: 1.55;
   color: var(--ink);
   max-width: 62ch;
@@ -426,8 +430,8 @@
   color: var(--accent-strong);
 }
 .delivery-identity__address {
-  font-size: 0.86rem;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--ink);
   line-height: 1.4;
 }
