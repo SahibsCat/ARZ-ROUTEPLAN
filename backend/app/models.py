@@ -243,9 +243,11 @@ class GeocodingCache(Base):
 
 class Driver(Base):
     """A delivery driver/partner - login identity for the driver app, plus
-    the roster fields the admin manages from the Drivers page. Never
-    hard-deleted while any route/tracking history references it (see
-    crud_driver.deactivate_driver) - `status` is the soft-delete."""
+    the roster fields the admin manages from the Drivers page. `status`
+    (active/inactive) is the reversible way to disable a login; deleting
+    (crud_driver.delete_driver) is permanent - it un-assigns any route
+    they're on (routes.driver_id -> NULL) and removes their sessions and
+    GPS ping history for good."""
     __tablename__ = "drivers"
 
     id = Column(Integer, primary_key=True)

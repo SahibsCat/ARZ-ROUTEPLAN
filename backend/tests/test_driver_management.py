@@ -92,6 +92,29 @@ def test_deactivate_driver_revokes_existing_sessions(db_session):
     assert session.revoked_at is not None
 
 
+def test_delete_driver_removes_them(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    crud_driver.delete_driver(db_session, driver.id)
+    assert crud_driver.get_driver(db_session, driver.id) is None
+
+
+def test_delete_driver_unassigns_their_route_without_touching_it(db_session):
+    route = _route(db_session)
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+
+    crud_driver.delete_driver(db_session, driver.id)
+
+    db_session.refresh(route)
+    assert route.driver_id is None
+    assert len(route.stops) == 2  # the route and its stops are untouched
+
+
+def test_delete_unknown_driver_raises(db_session):
+    with pytest.raises(crud_driver.DriverNotFoundError):
+        crud_driver.delete_driver(db_session, 999)
+
+
 def test_reset_password_revokes_existing_sessions(db_session):
     driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
     _, session = crud_driver.authenticate_driver(db_session, "kumar", "pass123")

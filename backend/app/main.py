@@ -821,6 +821,15 @@ def update_driver_endpoint(driver_id: int, payload: UpdateDriverRequest = Body(.
     return {"driver": crud_driver.driver_summary(driver)}
 
 
+@app.delete("/api/drivers/{driver_id}")
+def delete_driver_endpoint(driver_id: int, db: Session = Depends(get_db)):
+    try:
+        crud_driver.delete_driver(db, driver_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"deleted": True}
+
+
 @app.patch("/api/drivers/{driver_id}/status")
 def set_driver_status_endpoint(driver_id: int, payload: DriverStatusRequest = Body(...), db: Session = Depends(get_db)):
     try:

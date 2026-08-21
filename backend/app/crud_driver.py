@@ -126,6 +126,19 @@ def set_driver_status(db: Session, driver_id: int, status: str) -> Driver:
     return driver
 
 
+def delete_driver(db: Session, driver_id: int) -> None:
+    """Hard delete. Any route currently assigned to this driver just loses
+    its driver (routes.driver_id is ON DELETE SET NULL) rather than being
+    touched otherwise, and the driver's sessions/location pings go with
+    them (ON DELETE CASCADE on both) - nothing about the route plan or its
+    stops changes."""
+    driver = get_driver(db, driver_id)
+    if driver is None:
+        raise DriverNotFoundError("Driver not found")
+    db.delete(driver)
+    db.commit()
+
+
 def reset_driver_password(db: Session, driver_id: int, new_password: str) -> Driver:
     driver = get_driver(db, driver_id)
     if driver is None:
@@ -376,8 +389,9 @@ def get_driver_active_route(db: Session, driver: Driver) -> Optional[Dict[str, o
     route = get_driver_current_route(db, driver.id)
     if route is None:
         return None
-    summary = crud.route_summary(route)
-    summary["route_run_status"] = route.route_run_status
-    summary["started_at"] = route.started_at.isoformat() if route.started_at else None
-    summary["completed_at"] = route.completed_at.isoformat() if route.completed_at else None
-    return summary
+    # route_run_status/started_at/completed_at are on crud.route_summary()
+    # itself now - see its docstring-adjacent comment for why (this used to
+    # patch them in ad hoc here, which the /start and /end endpoints never
+    # did, so the driver app's UI would only show "in progress" after a
+    # manual refresh that happened to come through this function).
+    return crud.route_summary(route)

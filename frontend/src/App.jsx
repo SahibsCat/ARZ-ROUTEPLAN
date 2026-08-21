@@ -262,45 +262,61 @@ function DriverFormModal({ driver, onSave, onClose, isSubmitting }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
-        <div className="modal__header">
-          <h3>{isEdit ? `Edit ${driver.name}` : 'Add Driver'}</h3>
-          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+    <div className="history-overlay" role="dialog" aria-modal="true" aria-label={isEdit ? 'Edit Driver' : 'Add Driver'}>
+      <div className="history-overlay__scrim" onClick={onClose} />
+      <form className="history-panel history-panel--wide" onSubmit={handleSubmit}>
+        <div className="history-panel__head">
+          <h2>{isEdit ? `Edit ${driver.name}` : 'Add Driver'}</h2>
+          <button type="button" className="topbar__icon-btn" onClick={onClose} aria-label="Close"><IconX width={18} height={18} /></button>
         </div>
-        <div className="modal__body">
-          <label className="modal__field-label" htmlFor="driver-name">Full name</label>
-          <input id="driver-name" className="modal__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ramesh Kumar" autoFocus />
+        <p className="history-panel__sub">
+          {isEdit ? 'Update this driver\'s details.' : 'Create a login for the Driver App - the driver signs in with the username and password set here.'}
+        </p>
+        <div className="history-panel__body">
+          <div className="driver-form-grid">
+            <div className="driver-form-grid__full">
+              <label className="modal__field-label" htmlFor="driver-name">Full name</label>
+              <input id="driver-name" className="modal__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ramesh Kumar" autoFocus />
+            </div>
 
-          {isEdit ? (
-            <>
-              <label className="modal__field-label">Login username</label>
-              <div className="modal__static-value">{driver.username} <span className="modal__static-hint">— use Reset Password to change credentials</span></div>
-            </>
-          ) : (
-            <>
-              <label className="modal__field-label" htmlFor="driver-username">Login username</label>
-              <input id="driver-username" className="modal__input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. ramesh.k" />
-
-              <label className="modal__field-label" htmlFor="driver-password">Initial password</label>
-              <div className="modal__inline-row">
-                <input id="driver-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
-                <button type="button" className="btn btn--outline btn--compact" onClick={() => setPassword(generateRandomPassword())}>Generate</button>
+            {isEdit ? (
+              <div className="driver-form-grid__full">
+                <label className="modal__field-label">Login username</label>
+                <div className="modal__static-value">{driver.username} <span className="modal__static-hint">— use Reset Password to change credentials</span></div>
               </div>
-            </>
-          )}
+            ) : (
+              <>
+                <div>
+                  <label className="modal__field-label" htmlFor="driver-username">Login username</label>
+                  <input id="driver-username" className="modal__input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. ramesh.k" />
+                </div>
+                <div>
+                  <label className="modal__field-label" htmlFor="driver-password">Initial password</label>
+                  <div className="modal__inline-row">
+                    <input id="driver-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
+                    <button type="button" className="btn btn--outline btn--compact" onClick={() => setPassword(generateRandomPassword())}>Generate</button>
+                  </div>
+                </div>
+              </>
+            )}
 
-          <label className="modal__field-label" htmlFor="driver-mobile">Mobile number</label>
-          <input id="driver-mobile" className="modal__input" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Optional" />
+            <div>
+              <label className="modal__field-label" htmlFor="driver-mobile">Mobile number</label>
+              <input id="driver-mobile" className="modal__input" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Optional" />
+            </div>
+            <div>
+              <label className="modal__field-label" htmlFor="driver-vehicle">Vehicle number</label>
+              <input id="driver-vehicle" className="modal__input" value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="e.g. TN-01-AB-1234 (optional)" />
+            </div>
 
-          <label className="modal__field-label" htmlFor="driver-vehicle">Vehicle number</label>
-          <input id="driver-vehicle" className="modal__input" value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="e.g. TN-01-AB-1234 (optional)" />
-
-          <label className="modal__field-label" htmlFor="driver-notes">Notes</label>
-          <input id="driver-notes" className="modal__input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+            <div className="driver-form-grid__full">
+              <label className="modal__field-label" htmlFor="driver-notes">Notes</label>
+              <input id="driver-notes" className="modal__input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+            </div>
+          </div>
+          {error && <div className="modal__warning"><IconAlert width={13} height={13} />{error}</div>}
         </div>
-        {error && <div className="modal__warning"><IconAlert width={13} height={13} />{error}</div>}
-        <div className="modal__footer">
+        <div className="history-panel__footer">
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn--primary" disabled={!canSubmit || isSubmitting}>
             {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Driver'}
@@ -430,6 +446,7 @@ function App() {
   const [resetPasswordDriver, setResetPasswordDriver] = useState(null);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isTogglingDriverStatus, setIsTogglingDriverStatus] = useState(null); // driver id or null
+  const [isDeletingDriver, setIsDeletingDriver] = useState(null); // driver id or null
 
   // The geocoded orders routes were last built from - kept around so the
   // fleet count can change and routes can be rebuilt without re-uploading.
@@ -964,6 +981,30 @@ function App() {
       showToast(err.message || 'Could not update driver status.');
     } finally {
       setIsTogglingDriverStatus(null);
+    }
+  };
+
+  // Permanent - unlike deactivate, this can't be undone. Un-assigns their
+  // route (if any) rather than touching it, and drops their session/GPS
+  // history for good; see crud_driver.delete_driver on the backend.
+  const handleDeleteDriver = async (driver) => {
+    const routeWarning = driver.assigned_route_name
+      ? ` They'll be removed from ${driver.assigned_route_name} first - the route itself is untouched.`
+      : '';
+    if (!window.confirm(`Permanently delete ${driver.name} (${driver.driver_code})? This can't be undone - their login and location history are removed for good.${routeWarning}`)) return;
+    setIsDeletingDriver(driver.id);
+    try {
+      const response = await apiFetch(`/api/drivers/${driver.id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Could not delete driver (${response.status})`);
+      }
+      showToast(`${driver.name} deleted.`);
+      await refreshDrivers();
+    } catch (err) {
+      showToast(err.message || 'Could not delete driver.');
+    } finally {
+      setIsDeletingDriver(null);
     }
   };
 
@@ -2864,6 +2905,14 @@ function App() {
                                 onClick={() => handleToggleDriverStatus(driver)}
                               >
                                 {isTogglingDriverStatus === driver.id ? '…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--compact btn--danger-ghost"
+                                disabled={isDeletingDriver === driver.id}
+                                onClick={() => handleDeleteDriver(driver)}
+                              >
+                                {isDeletingDriver === driver.id ? '…' : 'Delete'}
                               </button>
                             </div>
                           </td>
