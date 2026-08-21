@@ -243,7 +243,7 @@ function RouteRow({ route, capacityFor, onOpen, onDownload, onDeleteRoute, isDel
         <StatusBadge status={status} />
       </div>
       <div className="route-row__cell route-row__cell--actions">
-        <button type="button" className="btn route-row__view" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+        <button type="button" className="btn btn--outline route-row__view" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
           View
         </button>
         <RowMenu route={route} onDownload={onDownload} onDeleteRoute={onDeleteRoute} isDeletingRoute={isDeletingRoute} />

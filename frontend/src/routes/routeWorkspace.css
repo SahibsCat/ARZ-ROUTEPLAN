@@ -25,7 +25,6 @@
    native <select> doubles as the car/bike choice, styled to read as a
    filled primary button rather than a plain form control. */
 .add-route-select {
-  position: relative;
   appearance: none;
   font-family: var(--font-body);
   font-weight: 700;
@@ -33,22 +32,13 @@
   padding: 0.6rem 2rem 0.6rem 1rem;
   border: none;
   border-radius: var(--radius-sm);
-  /* --btn-fill is a gradient (an <image>), so it has to stack as its own
-     background-image layer alongside the chevron icon - the old
-     `background: var(--btn-fill) url(...)` shorthand only worked back
-     when --btn-fill was a plain color; with two images in one non-comma
-     layer it's invalid CSS and silently drops the whole declaration. */
-  background-image: var(--btn-fill), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
-  background-repeat: no-repeat, no-repeat;
-  background-position: left top, right 0.6rem center;
-  background-size: auto, 14px;
+  background: var(--btn-fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E") no-repeat right 0.6rem center / 14px;
   color: #fff;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.2s ease-out, box-shadow 0.2s ease-out;
-  box-shadow: 0 0 20px var(--glow-accent);
+  transition: filter 0.15s ease, transform 0.15s ease;
 }
-.add-route-select:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 0 30px var(--glow-accent); }
-.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none !important; }
+.add-route-select:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .select-compact {
   font-family: var(--font-body);
@@ -128,21 +118,13 @@
 }
 
 /* --- Capacity bar (the "percentage line") --- */
-/* The accent gradient in every theme, with a soft glow bloomed toward the
-   leading (right) edge of the fill - not the semantic --good token, which
-   still means "success" everywhere else (e.g. delivered/on-time chips).
-   Only the warn/full states stay tied to the shared signal/neutral
-   tokens, since those are real status colors. */
-.capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: visible; position: relative; }
-.capacity-bar__fill {
-  display: block;
-  height: 100%;
-  background: var(--accent-gradient);
-  border-radius: 4px;
-  box-shadow: 3px 0 8px -1px var(--glow-accent);
-  transition: width 0.2s ease-out;
-}
-.capacity-bar__fill--warn { background: var(--signal-gradient); box-shadow: 3px 0 8px -1px var(--glow-signal); }
+/* Sky blue in every theme - a deliberate, specific color choice, not the
+   semantic --good token (which still means "success" everywhere else,
+   e.g. delivered/on-time chips). Only the warn/full states stay tied to
+   the shared signal/critical tokens, since those are real status colors. */
+.capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.capacity-bar__fill { display: block; height: 100%; background: #9cd5ff; border-radius: 4px; transition: width 0.2s ease; }
+.capacity-bar__fill--warn { background: var(--signal); }
 /* A full route is a normal, desirable outcome - not an error - so it
    doesn't get --critical (red, "something's wrong"). Matches the
    route-status-badge--full color for the same reason: full capacity and
@@ -229,10 +211,10 @@
   padding: 1.4rem 1.75rem;
   border-bottom: 1px solid var(--rule);
   cursor: pointer;
-  transition: background 0.2s ease-out, box-shadow 0.2s ease-out;
+  transition: background 0.12s ease;
 }
 .route-row:last-child { border-bottom: none; }
-.route-row:hover { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.route-row:hover { background: var(--surface-2); }
 .route-row:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 
 .route-row__cell { min-width: 0; }
@@ -410,7 +392,6 @@
 
 .route-stop__rail { display: flex; flex-direction: column; align-items: center; flex: none; }
 .route-stop__seq {
-  position: relative;
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
@@ -419,20 +400,8 @@
   font-weight: 800;
   font-size: 0.85rem;
   font-family: var(--font-mono);
-  /* A glossy highlight (a soft light sweep across the top of the sphere)
-     plus a glow ring in the badge's own color - same shine language as
-     the rest of the dashboard, without losing the per-route hue that
-     tells adjacent routes apart. */
-  box-shadow: 0 0 10px color-mix(in srgb, var(--route-color, var(--accent-strong)) 55%, transparent);
 }
-.route-stop__seq::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.35), transparent 55%);
-}
-.route-stop__seq--late { background: var(--critical); box-shadow: 0 0 10px color-mix(in srgb, var(--critical) 55%, transparent); }
+.route-stop__seq--late { background: var(--critical); }
 .route-stop__connector { flex: 1; width: 2px; min-height: 24px; background: var(--rule); margin: 0.3rem 0; }
 
 .route-stop__body { flex: 1; min-width: 0; padding-top: 0.15rem; }
