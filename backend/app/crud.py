@@ -337,6 +337,18 @@ def save_route_plan(
     db.flush()
 
     for route_data in plan.get("routes", []):
+        # Same hard invariant as _persist_route_stops below, applied to the
+        # auto-generate/regenerate write path - route_service.build_routes
+        # already caps every vehicle at its capacity while assigning stops,
+        # so this never actually fires; it's here so a future bug in that
+        # assignment logic gets caught before a plan is ever saved, instead
+        # of silently writing a route with more stops than its vehicle
+        # (6 for a car, 3 for a bike) can hold.
+        route_orders = route_data.get("orders", [])
+        route_capacity = vehicle_capacity(route_data.get("vehicle_type", ""))
+        if route_capacity and len(route_orders) > route_capacity:
+            raise CapacityError(capacity=route_capacity, available=0, requested=len(route_orders))
+
         route = Route(
             route_plan_id=route_plan.id,
             route_name=route_data.get("route_name", ""),
@@ -612,10 +624,23 @@ def count_unassigned_orders(db: Session, batch_id: Optional[int]) -> int:
 
 def _persist_route_stops(db: Session, route: Route, batch_id: Optional[int], metrics: Dict[str, object]) -> None:
     """The one place that writes a route's stop list. Replaces this route's
-    RouteStop rows wholesale (cheap - at most 10 rows) and, in the same
-    transaction, updates every order in the new list's route_id/
-    sequence_position/status - so RouteStop and Order can never disagree
-    about which orders are on this route or in what order."""
+    RouteStop rows wholesale (cheap - at most a vehicle's capacity in rows)
+    and, in the same transaction, updates every order in the new list's
+    route_id/sequence_position/status - so RouteStop and Order can never
+    disagree about which orders are on this route or in what order.
+
+    Hard invariant, not just a caller-side check: every call site above
+    (add/remove/reorder/vehicle-toggle) already validates capacity before
+    it gets here, but this is the single choke point every one of them
+    funnels through, so it's where a future bug in any of those call sites
+    - or a new one added later - gets caught before bad data ever reaches
+    the database, instead of silently writing a route with more stops than
+    its vehicle (6 for a car, 3 for a bike) can actually hold."""
+    incoming_orders = metrics.get("orders") or []
+    capacity = vehicle_capacity(route.vehicle_type)
+    if capacity and len(incoming_orders) > capacity:
+        raise CapacityError(capacity=capacity, available=0, requested=len(incoming_orders))
+
     for stop in list(route.stops):
         db.delete(stop)
     db.flush()

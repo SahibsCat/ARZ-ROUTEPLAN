@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GoogleMap, OverlayView, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
   IconUsers, IconChevron,
 } from '../icons';
 import './routeWorkspace.css';
-
-// Set VITE_GOOGLE_MAPS_API_KEY (a browser-restricted Google Maps
-// JavaScript API key - a different product from the server-side Geocoding
-// key) to turn on the live marker map. Every other part of this workspace
-// works with or without it - the map panel falls back to a plain "open in
-// Google Maps" link until it's set.
-const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
 
 function capacityText(count, capacity) {
   if (!capacity) return `${count}`;
@@ -91,80 +83,6 @@ function RouteSidebarCard({ route, isSelected, onSelect, capacityFor }) {
         {route.status === 'manually_edited' ? 'Manually edited' : 'Assigned'}
       </div>
     </button>
-  );
-}
-
-// Big red numbered pins (matching the "View pin" red used elsewhere), one
-// per stop, click-synced with the delivery timeline in both directions.
-function RouteMapPanel({ route, selectedOrderId, onSelectOrder }) {
-  // useJsApiLoader must run every render regardless of branch (rules of
-  // hooks) - it only actually injects Google's script tag once a non-empty
-  // key is passed, so an unset key never fires a network request.
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'rootplan-google-map',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-  });
-
-  if (!GOOGLE_MAPS_API_KEY) {
-    return (
-      <div className="route-map route-map--placeholder">
-        <IconPin width={26} height={26} />
-        <p>Live map view needs a Google Maps API key.</p>
-        <p className="route-map__hint">Set VITE_GOOGLE_MAPS_API_KEY (Maps JavaScript API, browser-restricted) to turn this on.</p>
-        {route?.google_maps_url && (
-          <a className="btn btn--outline" href={route.google_maps_url} target="_blank" rel="noopener noreferrer">
-            <IconPin width={14} height={14} />
-            Open full route in Google Maps
-          </a>
-        )}
-      </div>
-    );
-  }
-  if (loadError) {
-    return <div className="route-map route-map--placeholder"><p>Map unavailable.</p></div>;
-  }
-  if (!isLoaded) {
-    return <div className="route-map route-map--placeholder"><div className="skeleton-line" /></div>;
-  }
-  if (!route) {
-    return <div className="route-map route-map--placeholder"><p>Select a route to see it on the map.</p></div>;
-  }
-
-  const stops = route.orders.filter((o) => o.lat != null && o.lng != null);
-  if (stops.length === 0) {
-    return <div className="route-map route-map--placeholder"><p>No located deliveries on this route yet.</p></div>;
-  }
-
-  const center = { lat: stops[0].lat, lng: stops[0].lng };
-
-  return (
-    <GoogleMap
-      mapContainerClassName="route-map__canvas"
-      center={center}
-      zoom={12}
-      options={{ disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'greedy' }}
-    >
-      {stops.map((order, idx) => {
-        const isSelected = String(order.order_id) === String(selectedOrderId);
-        return (
-          <OverlayView
-            key={order.order_id}
-            position={{ lat: order.lat, lng: order.lng }}
-            mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-            getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h })}
-          >
-            <button
-              type="button"
-              className={`map-marker${isSelected ? ' map-marker--selected' : ''}${order.is_late ? ' map-marker--late' : ''}`}
-              onClick={() => onSelectOrder(order.order_id)}
-              title={`${idx + 1} — ${order.customer_name || order.order_id}`}
-            >
-              {idx + 1}
-            </button>
-          </OverlayView>
-        );
-      })}
-    </GoogleMap>
   );
 }
 
@@ -672,10 +590,6 @@ export default function RouteWorkspace({
                 onSelectOrder={setSelectedOrderId}
               />
             )}
-          </div>
-
-          <div className="route-workspace-pane route-workspace-pane--map">
-            <RouteMapPanel route={selectedRoute} selectedOrderId={selectedOrderId} onSelectOrder={setSelectedOrderId} />
           </div>
         </div>
       )}

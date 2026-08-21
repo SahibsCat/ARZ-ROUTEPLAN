@@ -9,33 +9,33 @@
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 
 /* =======================================================================
-   Tokens — premium enterprise identity: indigo/royal-blue primary,
-   emerald/amber/red semantics, a slate neutral scale. Restrained by
-   design - color is spent on state and meaning, not decoration.
+   Tokens — clean neutral-gray surface with a cyan/teal working color:
+   distinct from both the blue and violet this dashboard has worn before,
+   still restrained - color spent on state and meaning, not decoration.
 ======================================================================= */
 :root {
-  --paper: #f6f5fa;
+  --paper: #f7f8fa;
   --surface: #ffffff;
-  --surface-2: #efedf7;
-  --ink: #1e1b2e;
-  --ink-soft: #58536b;
-  --ink-faint: #938da8;
-  --rule: #e2dff0;
+  --surface-2: #eef1f4;
+  --ink: #1a1d23;
+  --ink-soft: #5b6472;
+  --ink-faint: #8a93a1;
+  --rule: #e1e5eb;
 
-  --primary: #2563eb;
-  --primary-strong: #1d4ed8;
-  --primary-soft: #e8f0fe;
-  --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --accent-soft: #e8f0fe;
+  --primary: #0891b2;
+  --primary-strong: #0e7490;
+  --primary-soft: #e2f6fa;
+  --accent: #0891b2;
+  --accent-strong: #0e7490;
+  --accent-soft: #e2f6fa;
 
   /* Solid button fills - deliberately NOT tied to --primary/--accent.
      Those shift to a lighter tint in dark mode (correct for text/links on
      black), but a light tint painted as a solid fill with white text on
-     top fails contrast. Buttons get one fixed, saturated blue that reads
+     top fails contrast. Buttons get one fixed, saturated cyan that reads
      clearly in both themes. */
-  --btn-fill: #2563eb;
-  --btn-fill-hover: #1d4ed8;
+  --btn-fill: #0891b2;
+  --btn-fill-hover: #0e7490;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -44,15 +44,15 @@
   --critical: #dc2626;
   --critical-soft: #fdecec;
 
-  --sidebar-bg: #fdfcff;
+  --sidebar-bg: #fbfcfd;
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
-  --shadow-sm: 0 1px 2px rgba(30, 27, 46, 0.05);
-  --shadow-md: 0 1px 3px rgba(30, 27, 46, 0.04), 0 8px 20px -4px rgba(30, 27, 46, 0.08);
-  --shadow-lg: 0 4px 8px rgba(30, 27, 46, 0.04), 0 16px 36px -8px rgba(30, 27, 46, 0.14);
+  --shadow-sm: 0 1px 2px rgba(20, 23, 28, 0.05);
+  --shadow-md: 0 1px 3px rgba(20, 23, 28, 0.04), 0 8px 20px -4px rgba(20, 23, 28, 0.08);
+  --shadow-lg: 0 4px 8px rgba(20, 23, 28, 0.04), 0 16px 36px -8px rgba(20, 23, 28, 0.14);
 
   --font-display: 'Inter Variable', -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-body: 'Inter Variable', -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -60,21 +60,21 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0a0a0d;
-    --surface: #151319;
-    --surface-2: #1e1b24;
-    --ink: #f3f1f8;
-    --ink-soft: #a39dbd;
-    --ink-faint: #6b6580;
-    --rule: #2b2733;
+  :root:not([data-theme="light"]) {
+    --paper: #0b0d10;
+    --surface: #14171c;
+    --surface-2: #1b1f26;
+    --ink: #eef1f4;
+    --ink-soft: #9aa3b0;
+    --ink-faint: #6b7280;
+    --rule: #262b33;
 
-    --primary: #60a5fa;
-    --primary-strong: #93c5fd;
-    --primary-soft: #16233d;
-    --accent: #60a5fa;
-    --accent-strong: #93c5fd;
-    --accent-soft: #16233d;
+    --primary: #22d3ee;
+    --primary-strong: #67e8f9;
+    --primary-soft: #113a42;
+    --accent: #22d3ee;
+    --accent-strong: #67e8f9;
+    --accent-soft: #113a42;
 
     --signal: #fbbf24;
     --signal-soft: #2c2210;
@@ -83,27 +83,27 @@
     --critical: #f87171;
     --critical-soft: #341717;
 
-    --sidebar-bg: #0a0a0d;
+    --sidebar-bg: #0b0d10;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0a0a0d;
-  --surface: #151319;
-  --surface-2: #1e1b24;
-  --ink: #f3f1f8;
-  --ink-soft: #a39dbd;
-  --ink-faint: #6b6580;
-  --rule: #2b2733;
+  --paper: #0b0d10;
+  --surface: #14171c;
+  --surface-2: #1b1f26;
+  --ink: #eef1f4;
+  --ink-soft: #9aa3b0;
+  --ink-faint: #6b7280;
+  --rule: #262b33;
 
-  --primary: #60a5fa;
-  --primary-strong: #93c5fd;
-  --primary-soft: #16233d;
-  --accent: #60a5fa;
-  --accent-strong: #93c5fd;
-  --accent-soft: #16233d;
+  --primary: #22d3ee;
+  --primary-strong: #67e8f9;
+  --primary-soft: #113a42;
+  --accent: #22d3ee;
+  --accent-strong: #67e8f9;
+  --accent-soft: #113a42;
 
   --signal: #fbbf24;
   --signal-soft: #2c2210;
@@ -112,26 +112,26 @@
   --critical: #f87171;
   --critical-soft: #341717;
 
-  --sidebar-bg: #0a0a0d;
+  --sidebar-bg: #0b0d10;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
 }
 :root[data-theme="light"] {
-  --paper: #f6f5fa;
+  --paper: #f7f8fa;
   --surface: #ffffff;
-  --surface-2: #efedf7;
-  --ink: #1e1b2e;
-  --ink-soft: #58536b;
-  --ink-faint: #938da8;
-  --rule: #e2dff0;
+  --surface-2: #eef1f4;
+  --ink: #1a1d23;
+  --ink-soft: #5b6472;
+  --ink-faint: #8a93a1;
+  --rule: #e1e5eb;
 
-  --primary: #2563eb;
-  --primary-strong: #1d4ed8;
-  --primary-soft: #e8f0fe;
-  --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --accent-soft: #e8f0fe;
+  --primary: #0891b2;
+  --primary-strong: #0e7490;
+  --primary-soft: #e2f6fa;
+  --accent: #0891b2;
+  --accent-strong: #0e7490;
+  --accent-soft: #e2f6fa;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -140,10 +140,10 @@
   --critical: #dc2626;
   --critical-soft: #fdecec;
 
-  --sidebar-bg: #fdfcff;
-  --shadow-sm: 0 1px 2px rgba(30, 27, 46, 0.05);
-  --shadow-md: 0 1px 3px rgba(30, 27, 46, 0.04), 0 8px 20px -4px rgba(30, 27, 46, 0.08);
-  --shadow-lg: 0 4px 8px rgba(30, 27, 46, 0.04), 0 16px 36px -8px rgba(30, 27, 46, 0.14);
+  --sidebar-bg: #fbfcfd;
+  --shadow-sm: 0 1px 2px rgba(20, 23, 28, 0.05);
+  --shadow-md: 0 1px 3px rgba(20, 23, 28, 0.04), 0 8px 20px -4px rgba(20, 23, 28, 0.08);
+  --shadow-lg: 0 4px 8px rgba(20, 23, 28, 0.04), 0 16px 36px -8px rgba(20, 23, 28, 0.14);
 }
 
 * { box-sizing: border-box; }
