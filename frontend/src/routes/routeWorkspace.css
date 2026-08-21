@@ -123,7 +123,7 @@
    e.g. delivered/on-time chips). Only the warn/full states stay tied to
    the shared signal/critical tokens, since those are real status colors. */
 .capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
-.capacity-bar__fill { display: block; height: 100%; background: #9cd5ff; border-radius: 4px; transition: width 0.2s ease; }
+.capacity-bar__fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.2s ease; }
 .capacity-bar__fill--warn { background: var(--signal); }
 /* A full route is a normal, desirable outcome - not an error - so it
    doesn't get --critical (red, "something's wrong"). Matches the

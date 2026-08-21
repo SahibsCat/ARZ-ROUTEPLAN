@@ -9,43 +9,43 @@
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 
 /* =======================================================================
-   Tokens — one disciplined dark-first system: near-black canvas/surface
-   scale for structure, a single blue brand accent (buttons, active nav,
-   links, focus rings), and semantic status colors reserved ONLY for real
-   status meaning (on-time/delayed/failed) - never for decorative icon
-   chips or progress bars on metrics that aren't a good/bad signal. Light
-   mode mirrors the same structure with a light neutral scale, keeping the
-   identical accent and status colors so both themes read as one product.
+   Tokens — a quiet, muted palette: true-black canvas in dark mode, a
+   desaturated steel-blue accent (not saturated/neon, no glow), and
+   semantic status colors toned down the same way so nothing shouts.
+   Text is off-white/off-black rather than pure white/black - readable
+   without the harsh contrast jump of true monochrome. Light mode mirrors
+   the same muted logic with a soft (not stark white) neutral scale.
 ======================================================================= */
 :root {
-  --paper: #ffffff;
-  --surface: #f7f8fa;
-  --surface-2: #eef0f3;
-  --ink: #14171c;
-  --ink-soft: #5c636e;
-  --ink-faint: #9aa1ac;
-  --rule: #e2e5ea;
+  --paper: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f0f0f0;
+  --ink: #202022;
+  --ink-soft: #63636a;
+  --ink-faint: #9a9aa0;
+  --rule: #e2e2e5;
 
-  --primary: #5b7fff;
-  --primary-strong: #3d5fe0;
-  --primary-soft: #e8edff;
-  --accent: #5b7fff;
-  --accent-strong: #3d5fe0;
-  --accent-soft: #e8edff;
+  --primary: #4c6489;
+  --primary-strong: #34486a;
+  --primary-soft: #e7ebf2;
+  --accent: #4c6489;
+  --accent-strong: #34486a;
+  --accent-soft: #e7ebf2;
 
   /* Solid button fills - the single accent color, same in every theme -
-     buttons don't shift per theme the way surfaces/text do. */
-  --btn-fill: #5b7fff;
-  --btn-fill-hover: #7295ff;
+     buttons don't shift per theme the way surfaces/text do. Flat, not a
+     gradient; no glow. */
+  --btn-fill: #4c6489;
+  --btn-fill-hover: #3e5272;
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
-  --signal: #f5a623;
-  --signal-soft: #fef3e2;
-  --good: #22c55e;
-  --good-soft: #e6f9ed;
-  --critical: #ef4444;
-  --critical-soft: #fdecec;
+  --signal: #b8791f;
+  --signal-soft: #f7ecdc;
+  --good: #4f9868;
+  --good-soft: #e5f1e8;
+  --critical: #c2544b;
+  --critical-soft: #f7e6e4;
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
@@ -66,103 +66,103 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0b0d11;
-    --surface: #14171c;
-    --surface-2: #1b1f26;
-    --ink: #f2f3f5;
-    --ink-soft: #9aa1ac;
-    --ink-faint: #5c636e;
-    --rule: #262b33;
+    --paper: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1c1c1c;
+    --ink: #e8e8ea;
+    --ink-soft: #9a9a9f;
+    --ink-faint: #636367;
+    --rule: #262626;
 
-    --primary: #5b7fff;
-    --primary-strong: #7295ff;
-    --primary-soft: #1a2340;
-    --accent: #5b7fff;
-    --accent-strong: #7295ff;
-    --accent-soft: #1a2340;
+    --primary: #8095b8;
+    --primary-strong: #a3b4d1;
+    --primary-soft: #1b2430;
+    --accent: #8095b8;
+    --accent-strong: #a3b4d1;
+    --accent-soft: #1b2430;
 
-    --btn-fill: #5b7fff;
-    --btn-fill-hover: #7295ff;
+    --btn-fill: #5c7396;
+    --btn-fill-hover: #6a83a8;
     --btn-text: #ffffff;
     --btn-font-weight: 600;
 
-    --signal: #f5a623;
-    --signal-soft: #33270f;
-    --good: #22c55e;
-    --good-soft: #123021;
-    --critical: #ef4444;
-    --critical-soft: #391818;
-    --neutral: #6b7280;
-    --neutral-soft: #1b1f26;
+    --signal: #c2984f;
+    --signal-soft: #2c2415;
+    --good: #6fa37d;
+    --good-soft: #16241a;
+    --critical: #c3625a;
+    --critical-soft: #2a1817;
+    --neutral: #8a8a8f;
+    --neutral-soft: #1c1c1c;
 
-    --sidebar-bg: #0b0d11;
+    --sidebar-bg: #0a0a0a;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0b0d11;
-  --surface: #14171c;
-  --surface-2: #1b1f26;
-  --ink: #f2f3f5;
-  --ink-soft: #9aa1ac;
-  --ink-faint: #5c636e;
-  --rule: #262b33;
+  --paper: #0a0a0a;
+  --surface: #141414;
+  --surface-2: #1c1c1c;
+  --ink: #e8e8ea;
+  --ink-soft: #9a9a9f;
+  --ink-faint: #636367;
+  --rule: #262626;
 
-  --primary: #5b7fff;
-  --primary-strong: #7295ff;
-  --primary-soft: #1a2340;
-  --accent: #5b7fff;
-  --accent-strong: #7295ff;
-  --accent-soft: #1a2340;
+  --primary: #8095b8;
+  --primary-strong: #a3b4d1;
+  --primary-soft: #1b2430;
+  --accent: #8095b8;
+  --accent-strong: #a3b4d1;
+  --accent-soft: #1b2430;
 
-  --btn-fill: #5b7fff;
-  --btn-fill-hover: #7295ff;
+  --btn-fill: #5c7396;
+  --btn-fill-hover: #6a83a8;
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
-  --signal: #f5a623;
-  --signal-soft: #33270f;
-  --good: #22c55e;
-  --good-soft: #123021;
-  --critical: #ef4444;
-  --critical-soft: #391818;
-  --neutral: #6b7280;
-  --neutral-soft: #1b1f26;
+  --signal: #c2984f;
+  --signal-soft: #2c2415;
+  --good: #6fa37d;
+  --good-soft: #16241a;
+  --critical: #c3625a;
+  --critical-soft: #2a1817;
+  --neutral: #8a8a8f;
+  --neutral-soft: #1c1c1c;
 
-  --sidebar-bg: #0b0d11;
+  --sidebar-bg: #0a0a0a;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
 }
 :root[data-theme="light"] {
-  --paper: #ffffff;
-  --surface: #f7f8fa;
-  --surface-2: #eef0f3;
-  --ink: #14171c;
-  --ink-soft: #5c636e;
-  --ink-faint: #9aa1ac;
-  --rule: #e2e5ea;
+  --paper: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f0f0f0;
+  --ink: #202022;
+  --ink-soft: #63636a;
+  --ink-faint: #9a9aa0;
+  --rule: #e2e2e5;
 
-  --primary: #5b7fff;
-  --primary-strong: #3d5fe0;
-  --primary-soft: #e8edff;
-  --accent: #5b7fff;
-  --accent-strong: #3d5fe0;
-  --accent-soft: #e8edff;
+  --primary: #4c6489;
+  --primary-strong: #34486a;
+  --primary-soft: #e7ebf2;
+  --accent: #4c6489;
+  --accent-strong: #34486a;
+  --accent-soft: #e7ebf2;
 
-  --btn-fill: #5b7fff;
-  --btn-fill-hover: #7295ff;
+  --btn-fill: #4c6489;
+  --btn-fill-hover: #3e5272;
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
-  --signal: #f5a623;
-  --signal-soft: #fef3e2;
-  --good: #22c55e;
-  --good-soft: #e6f9ed;
-  --critical: #ef4444;
-  --critical-soft: #fdecec;
+  --signal: #b8791f;
+  --signal-soft: #f7ecdc;
+  --good: #4f9868;
+  --good-soft: #e5f1e8;
+  --critical: #c2544b;
+  --critical-soft: #f7e6e4;
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
