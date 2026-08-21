@@ -69,7 +69,7 @@
     --paper: #0a0a0a;
     --surface: #141414;
     --surface-2: #1c1c1c;
-    --ink: #e8e8ea;
+    --ink: #ffffff;
     --ink-soft: #9a9a9f;
     --ink-faint: #636367;
     --rule: #262626;
@@ -105,7 +105,7 @@
   --paper: #0a0a0a;
   --surface: #141414;
   --surface-2: #1c1c1c;
-  --ink: #e8e8ea;
+  --ink: #ffffff;
   --ink-soft: #9a9a9f;
   --ink-faint: #636367;
   --rule: #262626;
@@ -188,6 +188,10 @@ body { min-height: 100vh; }
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
+  /* Bolder baseline weight - every element that sets its own font-weight
+     (headings, labels, buttons) still wins; this only lifts the plain
+     body/paragraph text that was inheriting the browser's normal (400). */
+  font-weight: 500;
   display: flex;
   align-items: flex-start;
 }
