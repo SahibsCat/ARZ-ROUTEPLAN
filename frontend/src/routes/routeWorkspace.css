@@ -118,18 +118,14 @@
 }
 
 /* --- Capacity bar (the "percentage line") --- */
+/* Sky blue in every theme - a deliberate, specific color choice, not the
+   semantic --good token (which still means "success" everywhere else,
+   e.g. delivered/on-time chips). Only the warn/full states stay tied to
+   the shared signal/critical tokens, since those are real status colors. */
 .capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
-.capacity-bar__fill { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.2s ease; }
+.capacity-bar__fill { display: block; height: 100%; background: #9cd5ff; border-radius: 4px; transition: width 0.2s ease; }
 .capacity-bar__fill--warn { background: var(--signal); }
 .capacity-bar__fill--full { background: var(--critical); }
-
-/* Dark mode's normal-state fill is a deep navy instead of green - a
-   deliberate, specific color choice, not the semantic --good token (which
-   still means "success" everywhere else, e.g. delivered/on-time chips). */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .capacity-bar__fill { background: #15173d; }
-}
-:root[data-theme="dark"] .capacity-bar__fill { background: #15173d; }
 
 /* =======================================================================
    Routes List page - spacious header, compact summary strip, dedicated
@@ -206,9 +202,9 @@
 .route-row {
   display: grid;
   grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 0.9fr 1fr 1.4fr;
-  gap: 1rem;
+  gap: 1.25rem;
   align-items: center;
-  padding: 1.1rem 1.5rem;
+  padding: 1.4rem 1.75rem;
   border-bottom: 1px solid var(--rule);
   cursor: pointer;
   transition: background 0.12s ease;
@@ -360,8 +356,8 @@
 
 .route-stop {
   display: flex;
-  gap: 1rem;
-  padding: 1.1rem 0.75rem;
+  gap: 1.25rem;
+  padding: 1.4rem 1rem;
   border-radius: var(--radius-md);
   cursor: grab;
   transition: background 0.12s ease;
@@ -400,10 +396,10 @@
 /* Addresses are the most important field on this row - always full dark
    ink, generous size, allowed to wrap to 2-3 lines. Never truncated. */
 .route-stop__address {
-  margin: 0.1rem 0 0.5rem;
-  font-size: 0.95rem;
+  margin: 0.15rem 0 0.6rem;
+  font-size: 1.02rem;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--ink);
   max-width: 62ch;
 }
@@ -439,24 +435,26 @@
 .delivery-identity__located { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--good); }
 .delivery-identity__unlocated { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--signal); }
 
-/* A real, recognizable map pin (the same red as Google's own marker) on
-   every delivery that has one - not a muted icon tucked in a corner. Opens
-   the precise single-pin Google Maps link (route_service.single_stop_maps_link
-   on the backend) in a new tab. */
+/* A real, recognizable map pin badge on every delivery that has one - not
+   a muted icon tucked in a corner. Opens the precise single-pin Google
+   Maps link (route_service.single_stop_maps_link on the backend) in a new
+   tab. Gold rather than Google's red - red already means "late/critical"
+   elsewhere in this app (stop-status--late, tag--late, critical badges),
+   so a "View pin" action in the same red read as an error at a glance. */
 .pin-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   padding: 0.15rem 0.55rem 0.15rem 0.4rem;
   border-radius: 20px;
-  background: #ea4335;
+  background: #b8860b;
   color: #fff;
   font-weight: 700;
   font-size: 0.72rem;
   text-decoration: none;
   transition: filter 0.15s ease, transform 0.15s ease;
 }
-.pin-badge:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.pin-badge:hover { filter: brightness(1.1); transform: translateY(-1px); }
 
 /* --- Unassigned Orders panel --- */
 .unassigned-panel { padding: 1rem 1.4rem 1.4rem; display: flex; flex-direction: column; gap: 0.9rem; }

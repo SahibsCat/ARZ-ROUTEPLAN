@@ -32,15 +32,13 @@
   --accent-strong: #15173d;
   --accent-soft: #e7e6f5;
 
-  /* Solid button fills - deliberately NOT tied to --primary/--accent.
-     Those shift to a lighter tint in dark mode (correct for text/links on
-     black), but a light tint painted as a solid fill with white text on
-     top fails contrast. Buttons get one fixed pairing of fill + text
-     colors per theme instead. */
-  --btn-fill: #15173d;
-  --btn-fill-hover: #0e0f2b;
-  --btn-text: #fffaf3;
-  --btn-font-weight: 700;
+  /* Solid button fills - the same off-white fill / navy text pairing in
+     every theme, not tinted per-theme like --primary/--accent are. One
+     consistent button identity across light and dark instead of two. */
+  --btn-fill: #fffaf0;
+  --btn-fill-hover: #f2e9d3;
+  --btn-text: #080616;
+  --btn-font-weight: 800;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -148,10 +146,10 @@
   --accent-strong: #15173d;
   --accent-soft: #e7e6f5;
 
-  --btn-fill: #15173d;
-  --btn-fill-hover: #0e0f2b;
-  --btn-text: #fffaf3;
-  --btn-font-weight: 700;
+  --btn-fill: #fffaf0;
+  --btn-fill-hover: #f2e9d3;
+  --btn-text: #080616;
+  --btn-font-weight: 800;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -167,6 +165,7 @@
 }
 
 * { box-sizing: border-box; }
+html { font-size: 18px; }
 html, body, #root { margin: 0; padding: 0; }
 body { min-height: 100vh; }
 
@@ -1300,9 +1299,9 @@ body { min-height: 100vh; }
   justify-content: center;
   gap: 0.45rem;
   width: 100%;
-  padding: 0.55rem 1rem;
+  padding: 0.7rem 1.25rem;
   font-family: var(--font-body);
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   font-weight: var(--btn-font-weight, 600);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
