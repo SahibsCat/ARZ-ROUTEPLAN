@@ -164,6 +164,59 @@ def test_reorder_route_rejects_mismatched_order_ids(db_session):
         crud.reorder_route(db_session, route.id, ["1", "999"])
 
 
+def test_move_orders_between_routes_lets_a_car_flex_past_base_up_to_max(db_session):
+    batch = _batch(db_session, 16)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])  # 6/6, base-full
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])  # another full car
+
+    result = crud.move_orders_between_routes(db_session, source.id, dest.id, ["7", "8", "9", "10"])
+
+    updated_dest = result["target_route"]
+    updated_source = result["source_route"]
+    assert len(updated_dest.stops) == 10  # flexed past base (6) up to max (10)
+    assert len(updated_source.stops) == 2
+    dest_ids = {stop.order_id for stop in updated_dest.stops}
+    assert dest_ids == {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+
+
+def test_move_orders_between_routes_rejects_past_max_capacity(db_session):
+    batch = _batch(db_session, 16)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
+
+    with pytest.raises(crud.CapacityError):
+        # 6 already on dest + 5 requested = 11, past the max of 10.
+        crud.move_orders_between_routes(db_session, source.id, dest.id, ["7", "8", "9", "10", "11"])
+
+    # Nothing was written - the failed batch must not partially apply.
+    dest_after = db_session.query(crud.Route).filter_by(id=dest.id).first()
+    source_after = db_session.query(crud.Route).filter_by(id=source.id).first()
+    assert len(dest_after.stops) == 6
+    assert len(source_after.stops) == 6
+
+
+def test_move_orders_between_routes_a_bike_has_no_flex_room(db_session):
+    batch = _batch(db_session, 6)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "bike", order_ids=["1", "2", "3"])  # 3/3, base == max for a bike
+    source = crud.create_route(db_session, plan.id, "bike", order_ids=["4", "5", "6"])
+
+    with pytest.raises(crud.CapacityError):
+        crud.move_orders_between_routes(db_session, source.id, dest.id, ["4"])
+
+
+def test_move_orders_between_routes_rejects_order_not_on_source_route(db_session):
+    batch = _batch(db_session, 4)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=["1"])
+    source = crud.create_route(db_session, plan.id, "car", order_ids=["2"])
+
+    with pytest.raises(crud.OrderNotFoundError):
+        crud.move_orders_between_routes(db_session, source.id, dest.id, ["3"])
+
+
 def test_get_or_create_draft_route_plan_reuses_existing_draft(db_session):
     batch = _batch(db_session, 0)
     first = crud.get_or_create_draft_route_plan(db_session, batch.id)
@@ -224,6 +277,35 @@ def test_order_summary_and_route_summary_include_area(db_session):
     summary = crud.route_summary(route)
     assert summary["orders"][0]["area"] == "Velachery"
     assert summary["areas"] == ["Velachery"]
+
+
+def test_resolve_location_prefers_the_uploaded_location_column_over_derived_area():
+    # The uploaded Excel's own LOCATION column is real, admin-entered data -
+    # it wins over derive_area()'s heuristic guess from the address, even
+    # when the two disagree.
+    data = {
+        "address": "12, 4th Main Road, Velachery, Chennai - 600042",
+        "extra_fields": {"LOCATION": "Velachery West"},
+    }
+    assert crud.resolve_location(data) == "Velachery West"
+
+
+def test_resolve_location_falls_back_to_derived_area_without_a_location_column():
+    data = {"address": "12, 4th Main Road, Velachery, Chennai - 600042", "extra_fields": {}}
+    assert crud.resolve_location(data) == "Velachery"
+
+
+def test_order_summary_uses_uploaded_location_column(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {
+            "order_id": "1", "customer_name": "Alice",
+            "address": "12, 4th Main Road, Velachery, Chennai - 600042",
+            "delivery_time": "18:00", "lat": 13.0, "lng": 80.2,
+            "extra_fields": {"LOCATION": "Velachery West"},
+        },
+    ])
+    order = batch.orders[0]
+    assert crud.order_summary(order)["area"] == "Velachery West"
 
 
 def test_change_route_vehicle_type_updates_capacity(db_session):

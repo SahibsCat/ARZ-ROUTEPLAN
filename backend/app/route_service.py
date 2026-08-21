@@ -11,6 +11,15 @@ VELOCHERY_DEPOT = {"lat": 12.989953044885272, "lng": 80.21804157624011}
 BIKE_CAPACITY = 3
 CAR_CAPACITY = 6
 
+# A car's *base* capacity (6) is what auto-generate fills to, and the
+# ceiling for every ordinary add - from the Unassigned Orders pool, via
+# "Move to...", or in bulk. A car's *max* capacity (10) only comes into
+# play through the one deliberate "Add Address from Another Route" action,
+# which is allowed to push a route past its base up to this hard ceiling -
+# never further. A bike has no flex room: its base and max are the same 3.
+CAR_MAX_CAPACITY = 10
+BIKE_MAX_CAPACITY = BIKE_CAPACITY
+
 SERVICE_TIME_MINUTES = 3.0
 LATE_GRACE_MINUTES = 0.0
 SWAP_MIN_SAVINGS_MINUTES = 8.0
@@ -468,10 +477,19 @@ def build_google_maps_url(route_orders: List[Dict[str, object]], depot: Dict[str
 
 
 VEHICLE_CAPACITIES = {"car": CAR_CAPACITY, "bike": BIKE_CAPACITY}
+VEHICLE_MAX_CAPACITIES = {"car": CAR_MAX_CAPACITY, "bike": BIKE_MAX_CAPACITY}
 
 
 def vehicle_capacity(vehicle_type: str) -> int:
+    """Base capacity - what auto-generate fills to and what every ordinary
+    add (Unassigned pool, "Move to...", bulk-assign) is capped at."""
     return VEHICLE_CAPACITIES.get(vehicle_type, BIKE_CAPACITY)
+
+
+def vehicle_max_capacity(vehicle_type: str) -> int:
+    """Hard structural ceiling - what a route can never exceed even
+    through the flex "Add Address from Another Route" action."""
+    return VEHICLE_MAX_CAPACITIES.get(vehicle_type, BIKE_MAX_CAPACITY)
 
 
 def recompute_route_metrics(route_orders: List[Dict[str, object]], vehicle_type: str) -> Dict[str, object]:

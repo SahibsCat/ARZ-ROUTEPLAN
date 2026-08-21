@@ -117,7 +117,8 @@ function RoutesSummaryStrip({ routes, pendingOrders, capacityFor }) {
 }
 
 function RoutesFilterBar({
-  search, onSearchChange, vehicleFilter, onVehicleFilterChange, statusFilter, onStatusFilterChange, onClear, hasActiveFilters,
+  search, onSearchChange, vehicleFilter, onVehicleFilterChange, statusFilter, onStatusFilterChange,
+  locationFilter, onLocationFilterChange, locations, onClear, hasActiveFilters,
 }) {
   return (
     <div className="routes-filter-bar">
@@ -142,6 +143,12 @@ function RoutesFilterBar({
         <option value="delayed">Delayed</option>
         <option value="empty">No deliveries</option>
       </select>
+      {locations.length > 0 && (
+        <select className="select-compact" value={locationFilter} onChange={(e) => onLocationFilterChange(e.target.value)}>
+          <option value="all">All locations</option>
+          {locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+      )}
       {hasActiveFilters && (
         <button type="button" className="btn btn--ghost routes-filter-bar__clear" onClick={onClear}>
           <IconX width={13} height={13} />
@@ -293,11 +300,16 @@ function RoutesTable({
 // Route Detail — header, overview strip, spacious stop list.
 // --------------------------------------------------------------------------
 
-function RouteOverviewStrip({ route, capacity }) {
+function RouteOverviewStrip({ route, capacity, maxCapacity }) {
   const count = route.orders.length;
+  const hasFlexRoom = maxCapacity > capacity;
   const stats = [
-    { label: 'Vehicle', value: route.vehicle_type === 'car' ? 'Car' : 'Bike' },
-    { label: 'Stops', value: `${count} / ${capacity}` },
+    { label: 'Vehicle type', value: route.vehicle_type === 'car' ? 'Car' : 'Bike' },
+    { label: 'Addresses', value: `${count} / ${maxCapacity}` },
+    ...(hasFlexRoom ? [
+      { label: 'Base capacity', value: capacity },
+      { label: 'Additional addresses', value: Math.max(count - capacity, 0) },
+    ] : []),
     { label: 'Areas', value: route.areas && route.areas.length ? route.areas.length : '—' },
     { label: 'Distance', value: route.route_distance_km != null ? `${route.route_distance_km} km` : '—' },
     { label: 'Travel time', value: route.route_time_minutes != null ? `${route.route_time_minutes} min` : '—' },
@@ -316,18 +328,140 @@ function RouteOverviewStrip({ route, capacity }) {
   );
 }
 
+// "Add Address from Another Route" - the modal for pulling stops directly
+// from a different route once this one is at (or past) its base capacity.
+// Capped at the destination's max capacity (10 for a car; a bike has no
+// flex room and never gets this button in the first place).
+function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor, onConfirm, onClose, isSubmitting }) {
+  const eligibleSourceRoutes = routes.filter((r) => r.route_name !== destinationRoute.route_name && r.orders.length > 0);
+  const [sourceRouteName, setSourceRouteName] = useState(eligibleSourceRoutes[0]?.route_name || '');
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const sourceRoute = eligibleSourceRoutes.find((r) => r.route_name === sourceRouteName) || null;
+  const maxCapacity = maxCapacityFor(destinationRoute.vehicle_type);
+  const destinationCount = destinationRoute.orders.length;
+  const remainingSlots = Math.max(maxCapacity - destinationCount, 0);
+  const overSelected = selectedIds.length > remainingSlots;
+
+  const toggleId = (orderId) => {
+    const id = String(orderId);
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const changeSource = (name) => { setSourceRouteName(name); setSelectedIds([]); };
+
+  const handleConfirm = async () => {
+    if (!sourceRoute || selectedIds.length === 0 || overSelected) return;
+    const ok = await onConfirm(sourceRoute.route_id, selectedIds);
+    if (ok) onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__header">
+          <h3>Add Address to Route</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+
+        <div className="modal__meta">
+          <span>{destinationRoute.route_name}</span>
+          <span>Vehicle: {destinationRoute.vehicle_type === 'car' ? 'Car' : 'Bike'}</span>
+          <span>Current addresses: <strong className="mono-num">{destinationCount} / {maxCapacity}</strong></span>
+        </div>
+
+        <div className="modal__body">
+          <label className="modal__field-label" htmlFor="add-address-source">Select Source Route</label>
+          {eligibleSourceRoutes.length === 0 ? (
+            <div className="empty-state">No other routes have addresses available to move.</div>
+          ) : (
+            <>
+              <select
+                id="add-address-source"
+                className="select-compact modal__source-select"
+                value={sourceRouteName}
+                onChange={(e) => changeSource(e.target.value)}
+              >
+                {eligibleSourceRoutes.map((r) => (
+                  <option key={r.route_name} value={r.route_name}>
+                    {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)} · {r.vehicle_type === 'car' ? 'Car' : 'Bike'})
+                  </option>
+                ))}
+              </select>
+
+              <div className="modal__address-list">
+                {sourceRoute?.orders.map((order) => (
+                  <label key={order.order_id} className="address-pick-row">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(String(order.order_id))}
+                      onChange={() => toggleId(order.order_id)}
+                    />
+                    <div className="address-pick-row__body">
+                      <div className="address-pick-row__top">
+                        <span className="address-pick-row__order-id">Order #{order.order_id}</span>
+                        <span className="address-pick-row__customer">{order.customer_name}</span>
+                        {order.is_late && <span className="stop-status stop-status--late">🔴 Late</span>}
+                      </div>
+                      {order.area && <span className="route-stop__area">{order.area}</span>}
+                      <span className="address-pick-row__address">{order.address}</span>
+                      <span className="address-pick-row__meta">
+                        Current route: {sourceRoute.route_name} · Slot {order.delivery_time}
+                      </span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {eligibleSourceRoutes.length > 0 && (
+          <div className="modal__summary">
+            <span>Selected: <strong className="mono-num">{selectedIds.length} address{selectedIds.length === 1 ? '' : 'es'}</strong></span>
+            <span>Destination Route: <strong className="mono-num">{destinationCount + selectedIds.length} / {maxCapacity}</strong></span>
+          </div>
+        )}
+        {overSelected && (
+          <div className="modal__warning">
+            <IconAlert width={13} height={13} />
+            Only {remainingSlots} address slot{remainingSlots === 1 ? '' : 's'} {remainingSlots === 1 ? 'is' : 'are'} available. Deselect {selectedIds.length - remainingSlots} to continue.
+          </div>
+        )}
+
+        <div className="modal__footer">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={!sourceRoute || selectedIds.length === 0 || overSelected || isSubmitting}
+            onClick={handleConfirm}
+          >
+            {isSubmitting ? 'Adding…' : `Add ${selectedIds.length || ''} Address${selectedIds.length === 1 ? '' : 'es'}`.trim()}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RouteDetail({
   route, routeIdx, routes, capacityFor, pendingOrders,
   onBack, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
   onReassignOrder, onAssignOrders, onReorderRoute,
   selectedOrderId, onSelectOrder,
+  maxCapacityFor, onMoveOrders, isMovingAddresses,
 }) {
   const capacity = capacityFor(route.vehicle_type);
+  const maxCapacity = maxCapacityFor(route.vehicle_type);
   const count = route.orders.length;
   const isFull = count >= capacity;
+  const isAtMaxCapacity = count >= maxCapacity;
+  const canFlexAddresses = maxCapacity > capacity;
   const isEdited = route.status === 'manually_edited';
   const status = routeStatus(route, capacity);
   const nodeRefs = useRef({});
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
   useEffect(() => {
     if (selectedOrderId && nodeRefs.current[selectedOrderId]) {
@@ -420,6 +554,18 @@ function RouteDetail({
               </option>
             ))}
           </select>
+          {canFlexAddresses && isFull && (
+            <button
+              type="button"
+              className="btn btn--outline"
+              disabled={isAtMaxCapacity}
+              title={isAtMaxCapacity ? `This route has reached the maximum capacity of ${maxCapacity} addresses.` : 'Move addresses here from another route'}
+              onClick={() => setShowAddAddressModal(true)}
+            >
+              <IconPlus width={14} height={14} />
+              {isAtMaxCapacity ? 'Maximum capacity reached' : 'Add Address from Another Route'}
+            </button>
+          )}
           <button type="button" className="btn btn--secondary" onClick={() => onDownload(route)}>
             <IconDownload width={14} height={14} />
             Download sheet
@@ -446,7 +592,7 @@ function RouteDetail({
         </div>
       </div>
 
-      <RouteOverviewStrip route={route} capacity={capacity} />
+      <RouteOverviewStrip route={route} capacity={capacity} maxCapacity={maxCapacity} />
 
       <div className="route-stop-list">
         {count === 0 ? (
@@ -547,6 +693,18 @@ function RouteDetail({
           </>
         )}
       </div>
+
+      {showAddAddressModal && (
+        <AddAddressModal
+          destinationRoute={route}
+          routes={routes}
+          capacityFor={capacityFor}
+          maxCapacityFor={maxCapacityFor}
+          isSubmitting={isMovingAddresses}
+          onClose={() => setShowAddAddressModal(false)}
+          onConfirm={(sourceRouteId, orderIds) => onMoveOrders(sourceRouteId, route.route_id, orderIds)}
+        />
+      )}
     </div>
   );
 }
@@ -674,10 +832,10 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
 // --------------------------------------------------------------------------
 
 export default function RouteWorkspace({
-  routes, pendingOrders, isProcessing, capacityFor, isRouteFull,
-  isCreatingRoute, isChangingVehicle, isDeletingRoute,
+  routes, pendingOrders, isProcessing, capacityFor, maxCapacityFor, isRouteFull,
+  isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses,
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
-  onAssignOrders, onDownloadRoute,
+  onAssignOrders, onDownloadRoute, onMoveOrders,
 }) {
   const [tab, setTab] = useState('routes');
   const [view, setView] = useState('list'); // 'list' | 'detail'
@@ -686,6 +844,16 @@ export default function RouteWorkspace({
   const [routeSearch, setRouteSearch] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
+
+  const allLocations = useMemo(() => {
+    const seen = new Set();
+    const ordered = [];
+    routes.forEach((r) => (r.areas || []).forEach((a) => {
+      if (!seen.has(a.toLowerCase())) { seen.add(a.toLowerCase()); ordered.push(a); }
+    }));
+    return ordered.sort((a, b) => a.localeCompare(b));
+  }, [routes]);
 
   useEffect(() => {
     if (routes.length === 0) { setSelectedRouteName(null); setView('list'); return; }
@@ -699,13 +867,14 @@ export default function RouteWorkspace({
   const selectedRoute = routes.find((r) => r.route_name === selectedRouteName) || null;
   const selectedRouteIdx = selectedRoute ? routes.findIndex((r) => r.route_name === selectedRoute.route_name) : 0;
 
-  const hasActiveFilters = Boolean(routeSearch.trim()) || vehicleFilter !== 'all' || statusFilter !== 'all';
-  const clearFilters = () => { setRouteSearch(''); setVehicleFilter('all'); setStatusFilter('all'); };
+  const hasActiveFilters = Boolean(routeSearch.trim()) || vehicleFilter !== 'all' || statusFilter !== 'all' || locationFilter !== 'all';
+  const clearFilters = () => { setRouteSearch(''); setVehicleFilter('all'); setStatusFilter('all'); setLocationFilter('all'); };
 
   const filteredRoutes = useMemo(() => {
     let result = routes;
     if (vehicleFilter !== 'all') result = result.filter((r) => r.vehicle_type === vehicleFilter);
     if (statusFilter !== 'all') result = result.filter((r) => routeStatus(r, capacityFor(r.vehicle_type)) === statusFilter);
+    if (locationFilter !== 'all') result = result.filter((r) => (r.areas || []).some((a) => a.toLowerCase() === locationFilter.toLowerCase()));
     if (routeSearch.trim()) {
       const q = routeSearch.toLowerCase();
       result = result.filter((r) => (
@@ -715,7 +884,7 @@ export default function RouteWorkspace({
       ));
     }
     return result;
-  }, [routes, routeSearch, vehicleFilter, statusFilter, capacityFor]);
+  }, [routes, routeSearch, vehicleFilter, statusFilter, locationFilter, capacityFor]);
 
   const openRoute = (routeName) => { setSelectedRouteName(routeName); setSelectedOrderId(null); setView('detail'); };
   const backToList = () => setView('list');
@@ -782,6 +951,9 @@ export default function RouteWorkspace({
           onReassignOrder={onReassignOrder}
           onAssignOrders={onAssignOrders}
           onReorderRoute={onReorderRoute}
+          maxCapacityFor={maxCapacityFor}
+          onMoveOrders={onMoveOrders}
+          isMovingAddresses={isMovingAddresses}
           selectedOrderId={selectedOrderId}
           onSelectOrder={setSelectedOrderId}
         />
@@ -813,6 +985,9 @@ export default function RouteWorkspace({
             onVehicleFilterChange={setVehicleFilter}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
+            locationFilter={locationFilter}
+            onLocationFilterChange={setLocationFilter}
+            locations={allLocations}
             onClear={clearFilters}
             hasActiveFilters={hasActiveFilters}
           />

@@ -35,6 +35,7 @@ from app.schemas import (
     ChangeVehicleTypeRequest,
     CreateRouteRequest,
     DashboardResponse,
+    MoveOrdersRequest,
     ReorderRouteRequest,
     RoutePlanHistoryResponse,
     RoutePlanResponse,
@@ -663,6 +664,24 @@ def reorder_route_endpoint(
     except crud.RootplanError as e:
         _raise_for_crud_error(e)
     return {"route": crud.route_summary(route)}
+
+
+@app.post("/api/routes/{route_id}/orders/move")
+def move_orders_between_routes_endpoint(
+    route_id: int, payload: MoveOrdersRequest = Body(...), db: Session = Depends(get_db),
+):
+    """"Add Address from Another Route" - route_id is the destination;
+    payload.source_route_id is where the addresses currently are. The one
+    path allowed to push a route past its base capacity, up to its max
+    (10 for a car; a bike has no flex room)."""
+    try:
+        result = crud.move_orders_between_routes(db, payload.source_route_id, route_id, payload.order_ids)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {
+        "source_route": crud.route_summary(result["source_route"]),
+        "target_route": crud.route_summary(result["target_route"]),
+    }
 
 
 @app.delete("/api/route/{route_id}")

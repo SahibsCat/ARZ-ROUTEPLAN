@@ -33,6 +33,9 @@ class RouteItem(BaseModel):
     capacity: Optional[int] = None
     available_capacity: Optional[int] = None
     is_full: Optional[bool] = None
+    max_capacity: Optional[int] = None
+    available_max_capacity: Optional[int] = None
+    is_at_max_capacity: Optional[bool] = None
     areas: List[str] = []
     route_segments: List[dict] = []
     google_maps_url: Optional[str] = None
@@ -142,3 +145,8 @@ class AssignOrdersRequest(BaseModel):
 
 class ChangeVehicleTypeRequest(BaseModel):
     vehicle_type: str
+
+
+class MoveOrdersRequest(BaseModel):
+    source_route_id: int
+    order_ids: List[str]

@@ -19,7 +19,7 @@ from app.models import (
     RouteStop,
     UploadBatch,
 )
-from app.route_service import recompute_route_metrics, single_stop_maps_link, vehicle_capacity
+from app.route_service import recompute_route_metrics, single_stop_maps_link, vehicle_capacity, vehicle_max_capacity
 
 SETTINGS_ROW_ID = 1
 
@@ -90,6 +90,26 @@ def derive_area(address: Optional[str]) -> Optional[str]:
     if not candidates:
         return None
     return candidates[-1]
+
+
+_LOCATION_FIELD_NAMES = ("location", "area", "zone")
+
+
+def resolve_location(data: Dict[str, object]) -> Optional[str]:
+    """The order's location, preferring whatever the uploaded Excel already
+    said. If the source file had its own LOCATION/AREA/ZONE column (kept
+    under `extra_fields` under its original header - see
+    excel_service.validate_excel_file), that value is real, admin-entered
+    data and always wins - it's never overwritten or second-guessed here.
+    derive_area()'s heuristic parse of the address is only a fallback for
+    when no such column existed in the upload."""
+    extra_fields = data.get("extra_fields") or {}
+    for label, value in extra_fields.items():
+        if str(label).strip().lower() in _LOCATION_FIELD_NAMES:
+            text = str(value).strip() if value is not None else ""
+            if text:
+                return text
+    return derive_area(data.get("address"))
 
 
 # --------------------------------------------------------------------------
@@ -630,16 +650,19 @@ def _persist_route_stops(db: Session, route: Route, batch_id: Optional[int], met
     disagree about which orders are on this route or in what order.
 
     Hard invariant, not just a caller-side check: every call site above
-    (add/remove/reorder/vehicle-toggle) already validates capacity before
-    it gets here, but this is the single choke point every one of them
-    funnels through, so it's where a future bug in any of those call sites
-    - or a new one added later - gets caught before bad data ever reaches
-    the database, instead of silently writing a route with more stops than
-    its vehicle (6 for a car, 3 for a bike) can actually hold."""
+    (add/remove/reorder/vehicle-toggle/move-between-routes) already
+    validates capacity before it gets here, but this is the single choke
+    point every one of them funnels through, so it's where a future bug in
+    any of those call sites - or a new one added later - gets caught
+    before bad data ever reaches the database. Checked against each
+    vehicle's *max* capacity (10 for a car, 3 for a bike) - the true hard
+    ceiling once the "Add Address from Another Route" flow is allowed to
+    push a route past its base capacity - not the lower base capacity that
+    ordinary adds are capped at."""
     incoming_orders = metrics.get("orders") or []
-    capacity = vehicle_capacity(route.vehicle_type)
-    if capacity and len(incoming_orders) > capacity:
-        raise CapacityError(capacity=capacity, available=0, requested=len(incoming_orders))
+    max_capacity = vehicle_max_capacity(route.vehicle_type)
+    if max_capacity and len(incoming_orders) > max_capacity:
+        raise CapacityError(capacity=max_capacity, available=0, requested=len(incoming_orders))
 
     for stop in list(route.stops):
         db.delete(stop)
@@ -907,6 +930,80 @@ def reorder_route(db: Session, route_id: int, ordered_order_ids: List[str]) -> R
     return route
 
 
+def move_orders_between_routes(
+    db: Session, source_route_id: int, target_route_id: int, order_ids: List[str],
+) -> Dict[str, Route]:
+    """"Add Address from Another Route" - moves one or more stops directly
+    from one route to another. Distinct from the ordinary Unassigned-pool
+    add (add_orders_to_route), which is capped at each vehicle type's base
+    capacity (6 for a car, 3 for a bike): this is the one deliberate path
+    allowed to push the destination past its base, up to its hard max (10
+    for a car - a bike's max equals its base, so it never actually flexes).
+    Capacity is validated for the whole batch before anything is written,
+    and both routes are recomputed and persisted together, so a route
+    plan can never be left with an order missing from both, or on both."""
+    if source_route_id == target_route_id:
+        raise RootplanError("Source and destination route must be different")
+
+    source_route = db.query(Route).filter(Route.id == source_route_id).first()
+    if source_route is None:
+        raise RouteNotFoundError("Source route not found")
+    target_route = db.query(Route).filter(Route.id == target_route_id).first()
+    if target_route is None:
+        raise RouteNotFoundError("Destination route not found")
+
+    route_plan = target_route.route_plan
+    batch_id = route_plan.batch_id if route_plan else None
+    if batch_id is None:
+        raise RootplanError("This route belongs to a session with no upload behind it and can't be edited order-by-order.")
+
+    source_stops_by_id = {str(stop.order_id): stop for stop in source_route.stops}
+    requested_ids: List[str] = []
+    seen = set()
+    for order_id in order_ids:
+        key = str(order_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        if key not in source_stops_by_id:
+            raise OrderNotFoundError(f"Order {key} is not on {source_route.route_name}")
+        requested_ids.append(key)
+    if not requested_ids:
+        raise RootplanError("No addresses were selected to move")
+
+    target_stops = sorted(target_route.stops, key=lambda s: s.sequence)
+    max_capacity = vehicle_max_capacity(target_route.vehicle_type)
+    available = max_capacity - len(target_stops)
+    if len(requested_ids) > available:
+        raise CapacityError(capacity=max_capacity, available=max(available, 0), requested=len(requested_ids))
+
+    moved_order_dicts = [dict(source_stops_by_id[oid].order_snapshot or {}) for oid in requested_ids]
+    remaining_source_dicts = [
+        dict(stop.order_snapshot or {})
+        for stop in sorted(source_route.stops, key=lambda s: s.sequence)
+        if str(stop.order_id) not in seen
+    ]
+    target_order_dicts = [dict(stop.order_snapshot or {}) for stop in target_stops] + moved_order_dicts
+
+    source_metrics = recompute_route_metrics(remaining_source_dicts, source_route.vehicle_type)
+    target_metrics = recompute_route_metrics(target_order_dicts, target_route.vehicle_type)
+
+    _apply_route_metrics(source_route, source_metrics)
+    _apply_route_metrics(target_route, target_metrics)
+    # Target first: _persist_route_stops' hard capacity guard checks against
+    # vehicle_max_capacity, which target_order_dicts is validated against
+    # above: writing it first means a bug that somehow slipped past the
+    # check above still fails loudly before the source route is touched,
+    # rather than leaving an order removed from source with nowhere to land.
+    _persist_route_stops(db, target_route, batch_id, target_metrics)
+    _persist_route_stops(db, source_route, batch_id, source_metrics)
+
+    db.commit()
+    db.refresh(source_route)
+    db.refresh(target_route)
+    return {"source_route": source_route, "target_route": target_route}
+
+
 # --------------------------------------------------------------------------
 # Failed addresses
 # --------------------------------------------------------------------------
@@ -1055,7 +1152,7 @@ def order_summary(order: Order) -> Dict[str, object]:
         "extra_fields": order.extra_fields or {},
     }
     data["map_link"] = single_stop_maps_link(data)
-    data["area"] = derive_area(data.get("address"))
+    data["area"] = resolve_location(data)
     return data
 
 
@@ -1077,7 +1174,7 @@ def _route_stop_to_order_dict(stop: RouteStop) -> Dict[str, object]:
     data["eta"] = stop.eta
     data["is_late"] = stop.status == "late"
     data["map_link"] = single_stop_maps_link(data)
-    data["area"] = derive_area(data.get("address"))
+    data["area"] = resolve_location(data)
     return data
 
 
@@ -1085,6 +1182,7 @@ def route_summary(route: Route) -> Dict[str, object]:
     stops = sorted(route.stops, key=lambda s: s.sequence)
     orders = [_route_stop_to_order_dict(stop) for stop in stops]
     capacity = vehicle_capacity(route.vehicle_type)
+    max_capacity = vehicle_max_capacity(route.vehicle_type)
     # De-duplicated, in-order list of areas this route touches - "Velachery,
     # Adambakkam, Guindy" for the route sidebar/summary panel. Falls back to
     # the order's address when derive_area() couldn't isolate one, so an
@@ -1121,6 +1219,9 @@ def route_summary(route: Route) -> Dict[str, object]:
         "capacity": capacity,
         "available_capacity": max(capacity - len(stops), 0),
         "is_full": len(stops) >= capacity,
+        "max_capacity": max_capacity,
+        "available_max_capacity": max(max_capacity - len(stops), 0),
+        "is_at_max_capacity": len(stops) >= max_capacity,
         "areas": seen_areas,
         "route_segments": segments,
         "google_maps_url": route.google_maps_url,

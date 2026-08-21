@@ -23,6 +23,12 @@ const CAR_CAPACITY = 6;
 const capacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_CAPACITY : BIKE_CAPACITY);
 const isRouteFull = (route) => route.orders.length >= capacityFor(route.vehicle_type);
 
+// A car's flex ceiling once "Add Address from Another Route" is used -
+// mirrors CAR_MAX_CAPACITY / BIKE_MAX_CAPACITY in route_service.py. A bike
+// has no flex room, so its max equals its base.
+const CAR_MAX_CAPACITY = 10;
+const maxCapacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_MAX_CAPACITY : BIKE_CAPACITY);
+
 // A small, fixed palette so each route reads as a distinct color at a
 // glance - cycles if there are more routes than colors.
 const ROUTE_HUES = 6;
@@ -1019,6 +1025,35 @@ function App() {
     }
   };
 
+  // "Add Address from Another Route" - the one action allowed to push a
+  // car route past its base capacity (6), up to its max (10). Both routes
+  // come back already recomputed (distance/duration/ETA/sequence) from the
+  // backend, so there's no separate "recreate this route" step - the
+  // updated route is just what's shown the moment this resolves.
+  const [isMovingAddresses, setIsMovingAddresses] = useState(false);
+  const handleMoveOrdersBetweenRoutes = async (sourceRouteId, targetRouteId, orderIds) => {
+    setIsMovingAddresses(true);
+    try {
+      const res = await postJson(`/api/routes/${targetRouteId}/orders/move`, 'POST', {
+        source_route_id: sourceRouteId,
+        order_ids: orderIds,
+      });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to add these addresses to the route. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.source_route);
+      patchRouteInState(data.target_route);
+      markRoutesEdited(data.source_route.route_name, data.target_route.route_name);
+      setStatus(`Added ${orderIds.length} address${orderIds.length === 1 ? '' : 'es'} from ${data.source_route.route_name} to ${data.target_route.route_name}. Route re-organized.`);
+      return true;
+    } catch (err) {
+      console.error('Move addresses failed:', err);
+      setWarnings([err.message || 'Unable to add these addresses to the route. Please try again.']);
+      return false;
+    } finally {
+      setIsMovingAddresses(false);
+    }
+  };
+
   // Move a stop earlier/later in its own route's delivery sequence.
   const handleReorderStop = (routeName, orderId, direction) => {
     const route = routes.find((r) => r.route_name === routeName);
@@ -1174,18 +1209,35 @@ function App() {
     return clean ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(clean)}` : '';
   };
 
+  // A phone number column in the source Excel could be labeled a few
+  // different ways ("CONTACT NUMBER" is what real uploads use, but the
+  // upload's header text is whatever the business typed) - kept alongside
+  // the address/location under its original header in extra_fields, same
+  // as crud.resolve_location does for Location on the backend.
+  const PHONE_FIELD_NAMES = ['phone', 'contact number', 'contact', 'mobile', 'mobile number', 'phone number'];
+  const resolveOrderPhone = (order) => {
+    const extra = order?.extra_fields || {};
+    for (const label of Object.keys(extra)) {
+      if (PHONE_FIELD_NAMES.includes(String(label).trim().toLowerCase())) {
+        const value = extra[label];
+        if (value !== null && value !== undefined && String(value).trim()) return String(value).trim();
+      }
+    }
+    return '';
+  };
+
   // Palette mirrors App.css's --btn-fill / --ink / --good / --critical so the
   // sheet reads as the same product, not a plain default-Excel export.
   // ARGB (exceljs requires the leading alpha channel - FF = fully opaque).
-  const XLSX_VIOLET = 'FF0891B2'; // brand cyan, kept the historical name to avoid touching every call site below
-  const XLSX_VIOLET_DARK = 'FF0E7490';
+  const XLSX_VIOLET = 'FF4F46E5'; // brand indigo, kept the historical name to avoid touching every call site below
+  const XLSX_VIOLET_DARK = 'FF4338CA';
   const XLSX_ZEBRA = 'FFF3F1FA';
   const XLSX_WHITE = 'FFFFFFFF';
   const XLSX_INK = 'FF1E1B2E';
   const XLSX_GOOD = 'FF059669';
   const XLSX_CRITICAL = 'FFDC2626';
   const XLSX_SIGNAL = 'FFD97706';
-  const XLSX_COL_COUNT = 10;
+  const XLSX_COL_COUNT = 14;
   const XLSX_THIN_BORDER_SIDE = { style: 'thin', color: { argb: 'FFE2DFF0' } };
   const XLSX_THIN_BORDER = {
     top: XLSX_THIN_BORDER_SIDE, bottom: XLSX_THIN_BORDER_SIDE,
@@ -1224,9 +1276,12 @@ function App() {
       views: [{ showGridLines: false }],
     });
 
+    // Stop # / Order ID / Customer / Phone / Address / Location / Delivery
+    // Slot / ETA / Status / Route / Vehicle / Latitude / Longitude / Maps.
     sheet.columns = [
-      { width: 8 }, { width: 12 }, { width: 20 }, { width: 38 },
-      { width: 14 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 20 },
+      { width: 8 }, { width: 12 }, { width: 20 }, { width: 14 }, { width: 38 },
+      { width: 16 }, { width: 14 }, { width: 10 }, { width: 10 }, { width: 12 },
+      { width: 10 }, { width: 12 }, { width: 12 }, { width: 20 },
     ];
 
     // --- Title bar ---
@@ -1287,7 +1342,10 @@ function App() {
     // --- Stops table ---
     sectionHeader(11, 'DELIVERY STOPS');
     const HEADER_ROW = 12;
-    const headers = ['Stop #', 'Order ID', 'Customer', 'Address', 'Delivery Slot', 'ETA', 'Status', 'Latitude', 'Longitude', 'Google Maps'];
+    const headers = [
+      'Stop #', 'Order ID', 'Customer', 'Phone', 'Address', 'Location',
+      'Delivery Slot', 'ETA', 'Status', 'Route', 'Vehicle', 'Latitude', 'Longitude', 'Google Maps',
+    ];
     headers.forEach((label, c) => {
       const cell = sheet.getCell(HEADER_ROW, c + 1);
       cell.value = label;
@@ -1304,10 +1362,17 @@ function App() {
         idx + 1,
         order.order_id,
         order.customer_name,
+        resolveOrderPhone(order) || '—',
         order.address,
+        // order.area is the backend's resolved Location - the uploaded
+        // file's own LOCATION column when it had one (crud.resolve_location),
+        // never a value invented here.
+        order.area || '—',
         order.delivery_time,
         order.eta || '—',
         order.is_late ? 'LATE' : 'On time',
+        route.route_name,
+        route.vehicle_type === 'car' ? 'Car' : 'Bike',
         order.lat != null ? order.lat : '—',
         order.lng != null ? order.lng : '—',
       ];
@@ -1315,18 +1380,18 @@ function App() {
         const cell = sheet.getCell(rowNum, c + 1);
         cell.value = value;
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
-        cell.alignment = { horizontal: c === 0 || c >= 7 ? 'center' : 'left', vertical: 'middle' };
+        cell.alignment = { horizontal: c === 0 || c >= 11 ? 'center' : 'left', vertical: 'middle' };
         cell.border = XLSX_THIN_BORDER;
         cell.font = { color: { argb: XLSX_INK } };
       });
-      sheet.getCell(rowNum, 7).font = { bold: true, color: { argb: order.is_late ? XLSX_CRITICAL : XLSX_GOOD } };
+      sheet.getCell(rowNum, 9).font = { bold: true, color: { argb: order.is_late ? XLSX_CRITICAL : XLSX_GOOD } };
 
       // order.map_link is the backend's precise single-pin link (lat/lng
       // when geocoded - always resolves exactly, no address parsing);
       // buildStopMapsLink is only a client-side fallback for an order that
       // predates that field (e.g. a route plan generated before this was
       // added and not yet re-saved).
-      const mapsCell = sheet.getCell(rowNum, 10);
+      const mapsCell = sheet.getCell(rowNum, 14);
       mapsCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
       mapsCell.border = XLSX_THIN_BORDER;
       mapsCell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -2120,10 +2185,12 @@ function App() {
             pendingOrders={pendingOrders}
             isProcessing={isProcessing}
             capacityFor={capacityFor}
+            maxCapacityFor={maxCapacityFor}
             isRouteFull={isRouteFull}
             isCreatingRoute={isCreatingRoute}
             isChangingVehicle={isChangingVehicle}
             isDeletingRoute={isDeletingRoute}
+            isMovingAddresses={isMovingAddresses}
             onCreateRoute={handleCreateRoute}
             onToggleVehicle={handleToggleVehicleType}
             onDeleteRoute={handleDeleteRoute}
@@ -2131,6 +2198,7 @@ function App() {
             onReorderRoute={persistReorder}
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
+            onMoveOrders={handleMoveOrdersBetweenRoutes}
           />
 
         </div>
