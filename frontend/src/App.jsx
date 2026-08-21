@@ -2,6 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import ExcelJS from 'exceljs';
 import RouteWorkspace from './routes/RouteWorkspace';
 import './App.css';
+// Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
+// modal) for the Drivers panel's create/edit/reset-password forms below,
+// rather than duplicating that CSS - importing a stylesheet twice is a
+// no-op, not a double-apply.
+import './routes/routeWorkspace.css';
 import arzLogo from './assets/arz-logo.png';
 import arzLogoDark from './assets/arz-logo-dark.png';
 import {
@@ -43,6 +48,7 @@ const NAV_ITEMS = [
   { key: 'generate', label: 'Generate Routes', icon: IconRoute, anchor: 'toolbar-section' },
   { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
   { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
+  { key: 'drivers', label: 'Drivers', icon: IconUsers },
   { key: 'history', label: 'Route History', icon: IconHistory },
 ];
 const NAV_ITEMS_SOON = [
@@ -139,6 +145,147 @@ function KpiTile({ variant, icon: Icon, value, label, suffix, graphic }) {
   );
 }
 
+function DriverStatusPill({ status }) {
+  return (
+    <span className={`driver-status-pill driver-status-pill--${status}`}>
+      {status === 'active' ? '🟢 Active' : '⚪ Inactive'}
+    </span>
+  );
+}
+
+// Random, readable-enough starter password for the "Generate" shortcut in
+// the create/reset-password forms - the admin can still type their own.
+function generateRandomPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let out = '';
+  for (let i = 0; i < 10; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+// Create/Edit Driver - the username and initial password only apply on
+// create (UpdateDriverRequest on the backend deliberately has no username
+// or password fields, so an existing login is changed only through Reset
+// Password, never edited in place here).
+function DriverFormModal({ driver, onSave, onClose, isSubmitting }) {
+  const isEdit = Boolean(driver);
+  const [name, setName] = useState(driver?.name || '');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [mobile, setMobile] = useState(driver?.mobile || '');
+  const [vehicleNumber, setVehicleNumber] = useState(driver?.vehicle_number || '');
+  const [notes, setNotes] = useState(driver?.notes || '');
+  const [error, setError] = useState(null);
+
+  const canSubmit = name.trim() && (isEdit || (username.trim() && password.trim().length >= 4));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setError(null);
+    const ok = await onSave({
+      name: name.trim(),
+      username: username.trim(),
+      password,
+      mobile: mobile.trim(),
+      vehicle_number: vehicleNumber.trim(),
+      notes: notes.trim(),
+    });
+    if (!ok) setError('Could not save - see the toast for details.');
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <div className="modal__header">
+          <h3>{isEdit ? `Edit ${driver.name}` : 'Add Driver'}</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+        <div className="modal__body">
+          <label className="modal__field-label" htmlFor="driver-name">Full name</label>
+          <input id="driver-name" className="modal__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ramesh Kumar" autoFocus />
+
+          {isEdit ? (
+            <>
+              <label className="modal__field-label">Login username</label>
+              <div className="modal__static-value">{driver.username} <span className="modal__static-hint">— use Reset Password to change credentials</span></div>
+            </>
+          ) : (
+            <>
+              <label className="modal__field-label" htmlFor="driver-username">Login username</label>
+              <input id="driver-username" className="modal__input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. ramesh.k" />
+
+              <label className="modal__field-label" htmlFor="driver-password">Initial password</label>
+              <div className="modal__inline-row">
+                <input id="driver-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
+                <button type="button" className="btn btn--outline btn--compact" onClick={() => setPassword(generateRandomPassword())}>Generate</button>
+              </div>
+            </>
+          )}
+
+          <label className="modal__field-label" htmlFor="driver-mobile">Mobile number</label>
+          <input id="driver-mobile" className="modal__input" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Optional" />
+
+          <label className="modal__field-label" htmlFor="driver-vehicle">Vehicle number</label>
+          <input id="driver-vehicle" className="modal__input" value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="e.g. TN-01-AB-1234 (optional)" />
+
+          <label className="modal__field-label" htmlFor="driver-notes">Notes</label>
+          <input id="driver-notes" className="modal__input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+        </div>
+        {error && <div className="modal__warning"><IconAlert width={13} height={13} />{error}</div>}
+        <div className="modal__footer">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn--primary" disabled={!canSubmit || isSubmitting}>
+            {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Driver'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ResetPasswordModal({ driver, onSave, onClose, isSubmitting }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const canSubmit = password.trim().length >= 4;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setError(null);
+    const ok = await onSave(password);
+    if (!ok) setError('Could not reset password - see the toast for details.');
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <div className="modal__header">
+          <h3>Reset Password — {driver.name}</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+        <div className="modal__body">
+          <p className="modal__hint">
+            This immediately signs {driver.name} out of the Driver App on every device. Share the new
+            password with them directly - it isn't emailed or texted automatically.
+          </p>
+          <label className="modal__field-label" htmlFor="driver-new-password">New password</label>
+          <div className="modal__inline-row">
+            <input id="driver-new-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" autoFocus />
+            <button type="button" className="btn btn--outline btn--compact" onClick={() => setPassword(generateRandomPassword())}>Generate</button>
+          </div>
+        </div>
+        {error && <div className="modal__warning"><IconAlert width={13} height={13} />{error}</div>}
+        <div className="modal__footer">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn--primary" disabled={!canSubmit || isSubmitting}>
+            {isSubmitting ? 'Resetting…' : 'Reset Password'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function App() {
   const [status, setStatus] = useState('Ready to upload Excel');
   const [fileName, setFileName] = useState('');
@@ -188,6 +335,20 @@ function App() {
   const [historyPlans, setHistoryPlans] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState(null);
+
+  // Drivers panel (roster CRUD) - the assignment picker on a route's detail
+  // view (RouteWorkspace) reads from this same `drivers` list, so it stays
+  // fresh even when the panel itself has never been opened this session.
+  const [driversOpen, setDriversOpen] = useState(false);
+  const [drivers, setDrivers] = useState([]);
+  const [isLoadingDrivers, setIsLoadingDrivers] = useState(false);
+  const [driversError, setDriversError] = useState(null);
+  const [driverFormOpen, setDriverFormOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState(null); // null = create mode
+  const [isSavingDriver, setIsSavingDriver] = useState(false);
+  const [resetPasswordDriver, setResetPasswordDriver] = useState(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isTogglingDriverStatus, setIsTogglingDriverStatus] = useState(null); // driver id or null
 
   // The geocoded orders routes were last built from - kept around so the
   // fleet count can change and routes can be rebuilt without re-uploading.
@@ -407,6 +568,8 @@ function App() {
     setMobileNavOpen(false);
     if (item.key === 'history') {
       openHistory();
+    } else if (item.key === 'drivers') {
+      openDrivers();
     } else if (item.anchor === 'top') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
@@ -515,6 +678,14 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The driver roster loads independently of the upload/routes session
+  // above - it's not part of that snapshot, and the route-detail "Assign
+  // Driver" picker needs it even before the Drivers panel is ever opened.
+  useEffect(() => {
+    refreshDrivers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Resets the CURRENT tab back to the pre-upload empty state - file name,
   // order count, orders, failed addresses, everything. Used after deleting
   // a route plan (deleting a route must clear the upload info that went
@@ -609,6 +780,170 @@ function App() {
     } finally {
       setIsLoadingHistory(false);
     }
+  };
+
+  // Driver roster - independent of the upload/routes session above, so it's
+  // loaded once on mount (see the effect near the top) and refreshed after
+  // every create/edit/status/reassignment call, whether or not the Drivers
+  // panel itself is open (the route-detail "Assign Driver" picker reads
+  // this same list).
+  const refreshDrivers = async () => {
+    setIsLoadingDrivers(true);
+    setDriversError(null);
+    try {
+      const response = await apiFetch('/api/drivers');
+      if (!response.ok) throw new Error(`Failed to load drivers (${response.status})`);
+      const data = await response.json();
+      setDrivers(data.drivers || []);
+    } catch (err) {
+      console.error('Could not load drivers:', err);
+      setDriversError('Could not load drivers - check the backend connection.');
+    } finally {
+      setIsLoadingDrivers(false);
+    }
+  };
+
+  const openDrivers = () => {
+    setDriversOpen(true);
+    refreshDrivers();
+  };
+
+  const handleSaveDriver = async (formValues) => {
+    setIsSavingDriver(true);
+    try {
+      let response;
+      if (editingDriver) {
+        response = await apiFetch(`/api/drivers/${editingDriver.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formValues.name,
+            mobile: formValues.mobile || null,
+            vehicle_number: formValues.vehicle_number || null,
+            notes: formValues.notes || null,
+          }),
+        });
+      } else {
+        response = await apiFetch('/api/drivers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formValues.name,
+            username: formValues.username,
+            password: formValues.password,
+            mobile: formValues.mobile || null,
+            vehicle_number: formValues.vehicle_number || null,
+            notes: formValues.notes || null,
+          }),
+        });
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Could not save driver (${response.status})`);
+      }
+      showToast(editingDriver ? 'Driver updated.' : `Driver created${formValues.username ? ` - login "${formValues.username}"` : ''}.`);
+      setDriverFormOpen(false);
+      setEditingDriver(null);
+      await refreshDrivers();
+      return true;
+    } catch (err) {
+      showToast(err.message || 'Could not save driver.');
+      return false;
+    } finally {
+      setIsSavingDriver(false);
+    }
+  };
+
+  // Deactivating revokes every session the driver is currently logged in
+  // with on their end (server-side, on the next status check) - worth
+  // saying plainly in the confirm, not just doing it silently.
+  const handleToggleDriverStatus = async (driver) => {
+    const nextStatus = driver.status === 'active' ? 'inactive' : 'active';
+    if (nextStatus === 'inactive') {
+      const warn = driver.assigned_route_name
+        ? ` They'll stay assigned to ${driver.assigned_route_name} until you reassign it.`
+        : '';
+      if (!window.confirm(`Deactivate ${driver.name}? This signs them out of the Driver App immediately.${warn}`)) return;
+    }
+    setIsTogglingDriverStatus(driver.id);
+    try {
+      const response = await apiFetch(`/api/drivers/${driver.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Could not update status (${response.status})`);
+      }
+      showToast(`${driver.name} ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`);
+      await refreshDrivers();
+    } catch (err) {
+      showToast(err.message || 'Could not update driver status.');
+    } finally {
+      setIsTogglingDriverStatus(null);
+    }
+  };
+
+  const handleResetPassword = async (newPassword) => {
+    if (!resetPasswordDriver) return false;
+    setIsResettingPassword(true);
+    try {
+      const response = await apiFetch(`/api/drivers/${resetPasswordDriver.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Could not reset password (${response.status})`);
+      }
+      showToast(`Password reset for ${resetPasswordDriver.name} - share the new password with them directly.`);
+      setResetPasswordDriver(null);
+      return true;
+    } catch (err) {
+      showToast(err.message || 'Could not reset password.');
+      return false;
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  // Assignment - called from a route's detail view (RouteWorkspace), not
+  // from the Drivers panel itself. Returns the raw response body so the
+  // caller can act on a `conflict: true` reply (driver's already elsewhere)
+  // without this function guessing what "confirm and retry with force"
+  // should look like in that UI.
+  const handleAssignDriver = async (routeId, driverId, force = false) => {
+    const response = await apiFetch(`/api/routes/${routeId}/driver`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ driver_id: driverId, force }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `Could not assign driver (${response.status})`);
+    if (!data.conflict) {
+      showToast(`${data.driver.name} assigned to ${data.route.route_name}.`);
+      refreshDrivers();
+    }
+    return data;
+  };
+
+  const handleUnassignDriver = async (routeId) => {
+    const response = await apiFetch(`/api/routes/${routeId}/driver`, { method: 'DELETE' });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || `Could not unassign driver (${response.status})`);
+    }
+    showToast('Driver unassigned from this route.');
+    refreshDrivers();
+    return response.json();
+  };
+
+  const fetchRouteTracking = async (routeId) => {
+    const response = await apiFetch(`/api/routes/${routeId}/tracking`);
+    if (!response.ok) throw new Error(`Could not load tracking (${response.status})`);
+    return response.json();
   };
 
   // Switches the whole working view over to a saved plan from history -
@@ -2307,6 +2642,10 @@ function App() {
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
             requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
+            drivers={drivers}
+            onAssignDriver={handleAssignDriver}
+            onUnassignDriver={handleUnassignDriver}
+            fetchRouteTracking={fetchRouteTracking}
           />
 
         </div>
@@ -2371,6 +2710,107 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {driversOpen && (
+        <div className="history-overlay" role="dialog" aria-modal="true" aria-label="Drivers">
+          <div className="history-overlay__scrim" onClick={() => setDriversOpen(false)} />
+          <div className="history-panel">
+            <div className="history-panel__head">
+              <h2><IconUsers width={18} height={18} /> Drivers</h2>
+              <button className="topbar__icon-btn" onClick={() => setDriversOpen(false)} aria-label="Close Drivers">
+                <IconX width={18} height={18} />
+              </button>
+            </div>
+            <p className="history-panel__sub">
+              Create driver logins for the Driver App, and assign them to routes from each route's detail view.
+              Deactivating a driver signs them out everywhere immediately.
+            </p>
+            <div className="history-panel__body">
+              <div className="drivers-panel__toolbar">
+                <button type="button" className="btn btn--primary" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
+                  <IconPlus width={14} height={14} /> Add Driver
+                </button>
+              </div>
+
+              {isLoadingDrivers ? (
+                <div className="history-panel__skeletons">
+                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
+                </div>
+              ) : driversError ? (
+                <div className="empty-state">{driversError}</div>
+              ) : drivers.length === 0 ? (
+                <div className="empty-state">
+                  No drivers yet. Click <strong>Add Driver</strong> to create the first login for the Driver App.
+                </div>
+              ) : (
+                <div className="drivers-table-wrap">
+                  <table className="drivers-table">
+                    <thead>
+                      <tr>
+                        <th>Driver</th>
+                        <th>Login</th>
+                        <th>Vehicle</th>
+                        <th>Status</th>
+                        <th>Assigned Route</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drivers.map((driver) => (
+                        <tr key={driver.id}>
+                          <td>
+                            <div className="drivers-table__name">{driver.name}</div>
+                            <div className="drivers-table__code mono-num">{driver.driver_code}</div>
+                          </td>
+                          <td>
+                            <div>{driver.username}</div>
+                            {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
+                          </td>
+                          <td>{driver.vehicle_number || '—'}</td>
+                          <td><DriverStatusPill status={driver.status} /></td>
+                          <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
+                          <td>
+                            <div className="drivers-table__actions">
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>Edit</button>
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>Reset Password</button>
+                              <button
+                                type="button"
+                                className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
+                                disabled={isTogglingDriverStatus === driver.id}
+                                onClick={() => handleToggleDriverStatus(driver)}
+                              >
+                                {isTogglingDriverStatus === driver.id ? '…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {driverFormOpen && (
+        <DriverFormModal
+          driver={editingDriver}
+          isSubmitting={isSavingDriver}
+          onClose={() => { setDriverFormOpen(false); setEditingDriver(null); }}
+          onSave={handleSaveDriver}
+        />
+      )}
+
+      {resetPasswordDriver && (
+        <ResetPasswordModal
+          driver={resetPasswordDriver}
+          isSubmitting={isResettingPassword}
+          onClose={() => setResetPasswordDriver(null)}
+          onSave={handleResetPassword}
+        />
       )}
 
       {toast && (

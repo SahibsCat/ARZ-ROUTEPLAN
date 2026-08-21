@@ -597,3 +597,90 @@
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--rule);
 }
+
+/* Plain text-input fields reused by the create/edit/reset-password forms
+   (Driver Form, Reset Password) - same shape as .modal__source-select. */
+.modal__input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+.modal__input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.modal__inline-row { display: flex; gap: 0.5rem; align-items: center; }
+.modal__inline-row .modal__input { flex: 1; }
+.modal__static-value { font-size: 0.9rem; color: var(--ink); padding: 0.4rem 0; }
+.modal__static-hint { font-size: 0.78rem; color: var(--ink-soft); font-weight: 400; }
+.modal__hint { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.5; margin: 0 0 0.4rem; }
+
+.btn--compact { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
+
+/* =======================================================================
+   Drivers panel (App.jsx sidebar overlay) - roster table + status pills.
+======================================================================= */
+.drivers-panel__toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.9rem; }
+.drivers-table-wrap { overflow-x: auto; }
+.drivers-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+.drivers-table th {
+  text-align: left; padding: 0.6rem 0.8rem;
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ink-soft); border-bottom: 1px solid var(--rule);
+}
+.drivers-table td { padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ink); }
+.drivers-table__name { font-weight: 700; }
+.drivers-table__code { font-size: 0.75rem; color: var(--ink-soft); margin-top: 0.1rem; }
+.drivers-table__meta { font-size: 0.8rem; color: var(--ink-soft); }
+.drivers-table__actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.driver-status-pill {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.25rem 0.65rem; border-radius: 20px;
+  font-size: 0.76rem; font-weight: 700;
+  background: var(--surface-2); color: var(--ink-soft);
+}
+.driver-status-pill--active { background: var(--good-soft); color: var(--good); }
+
+/* =======================================================================
+   Driver & Live Tracking card (route detail view).
+======================================================================= */
+.driver-card {
+  margin: 1.25rem 2rem 0;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.driver-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+.driver-card__head h3 {
+  display: flex; align-items: center; gap: 0.4rem; margin: 0;
+  font-family: var(--font-display); font-size: 0.95rem; font-weight: 800; color: var(--ink);
+}
+.driver-card__refresh { width: 26px; height: 26px; }
+.driver-card__loading { font-size: 0.85rem; color: var(--ink-soft); }
+.driver-card__empty { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; font-size: 0.88rem; color: var(--ink-soft); }
+.driver-card__row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.driver-card__identity { display: flex; flex-direction: column; gap: 0.15rem; }
+.driver-card__name { font-size: 1rem; font-weight: 700; color: var(--ink); }
+.driver-card__meta { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.3rem; }
+.driver-card__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.9rem; }
+
+.tracking-status-pill {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.25rem 0.65rem; border-radius: 20px;
+  font-size: 0.76rem; font-weight: 700;
+  background: var(--surface-2); color: var(--ink-soft);
+}
+.tracking-status-pill--live { background: var(--good-soft); color: var(--good); }
+.tracking-status-pill--delayed { background: var(--signal-soft); color: var(--signal); }
+.tracking-status-pill--offline { background: var(--critical-soft); color: var(--critical); }
+.tracking-status-pill--not_started { background: var(--surface-2); color: var(--ink-soft); }
+.tracking-status-pill--completed { background: var(--neutral-soft); color: var(--neutral); }
+
+@media (max-width: 720px) {
+  .driver-card { margin-left: 1.1rem; margin-right: 1.1rem; }
+  .drivers-table__actions { flex-direction: column; }
+}

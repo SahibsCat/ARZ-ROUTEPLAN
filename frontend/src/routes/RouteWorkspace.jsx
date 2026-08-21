@@ -34,10 +34,10 @@ function matchesQuery(order, query) {
   );
 }
 
-// This app has no driver roster, no live GPS, and no route-execution state
-// machine (start/pause/complete) - a route is either empty, has room, is at
-// capacity, or has late deliveries. Every "status" concept in this
-// workspace is derived from those four real signals, not invented ones.
+// Capacity/lateness status only - a route is either empty, has room, is at
+// capacity, or has late deliveries. Driver assignment and live GPS tracking
+// are a separate concept, shown in the route detail's Driver & Tracking
+// card (DriverTrackingCard below) rather than folded into this badge.
 function routeStatus(route, capacity) {
   const count = route.orders.length;
   if (count === 0) return 'empty';
@@ -445,10 +445,205 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
   );
 }
 
+const TRACKING_STATUS_LABEL = {
+  not_started: { emoji: '⚪', text: 'Not Started' },
+  live: { emoji: '🟢', text: 'Live' },
+  delayed: { emoji: '🟠', text: 'Delayed' },
+  offline: { emoji: '🔴', text: 'Offline' },
+  completed: { emoji: '⚫', text: 'Completed' },
+};
+
+function TrackingStatusPill({ status }) {
+  const info = TRACKING_STATUS_LABEL[status] || TRACKING_STATUS_LABEL.not_started;
+  return <span className={`tracking-status-pill tracking-status-pill--${status}`}>{info.emoji} {info.text}</span>;
+}
+
+// Pick a driver for this route - separate from the "conflict" flow the
+// backend can hand back (the same driver already running a different
+// route), which this surfaces as a plain confirm rather than a second
+// modal, since it's a rare, single yes/no decision.
+function AssignDriverModal({ route, drivers, onAssign, onClose }) {
+  const activeDrivers = drivers.filter((d) => d.status === 'active');
+  const [driverId, setDriverId] = useState(activeDrivers[0]?.id ? String(activeDrivers[0].id) : '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const doAssign = async (force) => {
+    if (!driverId) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const result = await onAssign(Number(driverId), force);
+      if (result.conflict) {
+        if (window.confirm(`${result.message}`)) {
+          await doAssign(true);
+          return;
+        }
+        setIsSubmitting(false);
+        return;
+      }
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not assign driver.');
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__header">
+          <h3>Assign Driver — {route.route_name}</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+        <div className="modal__body">
+          {activeDrivers.length === 0 ? (
+            <div className="empty-state">No active drivers yet - add one from the Drivers page first.</div>
+          ) : (
+            <>
+              <label className="modal__field-label" htmlFor="assign-driver-select">Driver</label>
+              <select
+                id="assign-driver-select"
+                className="select-compact modal__source-select"
+                value={driverId}
+                onChange={(e) => setDriverId(e.target.value)}
+              >
+                {activeDrivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.driver_code}){d.assigned_route_name ? ` — currently on ${d.assigned_route_name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+        </div>
+        {error && <div className="modal__warning"><IconAlert width={13} height={13} />{error}</div>}
+        <div className="modal__footer">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn--primary" disabled={!driverId || isSubmitting} onClick={() => doAssign(false)}>
+            {isSubmitting ? 'Assigning…' : 'Assign Driver'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Live status + assignment for the route currently open in detail view.
+// Polls GET /api/routes/{id}/tracking on its own timer while this card is
+// mounted (i.e. only while an admin actually has this route's detail view
+// open) rather than pushing tracking state up into the whole workspace.
+function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking }) {
+  const [tracking, setTracking] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [isUnassigning, setIsUnassigning] = useState(false);
+
+  const load = async () => {
+    try {
+      const data = await fetchRouteTracking(route.route_id);
+      setTracking(data);
+      setError(null);
+    } catch (err) {
+      setError(err.message || 'Could not load driver tracking.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setIsLoading(true);
+    load();
+    const interval = setInterval(load, 15000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.route_id]);
+
+  const handleUnassign = async () => {
+    if (!window.confirm(`Remove ${tracking.driver.name} from ${route.route_name}?`)) return;
+    setIsUnassigning(true);
+    try {
+      await onUnassignDriver(route.route_id);
+      await load();
+    } finally {
+      setIsUnassigning(false);
+    }
+  };
+
+  return (
+    <div className="driver-card">
+      <div className="driver-card__head">
+        <h3><IconUsers width={14} height={14} /> Driver & Live Tracking</h3>
+        <button type="button" className="modal__close driver-card__refresh" title="Refresh" onClick={load}>
+          <IconRefresh width={14} height={14} />
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="driver-card__loading">Loading…</div>
+      ) : error ? (
+        <div className="empty-state">{error}</div>
+      ) : !tracking.driver ? (
+        <div className="driver-card__empty">
+          <span>No driver assigned to this route yet.</span>
+          <button type="button" className="btn btn--outline" onClick={() => setShowAssignModal(true)}>
+            <IconPlus width={14} height={14} /> Assign Driver
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="driver-card__row">
+            <div className="driver-card__identity">
+              <span className="driver-card__name">{tracking.driver.name}</span>
+              <span className="driver-card__meta mono-num">{tracking.driver.driver_code}{tracking.driver.vehicle_number ? ` · ${tracking.driver.vehicle_number}` : ''}{tracking.driver.mobile ? ` · ${tracking.driver.mobile}` : ''}</span>
+            </div>
+            <TrackingStatusPill status={tracking.tracking_status} />
+          </div>
+          {tracking.last_location && (
+            <div className="driver-card__meta">
+              Last seen {new Date(tracking.last_location.recorded_at).toLocaleTimeString()}
+            </div>
+          )}
+          <div className="driver-card__actions">
+            {tracking.last_location?.maps_url ? (
+              <a className="btn btn--secondary" href={tracking.last_location.maps_url} target="_blank" rel="noopener noreferrer">
+                <IconPin width={14} height={14} /> Track Driver
+              </a>
+            ) : (
+              <button type="button" className="btn btn--secondary" disabled title="No location reported yet">
+                <IconPin width={14} height={14} /> Track Driver
+              </button>
+            )}
+            <button type="button" className="btn btn--outline" onClick={() => setShowAssignModal(true)}>Change Driver</button>
+            <button type="button" className="btn btn--danger-ghost" disabled={isUnassigning} onClick={handleUnassign}>
+              {isUnassigning ? 'Removing…' : 'Unassign'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {showAssignModal && (
+        <AssignDriverModal
+          route={route}
+          drivers={drivers}
+          onClose={() => setShowAssignModal(false)}
+          onAssign={async (driverId, force) => {
+            const result = await onAssignDriver(route.route_id, driverId, force);
+            if (!result.conflict) await load();
+            return result;
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function RouteDetail({
   route, routeIdx, routes, capacityFor, pendingOrders,
   onBack, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
   onReassignOrder, onAssignOrders, onReorderRoute,
+  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking,
   selectedOrderId, onSelectOrder,
   maxCapacityFor, onMoveOrders, isMovingAddresses,
 }) {
@@ -593,6 +788,14 @@ function RouteDetail({
       </div>
 
       <RouteOverviewStrip route={route} capacity={capacity} maxCapacity={maxCapacity} />
+
+      <DriverTrackingCard
+        route={route}
+        drivers={drivers}
+        onAssignDriver={onAssignDriver}
+        onUnassignDriver={onUnassignDriver}
+        fetchRouteTracking={fetchRouteTracking}
+      />
 
       <div className="route-stop-list">
         {count === 0 ? (
@@ -837,6 +1040,7 @@ export default function RouteWorkspace({
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders,
   requestedTab,
+  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking,
 }) {
   const [tab, setTab] = useState('routes');
   // requestedTab is a one-way "command" from the sidebar nav (clicking
@@ -964,6 +1168,10 @@ export default function RouteWorkspace({
           isMovingAddresses={isMovingAddresses}
           selectedOrderId={selectedOrderId}
           onSelectOrder={setSelectedOrderId}
+          drivers={drivers}
+          onAssignDriver={onAssignDriver}
+          onUnassignDriver={onUnassignDriver}
+          fetchRouteTracking={fetchRouteTracking}
         />
       ) : (
         <div className="routes-page">
