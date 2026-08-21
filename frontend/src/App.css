@@ -204,7 +204,7 @@ body { min-height: 100vh; }
    Sidebar
 ======================================================================= */
 .sidebar {
-  --sidebar-w: 268px;
+  --sidebar-w: 252px;
   width: var(--sidebar-w);
   flex: none;
   position: sticky;
@@ -471,16 +471,30 @@ body { min-height: 100vh; }
   border-radius: 20px;
 }
 
+.topbar__account {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.65rem 0.3rem 0.3rem;
+  border-radius: 20px;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.topbar__account:hover { border-color: var(--accent); }
 .topbar__avatar {
   flex: none;
-  width: 36px; height: 36px;
+  width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
   background: var(--primary);
   color: #fff;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
+.topbar__account-name { font-size: 0.82rem; color: var(--ink-soft); white-space: nowrap; }
+.topbar__account-chevron { flex: none; color: var(--ink-faint); }
+@media (max-width: 900px) { .topbar__account-name { display: none; } }
 
 .quick-actions { position: relative; flex: none; }
 .quick-action {
@@ -538,10 +552,51 @@ body { min-height: 100vh; }
 .quick-actions__item:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* =======================================================================
+   Exception strip — the two things worth knowing before anything else.
+======================================================================= */
+.exception-strip {
+  display: flex;
+  gap: 1rem;
+  padding: 1.75rem 2rem 0;
+}
+.exception-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1.15rem;
+}
+.exception-card--ok { background: color-mix(in srgb, var(--good) 8%, transparent); border: 1px solid color-mix(in srgb, var(--good) 25%, transparent); }
+.exception-card--warn { background: color-mix(in srgb, var(--signal) 8%, transparent); border: 1px solid color-mix(in srgb, var(--signal) 25%, transparent); }
+.exception-card__icon {
+  flex: none;
+  width: 34px; height: 34px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+}
+.exception-card--ok .exception-card__icon { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.exception-card--warn .exception-card__icon { background: color-mix(in srgb, var(--signal) 16%, transparent); color: var(--signal); }
+.exception-card__body { flex: 1; min-width: 0; }
+.exception-card__title { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.exception-card__subtitle { font-size: 0.78rem; color: var(--ink-soft); margin-top: 0.1rem; }
+.exception-card__link {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.exception-card__link:hover { color: var(--accent-strong); }
+
+/* =======================================================================
    KPI strip — premium stat cards
 ======================================================================= */
 .kpi-strip {
-  padding: 1.75rem 2rem 0;
+  padding: 1.25rem 2rem 0;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -561,6 +616,82 @@ body { min-height: 100vh; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.25rem;
+}
+/* Fixed 2/3-up grids for the narrower Fleet/Routes column next to the
+   routes preview panel - auto-fit's minmax(200px) would collapse to a
+   single column at that width instead of holding its shape. */
+.kpi-cluster__grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpi-cluster__grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* --- Lower dashboard: Fleet/Routes clusters + a routes preview panel --- */
+.dashboard-lower {
+  display: flex;
+  gap: 1.75rem;
+  padding: 0 2rem 1.75rem;
+  align-items: flex-start;
+}
+.dashboard-lower__clusters {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.routes-preview {
+  width: 340px;
+  flex: none;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+.routes-preview__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.9rem; }
+.routes-preview__title { font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+.routes-preview__link { border: none; background: none; color: var(--primary); font-size: 0.78rem; font-weight: 600; cursor: pointer; padding: 0; }
+.routes-preview__link:hover { color: var(--accent-strong); }
+.routes-preview__list { display: flex; flex-direction: column; gap: 0.6rem; }
+.routes-preview__empty { font-size: 0.82rem; color: var(--ink-soft); padding: 0.5rem 0; }
+.routes-preview__row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+}
+.routes-preview__row:hover { border-color: var(--accent); }
+.routes-preview__row--empty { opacity: 0.7; }
+.routes-preview__seq {
+  flex: none;
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.72rem; font-weight: 700;
+}
+.routes-preview__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.routes-preview__name { font-size: 0.8rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.routes-preview__meta { font-size: 0.72rem; color: var(--ink-soft); }
+.routes-preview__badge {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+}
+.routes-preview__badge--full { color: var(--good); background: var(--good-soft); }
+.routes-preview__badge--open { color: var(--neutral); background: var(--neutral-soft); }
+.routes-preview__badge--delayed { color: var(--signal); background: var(--signal-soft); }
+.routes-preview__badge--empty { color: var(--ink-soft); background: var(--surface-2); }
+@media (max-width: 1100px) {
+  .dashboard-lower { flex-direction: column; }
+  .routes-preview { width: 100%; }
 }
 .kpi-tile {
   background: var(--surface-2);
@@ -612,7 +743,11 @@ body { min-height: 100vh; }
    doesn't get a status color. Only Pending and Failed genuinely represent
    something needing attention, so only those two keep semantic color. */
 .kpi-tile__icon { background: var(--surface-2); color: var(--ink-soft); }
-.kpi-tile--pending .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
+.kpi-tile--unassigned {
+  border-color: color-mix(in srgb, var(--signal) 30%, transparent);
+}
+.kpi-tile--unassigned .kpi-tile__value { color: var(--signal); }
+.kpi-tile--unassigned .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
 .kpi-tile--failed .kpi-tile__icon { background: var(--critical-soft); color: var(--critical); }
 
 /* Mini graphics — real proportions/breakdowns from today's data, not a

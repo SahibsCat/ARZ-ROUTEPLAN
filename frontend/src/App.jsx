@@ -1638,6 +1638,12 @@ function App() {
     : 0;
   const carRoutesCount = routes.filter((r) => r.vehicle_type === 'car').length;
   const bikeRoutesCount = routes.filter((r) => r.vehicle_type === 'bike').length;
+  // The Unassigned Orders pool is two real, distinct order statuses
+  // (crud.list_unassigned_orders combines them for the pool, but each
+  // order still carries its own) - "pending" never had a route at all,
+  // "unassigned" had one and was taken off it. Worth showing separately.
+  const unassignedOnlyCount = pendingOrders.filter((o) => o.status === 'unassigned').length;
+  const trulyPendingCount = pendingOrders.filter((o) => o.status === 'pending').length;
 
   const selectedFailedOrder = failedOrders.find((o) => String(o.order_id) === String(selectedFailedId)) || null;
   const selectedFeedback = selectedFailedId != null ? retryFeedback[String(selectedFailedId)] : null;
@@ -1794,7 +1800,11 @@ function App() {
               {alertCount > 0 && <span className="badge-dot">{alertCount}</span>}
             </button>
 
-            <div className="topbar__avatar" title="Dispatch Admin">DA</div>
+            <div className="topbar__account" title="Dispatch Admin">
+              <span className="topbar__avatar">DA</span>
+              <span className="topbar__account-name">Dispatch Admin</span>
+              <IconChevron width={13} height={13} className="topbar__account-chevron" />
+            </div>
           </div>
         </header>
 
@@ -1834,54 +1844,80 @@ function App() {
           </button>
         </div>
 
+      {/* Exception strip - the two things worth knowing about before
+          anything else: did anything fail to geocode, and is anything
+          waiting on a route. Real counts, not decoration; "Review" jumps
+          straight to the Unassigned Orders view. */}
+      <div className="exception-strip">
+        <div className={`exception-card${failedOrders.length > 0 ? ' exception-card--warn' : ' exception-card--ok'}`}>
+          <div className="exception-card__icon">
+            {failedOrders.length > 0 ? <IconAlert width={17} height={17} /> : <IconCheck width={17} height={17} />}
+          </div>
+          <div className="exception-card__body">
+            <div className="exception-card__title">{failedOrders.length} failed address{failedOrders.length === 1 ? '' : 'es'}</div>
+            <div className="exception-card__subtitle">
+              {failedOrders.length > 0 ? 'Needs a corrected address before it can be routed' : 'Everything geocoded cleanly today'}
+            </div>
+          </div>
+          {failedOrders.length > 0 && (
+            <button type="button" className="exception-card__link" onClick={() => handleNavClick({ key: 'failed', anchor: 'returns-board' })}>
+              Review →
+            </button>
+          )}
+        </div>
+        <div className={`exception-card${pendingOrders.length > 0 ? ' exception-card--warn' : ' exception-card--ok'}`}>
+          <div className="exception-card__icon">
+            {pendingOrders.length > 0 ? <IconClock width={17} height={17} /> : <IconCheck width={17} height={17} />}
+          </div>
+          <div className="exception-card__body">
+            <div className="exception-card__title">{pendingOrders.length} order{pendingOrders.length === 1 ? '' : 's'} unassigned</div>
+            <div className="exception-card__subtitle">
+              {pendingOrders.length > 0 ? 'Waiting on a route before the next batch' : 'Every order is on a route'}
+            </div>
+          </div>
+          {pendingOrders.length > 0 && (
+            <button type="button" className="exception-card__link" onClick={() => handleNavClick({ key: 'unassigned', anchor: 'unassigned-board' })}>
+              Review →
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="kpi-strip">
           <div className="kpi-cluster">
             <span className="kpi-cluster__label">Orders</span>
             <div className="kpi-cluster__grid">
               <KpiTile
                 variant="orders" icon={IconInbox} value={totalOrders} label="Today's orders"
-                graphic={<MiniProportionBar segments={[
-                  { value: assignedOrdersCount, color: 'var(--primary)' },
-                  { value: pendingOrders.length, color: 'var(--signal)' },
-                  { value: failedOrders.length, color: 'var(--critical)' },
-                ]} />}
               />
               <KpiTile
-                variant="assigned" icon={IconCheck} value={assignedOrdersCount} label="Assigned orders"
-                graphic={<MiniProportionBar segments={[
-                  { value: assignedOrdersCount, color: 'var(--primary)' },
-                  { value: Math.max(0, totalOrders - assignedOrdersCount), color: 'var(--rule)' },
-                ]} />}
+                variant="assigned" icon={IconCheck} value={assignedOrdersCount} label="Assigned"
               />
               <KpiTile
-                variant="pending" icon={IconClock} value={pendingOrders.length} label="Pending orders"
-                graphic={<MiniProportionBar segments={[
-                  { value: pendingOrders.length, color: 'var(--signal)' },
-                  { value: Math.max(0, totalOrders - pendingOrders.length), color: 'var(--rule)' },
-                ]} />}
+                variant="unassigned" icon={IconAlert} value={unassignedOnlyCount} label="Unassigned"
               />
               <KpiTile
-                variant="failed" icon={IconAlert} value={failedOrders.length} label="Failed addresses"
-                graphic={<MiniProportionBar segments={[
-                  { value: failedOrders.length, color: 'var(--critical)' },
-                  { value: Math.max(0, totalOrders - failedOrders.length), color: 'var(--rule)' },
-                ]} />}
+                variant="pending" icon={IconClock} value={trulyPendingCount} label="Pending"
               />
             </div>
           </div>
 
+      </div>
+
+      <div className="dashboard-lower">
+        <div className="dashboard-lower__clusters">
           <div className="kpi-cluster">
             <span className="kpi-cluster__label">Fleet</span>
-            <div className="kpi-cluster__grid">
+            <div className="kpi-cluster__grid kpi-cluster__grid--2">
               <KpiTile
-                variant="bikes" icon={IconBike} value={bikes} label="Available bikes"
+                variant="bikes" icon={IconBike} value={bikes} label="Bikes available"
                 graphic={<MiniProportionBar segments={[
                   { value: bikes, color: 'var(--primary)' },
                   { value: cars, color: 'var(--rule)' },
                 ]} />}
               />
               <KpiTile
-                variant="cars" icon={IconCar} value={cars} label="Available cars"
+                variant="cars" icon={IconCar} value={cars} label="Cars available"
                 graphic={<MiniProportionBar segments={[
                   { value: cars, color: 'var(--primary)' },
                   { value: bikes, color: 'var(--rule)' },
@@ -1892,7 +1928,14 @@ function App() {
 
           <div className="kpi-cluster">
             <span className="kpi-cluster__label">Routes</span>
-            <div className="kpi-cluster__grid">
+            <div className="kpi-cluster__grid kpi-cluster__grid--3">
+              <KpiTile
+                variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today"
+                graphic={<MiniProportionBar segments={[
+                  { value: carRoutesCount, color: 'var(--primary)' },
+                  { value: bikeRoutesCount, color: 'var(--neutral)' },
+                ]} />}
+              />
               <KpiTile
                 variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance"
                 graphic={<MiniSparkBars values={routes.map((r) => r.route_distance_km || 0)} color="var(--primary)" />}
@@ -1901,15 +1944,53 @@ function App() {
                 variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA"
                 graphic={<MiniSparkBars values={routes.map((r) => r.route_time_minutes || 0)} color="var(--primary)" />}
               />
-              <KpiTile
-                variant="routes" icon={IconRoute} value={routes.length} label="Today's routes"
-                graphic={<MiniProportionBar segments={[
-                  { value: carRoutesCount, color: 'var(--primary)' },
-                  { value: bikeRoutesCount, color: 'var(--neutral)' },
-                ]} />}
-              />
             </div>
           </div>
+        </div>
+
+        {/* Today's routes preview - the same status logic as the Routes
+            page (routeStatusFor), just the first three, so the dashboard
+            gives a real preview instead of only aggregate numbers. */}
+        <div className="routes-preview">
+          <div className="routes-preview__head">
+            <span className="routes-preview__title">Today's routes</span>
+            <button type="button" className="routes-preview__link" onClick={() => handleNavClick({ key: 'generate', anchor: 'toolbar-section' })}>
+              View all →
+            </button>
+          </div>
+          <div className="routes-preview__list">
+            {routes.length === 0 ? (
+              <div className="routes-preview__empty">No routes yet.</div>
+            ) : (
+              routes.slice(0, 3).map((route) => {
+                const capacity = capacityFor(route.vehicle_type);
+                const count = route.orders.length;
+                const status = count === 0 ? 'empty'
+                  : (route.late_deliveries && route.late_deliveries.length > 0) ? 'delayed'
+                  : count >= capacity ? 'full' : 'open';
+                const statusLabel = { empty: 'No deliveries', delayed: 'Delayed', full: 'Full', open: 'Open' }[status];
+                const subtitle = route.areas && route.areas.length ? route.areas.slice(0, 3).join(' → ') : 'No deliveries yet';
+                return (
+                  <button
+                    type="button"
+                    key={route.route_name}
+                    className={`routes-preview__row${status === 'empty' ? ' routes-preview__row--empty' : ''}`}
+                    onClick={() => handleNavClick({ key: 'generate', anchor: 'toolbar-section' })}
+                  >
+                    <span className="routes-preview__seq mono-num">{route.route_name.replace(/^Route\s*/i, '')}</span>
+                    <span className="routes-preview__info">
+                      <span className="routes-preview__name">{subtitle}</span>
+                      <span className="routes-preview__meta">
+                        {route.vehicle_type === 'car' ? 'Car' : 'Bike'} · {count} stop{count === 1 ? '' : 's'}{route.route_distance_km != null ? ` · ${route.route_distance_km} km` : ''}
+                      </span>
+                    </span>
+                    <span className={`routes-preview__badge routes-preview__badge--${status}`}>{statusLabel}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="console">
