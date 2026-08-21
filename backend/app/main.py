@@ -21,27 +21,37 @@ for _stream in (sys.stdout, sys.stderr):
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app import crud
+from app import crud, crud_driver
 from app.database import init_db
 from app.dependencies import get_db
+from app.driver_auth import get_current_driver
+from app.driver_excel_service import build_route_workbook
 from app.excel_service import validate_excel_file
 from app.geocode_service import geocode_orders
 from app.route_service import generate_routes
 from app.schemas import (
     AddOrdersRequest,
+    AssignDriverRequest,
     AssignOrdersRequest,
     ChangeVehicleTypeRequest,
+    CreateDriverRequest,
     CreateRouteRequest,
     DashboardResponse,
+    DriverLocationRequest,
+    DriverLoginRequest,
+    DriverStatusRequest,
     MoveOrdersRequest,
     ReorderRouteRequest,
+    ResetDriverPasswordRequest,
     RoutePlanHistoryResponse,
     RoutePlanResponse,
     RoutePlanSaveRequest,
     SettingsResponse,
     SettingsUpdateRequest,
+    UpdateDriverRequest,
     UploadResponse,
 )
 
@@ -587,6 +597,23 @@ def _raise_for_crud_error(e: Exception) -> None:
     raise
 
 
+def _raise_for_driver_error(e: Exception) -> None:
+    """Same idea as _raise_for_crud_error, for the driver-management/auth
+    exceptions in crud_driver.py - checked first since they're more
+    specific than the generic RootplanError they all still inherit from."""
+    if isinstance(e, crud_driver.DriverNotFoundError) or isinstance(e, crud.RouteNotFoundError):
+        raise HTTPException(status_code=404, detail=str(e))
+    if isinstance(e, crud_driver.InvalidCredentialsError):
+        raise HTTPException(status_code=401, detail=str(e))
+    if isinstance(e, crud_driver.InactiveDriverError):
+        raise HTTPException(status_code=403, detail=str(e))
+    if isinstance(e, crud_driver.DriverConflictError):
+        raise HTTPException(status_code=409, detail=str(e))
+    if isinstance(e, crud.RootplanError):
+        raise HTTPException(status_code=400, detail=str(e))
+    raise
+
+
 @app.get("/api/orders/unassigned")
 def get_unassigned_orders(
     db: Session = Depends(get_db),
@@ -750,3 +777,180 @@ def debug_geocode():
         "test_address": test_address,
         "result": result,
     }
+
+
+# ============================================================================
+# Drivers - roster, assignment, login, live tracking.
+# ============================================================================
+
+@app.post("/api/drivers")
+def create_driver_endpoint(payload: CreateDriverRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        driver = crud_driver.create_driver(
+            db, name=payload.name, username=payload.username, password=payload.password,
+            mobile=payload.mobile, vehicle_number=payload.vehicle_number, notes=payload.notes,
+        )
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"driver": crud_driver.driver_summary(driver)}
+
+
+@app.get("/api/drivers")
+def list_drivers_endpoint(db: Session = Depends(get_db)):
+    return {"drivers": crud_driver.list_drivers_with_assignment(db)}
+
+
+@app.get("/api/drivers/{driver_id}")
+def get_driver_endpoint(driver_id: int, db: Session = Depends(get_db)):
+    driver = crud_driver.get_driver(db, driver_id)
+    if driver is None:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    assigned_route = crud_driver.get_driver_current_route(db, driver_id)
+    return {"driver": crud_driver.driver_summary(driver, assigned_route)}
+
+
+@app.patch("/api/drivers/{driver_id}")
+def update_driver_endpoint(driver_id: int, payload: UpdateDriverRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        driver = crud_driver.update_driver(
+            db, driver_id, name=payload.name, mobile=payload.mobile,
+            vehicle_number=payload.vehicle_number, notes=payload.notes,
+        )
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"driver": crud_driver.driver_summary(driver)}
+
+
+@app.patch("/api/drivers/{driver_id}/status")
+def set_driver_status_endpoint(driver_id: int, payload: DriverStatusRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        driver = crud_driver.set_driver_status(db, driver_id, payload.status)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"driver": crud_driver.driver_summary(driver)}
+
+
+@app.post("/api/drivers/{driver_id}/reset-password")
+def reset_driver_password_endpoint(driver_id: int, payload: ResetDriverPasswordRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        driver = crud_driver.reset_driver_password(db, driver_id, payload.new_password)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"driver": crud_driver.driver_summary(driver)}
+
+
+# --- Assignment (admin) -----------------------------------------------------
+
+@app.post("/api/routes/{route_id}/driver")
+def assign_driver_endpoint(route_id: int, payload: AssignDriverRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        result = crud_driver.assign_driver_to_route(db, route_id, payload.driver_id, force=payload.force)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+
+    if result.get("conflict"):
+        driver = result["driver"]
+        previous_route = result["previous_route"]
+        message = (
+            f"{driver.name} is already assigned to {previous_route.route_name}. "
+            f"Move {driver.name} to this route instead?"
+        )
+        if result.get("in_progress"):
+            message = f"{driver.name} is currently in progress on this route's delivery run. Reassign anyway?"
+        return {
+            "conflict": True,
+            "message": message,
+            "driver": crud_driver.driver_summary(driver),
+            "previous_route": {"id": previous_route.id, "route_name": previous_route.route_name},
+        }
+
+    return {"conflict": False, "route": crud.route_summary(result["route"]), "driver": crud_driver.driver_summary(result["driver"])}
+
+
+@app.delete("/api/routes/{route_id}/driver")
+def unassign_driver_endpoint(route_id: int, db: Session = Depends(get_db)):
+    try:
+        route = crud_driver.unassign_driver_from_route(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"route": crud.route_summary(route)}
+
+
+# --- Admin live tracking -----------------------------------------------------
+
+@app.get("/api/routes/{route_id}/tracking")
+def get_route_tracking_endpoint(route_id: int, db: Session = Depends(get_db)):
+    try:
+        tracking = crud_driver.get_route_tracking(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return tracking
+
+
+# --- Driver login -------------------------------------------------------------
+
+@app.post("/api/driver/login")
+def driver_login_endpoint(payload: DriverLoginRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        driver, session = crud_driver.authenticate_driver(db, payload.username, payload.password)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"token": session.token, "driver": crud_driver.driver_summary(driver)}
+
+
+# --- Driver app (driver-authenticated - identity always comes from the
+#     bearer token via get_current_driver, never from the request body) ------
+
+@app.get("/api/driver/me")
+def driver_me_endpoint(driver=Depends(get_current_driver)):
+    return {"driver": crud_driver.driver_summary(driver)}
+
+
+@app.get("/api/driver/me/route")
+def driver_my_route_endpoint(driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    route = crud_driver.get_driver_active_route(db, driver)
+    return {"route": route}
+
+
+@app.get("/api/driver/routes/{route_id}/excel")
+def driver_route_excel_endpoint(route_id: int, driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    route = crud_driver.get_route_for_driver(db, driver, route_id)
+    summary = crud.route_summary(route)
+    workbook = build_route_workbook(summary)
+    file_safe_name = "".join(c if c.isalnum() else "_" for c in f"{summary['route_name']}_{driver.name}").strip("_")
+    headers = {"Content-Disposition": f'attachment; filename="{file_safe_name or "route"}.xlsx"'}
+    return StreamingResponse(
+        workbook,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@app.post("/api/driver/routes/{route_id}/start")
+def driver_start_route_endpoint(route_id: int, driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    try:
+        route = crud_driver.start_route(db, driver, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"route": crud.route_summary(route)}
+
+
+@app.post("/api/driver/routes/{route_id}/end")
+def driver_end_route_endpoint(route_id: int, driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    try:
+        route = crud_driver.end_route(db, driver, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"route": crud.route_summary(route)}
+
+
+@app.post("/api/driver/location")
+def driver_location_ping_endpoint(payload: DriverLocationRequest = Body(...), driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    try:
+        ping = crud_driver.record_location(
+            db, driver, payload.route_id, lat=payload.lat, lng=payload.lng,
+            speed=payload.speed, heading=payload.heading, accuracy=payload.accuracy,
+        )
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"recorded_at": ping.recorded_at.isoformat()}

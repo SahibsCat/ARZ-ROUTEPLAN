@@ -150,3 +150,50 @@ class ChangeVehicleTypeRequest(BaseModel):
 class MoveOrdersRequest(BaseModel):
     source_route_id: int
     order_ids: List[str]
+
+
+# --------------------------------------------------------------------------
+# Drivers, assignment, live tracking
+# --------------------------------------------------------------------------
+
+class CreateDriverRequest(BaseModel):
+    name: str
+    username: str
+    password: str
+    mobile: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class UpdateDriverRequest(BaseModel):
+    name: Optional[str] = None
+    mobile: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class DriverStatusRequest(BaseModel):
+    status: str
+
+
+class ResetDriverPasswordRequest(BaseModel):
+    new_password: str
+
+
+class AssignDriverRequest(BaseModel):
+    driver_id: int
+    force: bool = False
+
+
+class DriverLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class DriverLocationRequest(BaseModel):
+    route_id: int
+    lat: float
+    lng: float
+    speed: Optional[float] = None
+    heading: Optional[float] = None
+    accuracy: Optional[float] = None

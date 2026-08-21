@@ -133,7 +133,7 @@ class Route(Base):
     route_plan_id = Column(Integer, ForeignKey("route_plans.id"), nullable=False)
     route_name = Column(String, nullable=False)
     vehicle_type = Column(String, nullable=False)
-    driver = Column(String, nullable=True)  # no driver roster yet - stays null (future)
+    driver = Column(String, nullable=True)  # legacy free-text name, unused now that driver_id exists
     total_distance_km = Column(Float, nullable=True)
     total_duration_minutes = Column(Float, nullable=True)
     estimated_finish_time = Column(String, nullable=True)
@@ -144,10 +144,25 @@ class Route(Base):
     is_auto_created = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # ondelete="SET NULL": deactivating/deleting driver data must never take
+    # a route down with it.
+    driver_id = Column(Integer, ForeignKey("drivers.id", ondelete="SET NULL"), nullable=True)
+    # planned (not yet started by the driver) | in_progress (Start Route
+    # tapped, GPS tracking live) | completed (End Route tapped). Distinct
+    # from `status` above, which is about admin edits (planned/manually_
+    # edited), not delivery execution.
+    route_run_status = Column(String, default="planned", nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
     route_plan = relationship("RoutePlan", back_populates="routes")
     stops = relationship(
         "RouteStop", back_populates="route", cascade="all, delete-orphan",
         order_by="RouteStop.sequence",
+    )
+    driver_ref = relationship("Driver", back_populates="routes")
+    location_pings = relationship(
+        "DriverLocationPing", back_populates="route", cascade="all, delete-orphan",
     )
 
 
@@ -224,6 +239,75 @@ class GeocodingCache(Base):
     provider = Column(String, nullable=True)
     confidence = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Driver(Base):
+    """A delivery driver/partner - login identity for the driver app, plus
+    the roster fields the admin manages from the Drivers page. Never
+    hard-deleted while any route/tracking history references it (see
+    crud_driver.deactivate_driver) - `status` is the soft-delete."""
+    __tablename__ = "drivers"
+
+    id = Column(Integer, primary_key=True)
+    # DRV-0001, DRV-0002, ... - assigned once at creation, never reused.
+    driver_code = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
+    mobile = Column(String, nullable=True)
+    username = Column(String, nullable=False, unique=True, index=True)
+    password_hash = Column(String, nullable=False)
+    password_salt = Column(String, nullable=False)
+    vehicle_number = Column(String, nullable=True)
+    # active | inactive
+    status = Column(String, default="active", nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    routes = relationship("Route", back_populates="driver_ref")
+    sessions = relationship("DriverSession", back_populates="driver", cascade="all, delete-orphan")
+    location_pings = relationship("DriverLocationPing", back_populates="driver", cascade="all, delete-orphan")
+
+
+class DriverSession(Base):
+    """An opaque bearer token issued on driver login - not a stateless JWT,
+    specifically so deactivating a driver or resetting their password can
+    immediately revoke every session they're holding (revoked_at), which a
+    self-contained JWT can't do without extra denylist infrastructure."""
+    __tablename__ = "driver_sessions"
+
+    id = Column(Integer, primary_key=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id", ondelete="CASCADE"), nullable=False)
+    token = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    driver = relationship("Driver", back_populates="sessions")
+
+
+class DriverLocationPing(Base):
+    """One GPS sample. Every ping is kept (not just the latest) so the
+    admin can optionally see the travelled path for the active route, not
+    only the current dot - `route_id` scopes history to one run of one
+    route rather than mixing pings across different days/routes for the
+    same driver."""
+    __tablename__ = "driver_location_pings"
+
+    id = Column(Integer, primary_key=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id", ondelete="CASCADE"), nullable=False)
+    route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    speed = Column(Float, nullable=True)
+    heading = Column(Float, nullable=True)
+    accuracy = Column(Float, nullable=True)
+    # Server-assigned, deliberately not client-supplied - a driver's phone
+    # clock isn't a trustworthy source for "how recent is this", and
+    # Live/Delayed/Offline is computed from this.
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    driver = relationship("Driver", back_populates="location_pings")
+    route = relationship("Route", back_populates="location_pings")
 
 
 class AppSettings(Base):
