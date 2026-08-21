@@ -117,11 +117,19 @@
   background: var(--surface-2); color: var(--ink-soft);
 }
 
-/* --- Capacity bar --- */
+/* --- Capacity bar (the "percentage line") --- */
 .capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
 .capacity-bar__fill { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.2s ease; }
 .capacity-bar__fill--warn { background: var(--signal); }
 .capacity-bar__fill--full { background: var(--critical); }
+
+/* Dark mode's normal-state fill is a deep navy instead of green - a
+   deliberate, specific color choice, not the semantic --good token (which
+   still means "success" everywhere else, e.g. delivered/on-time chips). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .capacity-bar__fill { background: #15173d; }
+}
+:root[data-theme="dark"] .capacity-bar__fill { background: #15173d; }
 
 /* =======================================================================
    Routes List page - spacious header, compact summary strip, dedicated

@@ -9,33 +9,38 @@
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 
 /* =======================================================================
-   Tokens — clean neutral-gray surface with a cyan/teal working color:
-   distinct from both the blue and violet this dashboard has worn before,
-   still restrained - color spent on state and meaning, not decoration.
+   Tokens — an ivory-and-navy identity that threads through both themes
+   instead of two unrelated palettes: light mode is warm ivory paper with
+   deep-navy ink and navy-filled buttons; dark mode inverts it exactly -
+   true-black paper with ivory ink and ivory-filled buttons. --primary-soft
+   (badges, the capacity/progress bar) is the same deep navy in both
+   themes - a light tint on white, a dark fill on black.
 ======================================================================= */
 :root {
-  --paper: #f7f8fa;
+  --paper: #fbf8f1;
   --surface: #ffffff;
-  --surface-2: #eef1f4;
-  --ink: #1a1d23;
-  --ink-soft: #5b6472;
-  --ink-faint: #8a93a1;
-  --rule: #e1e5eb;
+  --surface-2: #f2ecdd;
+  --ink: #15173d;
+  --ink-soft: #4b4e74;
+  --ink-faint: #8b8da8;
+  --rule: #e6dfcb;
 
-  --primary: #4f46e5;
-  --primary-strong: #4338ca;
-  --primary-soft: #eef0fd;
-  --accent: #4f46e5;
-  --accent-strong: #4338ca;
-  --accent-soft: #eef0fd;
+  --primary: #3a3d82;
+  --primary-strong: #15173d;
+  --primary-soft: #e7e6f5;
+  --accent: #3a3d82;
+  --accent-strong: #15173d;
+  --accent-soft: #e7e6f5;
 
   /* Solid button fills - deliberately NOT tied to --primary/--accent.
      Those shift to a lighter tint in dark mode (correct for text/links on
      black), but a light tint painted as a solid fill with white text on
-     top fails contrast. Buttons get one fixed, saturated indigo that reads
-     clearly in both themes. */
-  --btn-fill: #4f46e5;
-  --btn-fill-hover: #4338ca;
+     top fails contrast. Buttons get one fixed pairing of fill + text
+     colors per theme instead. */
+  --btn-fill: #15173d;
+  --btn-fill-hover: #0e0f2b;
+  --btn-text: #fffaf3;
+  --btn-font-weight: 700;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -44,7 +49,7 @@
   --critical: #dc2626;
   --critical-soft: #fdecec;
 
-  --sidebar-bg: #fbfcfd;
+  --sidebar-bg: #fdfbf6;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -61,20 +66,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0b0d10;
-    --surface: #14171c;
-    --surface-2: #1b1f26;
-    --ink: #eef1f4;
-    --ink-soft: #9aa3b0;
-    --ink-faint: #6b7280;
-    --rule: #262b33;
+    --paper: #000000;
+    --surface: #000000;
+    --surface-2: #100f14;
+    --ink: #fffaf3;
+    --ink-soft: #b9b3a6;
+    --ink-faint: #726c60;
+    --rule: #232128;
 
-    --primary: #818cf8;
-    --primary-strong: #a5b4fc;
-    --primary-soft: #24245c;
-    --accent: #818cf8;
-    --accent-strong: #a5b4fc;
-    --accent-soft: #24245c;
+    --primary: #5b5fa6;
+    --primary-strong: #8a8fd9;
+    --primary-soft: #15173d;
+    --accent: #5b5fa6;
+    --accent-strong: #8a8fd9;
+    --accent-soft: #15173d;
+
+    --btn-fill: #fffaf0;
+    --btn-fill-hover: #f2e9d3;
+    --btn-text: #080616;
+    --btn-font-weight: 800;
 
     --signal: #fbbf24;
     --signal-soft: #2c2210;
@@ -83,27 +93,32 @@
     --critical: #f87171;
     --critical-soft: #341717;
 
-    --sidebar-bg: #0b0d10;
+    --sidebar-bg: #000000;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0b0d10;
-  --surface: #14171c;
-  --surface-2: #1b1f26;
-  --ink: #eef1f4;
-  --ink-soft: #9aa3b0;
-  --ink-faint: #6b7280;
-  --rule: #262b33;
+  --paper: #000000;
+  --surface: #000000;
+  --surface-2: #100f14;
+  --ink: #fffaf3;
+  --ink-soft: #b9b3a6;
+  --ink-faint: #726c60;
+  --rule: #232128;
 
-  --primary: #818cf8;
-  --primary-strong: #a5b4fc;
-  --primary-soft: #24245c;
-  --accent: #818cf8;
-  --accent-strong: #a5b4fc;
-  --accent-soft: #24245c;
+  --primary: #5b5fa6;
+  --primary-strong: #8a8fd9;
+  --primary-soft: #15173d;
+  --accent: #5b5fa6;
+  --accent-strong: #8a8fd9;
+  --accent-soft: #15173d;
+
+  --btn-fill: #fffaf0;
+  --btn-fill-hover: #f2e9d3;
+  --btn-text: #080616;
+  --btn-font-weight: 800;
 
   --signal: #fbbf24;
   --signal-soft: #2c2210;
@@ -112,26 +127,31 @@
   --critical: #f87171;
   --critical-soft: #341717;
 
-  --sidebar-bg: #0b0d10;
+  --sidebar-bg: #000000;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
 }
 :root[data-theme="light"] {
-  --paper: #f7f8fa;
+  --paper: #fbf8f1;
   --surface: #ffffff;
-  --surface-2: #eef1f4;
-  --ink: #1a1d23;
-  --ink-soft: #5b6472;
-  --ink-faint: #8a93a1;
-  --rule: #e1e5eb;
+  --surface-2: #f2ecdd;
+  --ink: #15173d;
+  --ink-soft: #4b4e74;
+  --ink-faint: #8b8da8;
+  --rule: #e6dfcb;
 
-  --primary: #4f46e5;
-  --primary-strong: #4338ca;
-  --primary-soft: #eef0fd;
-  --accent: #4f46e5;
-  --accent-strong: #4338ca;
-  --accent-soft: #eef0fd;
+  --primary: #3a3d82;
+  --primary-strong: #15173d;
+  --primary-soft: #e7e6f5;
+  --accent: #3a3d82;
+  --accent-strong: #15173d;
+  --accent-soft: #e7e6f5;
+
+  --btn-fill: #15173d;
+  --btn-fill-hover: #0e0f2b;
+  --btn-text: #fffaf3;
+  --btn-font-weight: 700;
 
   --signal: #d97706;
   --signal-soft: #fef3e2;
@@ -140,7 +160,7 @@
   --critical: #dc2626;
   --critical-soft: #fdecec;
 
-  --sidebar-bg: #fbfcfd;
+  --sidebar-bg: #fdfbf6;
   --shadow-sm: 0 1px 2px rgba(20, 23, 28, 0.05);
   --shadow-md: 0 1px 3px rgba(20, 23, 28, 0.04), 0 8px 20px -4px rgba(20, 23, 28, 0.08);
   --shadow-lg: 0 4px 8px rgba(20, 23, 28, 0.04), 0 16px 36px -8px rgba(20, 23, 28, 0.14);
@@ -1283,11 +1303,11 @@ body { min-height: 100vh; }
   padding: 0.55rem 1rem;
   font-family: var(--font-body);
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: var(--btn-font-weight, 600);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  color: #fff;
+  color: var(--btn-text, #fff);
   background: var(--btn-fill);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
