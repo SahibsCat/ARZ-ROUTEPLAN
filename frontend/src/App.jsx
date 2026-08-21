@@ -162,6 +162,52 @@ function generateRandomPassword() {
   return out;
 }
 
+// One-time credential reveal shown after a successful create/reset - the
+// backend only ever stores a password hash, so this screen (copyable,
+// staying open until the admin explicitly dismisses it) is the only chance
+// to see the plaintext password again. Replaces the toast-only confirmation
+// that let a generated password disappear the instant the modal closed.
+function CredentialRevealPanel({ title, note, username, password, onDone }) {
+  const [copied, setCopied] = useState(false);
+  const copyText = username ? `${username} / ${password}` : password;
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard permission can be denied - the value is still selectable
+      // text on screen, so this isn't a dead end, just no one-click copy.
+    }
+  };
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="modal__header"><h3>{title}</h3></div>
+        <div className="modal__body">
+          <p className="modal__hint">{note}</p>
+          {username && (
+            <div className="credential-row">
+              <span className="credential-row__label">Username</span>
+              <span className="credential-row__value mono-num">{username}</span>
+            </div>
+          )}
+          <div className="credential-row">
+            <span className="credential-row__label">Password</span>
+            <span className="credential-row__value mono-num">{password}</span>
+          </div>
+          <button type="button" className="btn btn--outline" onClick={handleCopy}>
+            {copied ? 'Copied!' : 'Copy to clipboard'}
+          </button>
+        </div>
+        <div className="modal__footer">
+          <button type="button" className="btn btn--primary" onClick={onDone}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Create/Edit Driver - the username and initial password only apply on
 // create (UpdateDriverRequest on the backend deliberately has no username
 // or password fields, so an existing login is changed only through Reset
@@ -175,6 +221,10 @@ function DriverFormModal({ driver, onSave, onClose, isSubmitting }) {
   const [vehicleNumber, setVehicleNumber] = useState(driver?.vehicle_number || '');
   const [notes, setNotes] = useState(driver?.notes || '');
   const [error, setError] = useState(null);
+  // Set only after a successful *create* - holds the screen open on the
+  // credential reveal instead of closing immediately, since this is the
+  // only time the plaintext password is ever visible again.
+  const [createdCredentials, setCreatedCredentials] = useState(null);
 
   const canSubmit = name.trim() && (isEdit || (username.trim() && password.trim().length >= 4));
 
@@ -190,8 +240,26 @@ function DriverFormModal({ driver, onSave, onClose, isSubmitting }) {
       vehicle_number: vehicleNumber.trim(),
       notes: notes.trim(),
     });
-    if (!ok) setError('Could not save - see the toast for details.');
+    if (!ok) {
+      setError('Could not save - see the toast for details.');
+    } else if (isEdit) {
+      onClose();
+    } else {
+      setCreatedCredentials({ username: username.trim(), password });
+    }
   };
+
+  if (createdCredentials) {
+    return (
+      <CredentialRevealPanel
+        title="Driver Created"
+        note="Share this login with the driver directly - it won't be shown again after you close this."
+        username={createdCredentials.username}
+        password={createdCredentials.password}
+        onDone={onClose}
+      />
+    );
+  }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -246,6 +314,7 @@ function DriverFormModal({ driver, onSave, onClose, isSubmitting }) {
 function ResetPasswordModal({ driver, onSave, onClose, isSubmitting }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
+  const [resetDone, setResetDone] = useState(false);
   const canSubmit = password.trim().length >= 4;
 
   const handleSubmit = async (e) => {
@@ -254,7 +323,19 @@ function ResetPasswordModal({ driver, onSave, onClose, isSubmitting }) {
     setError(null);
     const ok = await onSave(password);
     if (!ok) setError('Could not reset password - see the toast for details.');
+    else setResetDone(true);
   };
+
+  if (resetDone) {
+    return (
+      <CredentialRevealPanel
+        title="Password Reset"
+        note={`Share this with ${driver.name} directly - it won't be shown again after you close this.`}
+        password={password}
+        onDone={onClose}
+      />
+    );
+  }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -841,10 +922,11 @@ function App() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || `Could not save driver (${response.status})`);
       }
-      showToast(editingDriver ? 'Driver updated.' : `Driver created${formValues.username ? ` - login "${formValues.username}"` : ''}.`);
-      setDriverFormOpen(false);
-      setEditingDriver(null);
+      showToast(editingDriver ? 'Driver updated.' : `Driver created - login "${formValues.username}".`);
       await refreshDrivers();
+      // Modal stays open on success - DriverFormModal shows the one-time
+      // credential reveal (create) or closes itself directly (edit), then
+      // calls onClose itself. Closing it here first would skip that screen.
       return true;
     } catch (err) {
       showToast(err.message || 'Could not save driver.');
@@ -898,8 +980,9 @@ function App() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || `Could not reset password (${response.status})`);
       }
-      showToast(`Password reset for ${resetPasswordDriver.name} - share the new password with them directly.`);
-      setResetPasswordDriver(null);
+      showToast(`Password reset for ${resetPasswordDriver.name}.`);
+      // Modal stays open here too - ResetPasswordModal shows the same
+      // one-time credential reveal, then calls onClose itself on "Done".
       return true;
     } catch (err) {
       showToast(err.message || 'Could not reset password.');
