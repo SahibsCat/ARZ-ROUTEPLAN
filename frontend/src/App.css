@@ -35,8 +35,8 @@
 
   /* Solid button fills - the single accent color, same in every theme -
      buttons don't shift per theme the way surfaces/text do. */
-  --btn-fill: #5b7fff;
-  --btn-fill-hover: #7295ff;
+  --btn-fill: linear-gradient(135deg, #6d5bff, #5b8cff);
+  --btn-fill-hover: linear-gradient(135deg, #7c6bff, #6d9cff);
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
@@ -50,6 +50,22 @@
   --neutral-soft: #eef0f3;
 
   --sidebar-bg: #ffffff;
+
+  /* Premium-polish layer: gradients/glows on top of the flat token system
+     above, added without touching layout. Same accent gradient in both
+     themes (--glow-shadow is the part that changes - a lighter shadow on
+     white than on black). */
+  --bg-gradient: linear-gradient(180deg, #ffffff, #f3f4f8);
+  --accent-gradient: linear-gradient(135deg, #6d5bff, #5b8cff);
+  --good-gradient: linear-gradient(135deg, #34d399, #10b981);
+  --signal-gradient: linear-gradient(135deg, #fbbf24, #f59e0b);
+  --glow-accent: rgba(91, 108, 245, 0.25);
+  --glow-good: rgba(16, 185, 129, 0.3);
+  --glow-signal: rgba(245, 158, 11, 0.3);
+  --glass-bg: rgba(20, 23, 28, 0.03);
+  --glass-border: rgba(20, 23, 28, 0.08);
+  --glass-border-hover: rgba(20, 23, 28, 0.16);
+  --card-shadow-hover: 0 8px 24px rgba(20, 23, 28, 0.1);
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -81,8 +97,8 @@
     --accent-strong: #7295ff;
     --accent-soft: #1a2340;
 
-    --btn-fill: #5b7fff;
-    --btn-fill-hover: #7295ff;
+    --btn-fill: linear-gradient(135deg, #6d5bff, #5b8cff);
+    --btn-fill-hover: linear-gradient(135deg, #7c6bff, #6d9cff);
     --btn-text: #ffffff;
     --btn-font-weight: 600;
 
@@ -96,6 +112,17 @@
     --neutral-soft: #1b1f26;
 
     --sidebar-bg: #0b0d11;
+    --bg-gradient: radial-gradient(ellipse 1200px 800px at 12% -8%, #151a2b, #0a0d16 55%, #05060a);
+    --accent-gradient: linear-gradient(135deg, #6d5bff, #5b8cff);
+    --good-gradient: linear-gradient(135deg, #34d399, #10b981);
+    --signal-gradient: linear-gradient(135deg, #fbbf24, #f59e0b);
+    --glow-accent: rgba(109, 91, 255, 0.35);
+    --glow-good: rgba(52, 211, 153, 0.35);
+    --glow-signal: rgba(251, 191, 36, 0.35);
+    --glass-bg: rgba(255, 255, 255, 0.03);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-border-hover: rgba(255, 255, 255, 0.16);
+    --card-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.4);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
@@ -117,8 +144,8 @@
   --accent-strong: #7295ff;
   --accent-soft: #1a2340;
 
-  --btn-fill: #5b7fff;
-  --btn-fill-hover: #7295ff;
+  --btn-fill: linear-gradient(135deg, #6d5bff, #5b8cff);
+  --btn-fill-hover: linear-gradient(135deg, #7c6bff, #6d9cff);
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
@@ -132,6 +159,17 @@
   --neutral-soft: #1b1f26;
 
   --sidebar-bg: #0b0d11;
+  --bg-gradient: radial-gradient(ellipse 1200px 800px at 12% -8%, #151a2b, #0a0d16 55%, #05060a);
+  --accent-gradient: linear-gradient(135deg, #6d5bff, #5b8cff);
+  --good-gradient: linear-gradient(135deg, #34d399, #10b981);
+  --signal-gradient: linear-gradient(135deg, #fbbf24, #f59e0b);
+  --glow-accent: rgba(109, 91, 255, 0.35);
+  --glow-good: rgba(52, 211, 153, 0.35);
+  --glow-signal: rgba(251, 191, 36, 0.35);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.16);
+  --card-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
@@ -152,8 +190,8 @@
   --accent-strong: #3d5fe0;
   --accent-soft: #e8edff;
 
-  --btn-fill: #5b7fff;
-  --btn-fill-hover: #7295ff;
+  --btn-fill: linear-gradient(135deg, #6d5bff, #5b8cff);
+  --btn-fill-hover: linear-gradient(135deg, #7c6bff, #6d9cff);
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
@@ -167,6 +205,17 @@
   --neutral-soft: #eef0f3;
 
   --sidebar-bg: #ffffff;
+  --bg-gradient: linear-gradient(180deg, #ffffff, #f3f4f8);
+  --accent-gradient: linear-gradient(135deg, #6d5bff, #5b8cff);
+  --good-gradient: linear-gradient(135deg, #34d399, #10b981);
+  --signal-gradient: linear-gradient(135deg, #fbbf24, #f59e0b);
+  --glow-accent: rgba(91, 108, 245, 0.25);
+  --glow-good: rgba(16, 185, 129, 0.22);
+  --glow-signal: rgba(245, 158, 11, 0.22);
+  --glass-bg: rgba(20, 23, 28, 0.03);
+  --glass-border: rgba(20, 23, 28, 0.08);
+  --glass-border-hover: rgba(20, 23, 28, 0.16);
+  --card-shadow-hover: 0 8px 24px rgba(20, 23, 28, 0.1);
   --shadow-sm: 0 1px 2px rgba(20, 23, 28, 0.05);
   --shadow-md: 0 1px 3px rgba(20, 23, 28, 0.04), 0 8px 20px -4px rgba(20, 23, 28, 0.08);
   --shadow-lg: 0 4px 8px rgba(20, 23, 28, 0.04), 0 16px 36px -8px rgba(20, 23, 28, 0.14);
@@ -185,7 +234,7 @@ body { min-height: 100vh; }
 ======================================================================= */
 .app-shell {
   min-height: 100vh;
-  background: var(--paper);
+  background: var(--bg-gradient), var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
   display: flex;
@@ -280,9 +329,10 @@ body { min-height: 100vh; }
 .sidebar__section-label {
   font-size: 0.66rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-faint);
+  opacity: 0.5;
   padding: 0.9rem 0.6rem 0.35rem;
 }
 .sidebar--collapsed .sidebar__section-label { text-align: center; padding: 0.9rem 0 0.35rem; }
@@ -307,7 +357,26 @@ body { min-height: 100vh; }
 .nav-item svg { flex: none; }
 .nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: var(--surface-2); color: var(--ink); }
-.nav-item--active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 600; }
+/* Gradient pill + a glowing accent-gradient left edge, replacing the old
+   flat highlight block - position:relative + a pseudo-element bar so the
+   edge can carry its own glow independent of the pill's border-radius. */
+.nav-item--active {
+  position: relative;
+  background: linear-gradient(135deg, rgba(109, 91, 255, 0.16), rgba(91, 140, 255, 0.14));
+  color: var(--primary-strong);
+  font-weight: 600;
+}
+.nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  bottom: 15%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent-gradient);
+  box-shadow: 0 0 8px var(--glow-accent);
+}
 .nav-item--soon { cursor: default; opacity: 0.6; }
 .nav-item--soon:hover { background: none; color: var(--ink-soft); }
 .nav-item__badge {
@@ -321,6 +390,10 @@ body { min-height: 100vh; }
   border-radius: 20px;
   background: var(--surface-2);
   color: var(--ink-faint);
+  border: 1px solid transparent;
+  background-image: linear-gradient(var(--surface-2), var(--surface-2)), linear-gradient(135deg, rgba(245, 158, 11, 0.5), rgba(109, 91, 255, 0.5));
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
 }
 .sidebar--collapsed .nav-item { justify-content: center; padding: 0.6rem; }
 .sidebar--collapsed .nav-item span, .sidebar--collapsed .nav-item__badge { display: none; }
@@ -363,7 +436,23 @@ body { min-height: 100vh; }
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--rule);
+  overflow: hidden;
 }
+/* Ambient glow - a soft indigo/violet blur sitting behind the header
+   content so it feels lit rather than a flat bar. */
+.topbar::before {
+  content: '';
+  position: absolute;
+  top: -60%;
+  left: 8%;
+  width: 420px;
+  height: 220px;
+  background: var(--accent-gradient);
+  opacity: 0.1;
+  filter: blur(60px);
+  pointer-events: none;
+}
+.topbar__inner { position: relative; z-index: 1; }
 .topbar__inner {
   padding: 1rem 2rem;
   display: flex;
@@ -412,9 +501,12 @@ body { min-height: 100vh; }
   font-family: var(--font-body);
   font-size: 0.85rem;
   color: var(--ink);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 92%, black 4%);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
+  /* A 1px inset highlight along the top edge so the field reads as
+     slightly recessed/glass rather than a flat box. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .topbar__search input:focus-visible {
@@ -441,6 +533,10 @@ body { min-height: 100vh; }
   font-size: 0.8rem;
   color: var(--ink-soft);
   white-space: nowrap;
+  padding: 0.4rem 0.85rem;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-2) 92%, black 4%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 @media (max-width: 760px) { .topbar__date { display: none; } }
 
@@ -469,6 +565,16 @@ body { min-height: 100vh; }
   background: var(--critical);
   border: 2px solid var(--surface);
   border-radius: 20px;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+  animation: rp-badge-pulse 2s ease-in-out infinite;
+}
+@keyframes rp-badge-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar__icon-btn .badge-dot { animation: none; }
 }
 
 .topbar__account {
@@ -487,7 +593,8 @@ body { min-height: 100vh; }
   width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
-  background: var(--primary);
+  background: var(--accent-gradient);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
   color: #fff;
   font-size: 0.75rem;
   font-weight: 700;
@@ -498,6 +605,8 @@ body { min-height: 100vh; }
 
 .quick-actions { position: relative; flex: none; }
 .quick-action {
+  position: relative;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -511,10 +620,20 @@ body { min-height: 100vh; }
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.15s ease;
+  transition: filter 0.15s ease, transform 0.2s ease-out, box-shadow 0.2s ease-out;
   white-space: nowrap;
+  box-shadow: 0 0 20px var(--glow-accent);
 }
-.quick-action:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.quick-action:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 0 30px var(--glow-accent); }
+.quick-action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.25) 50%, transparent 60%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.quick-action:hover::after { animation: rp-shine-sweep 1.1s ease-out; }
 @media (max-width: 760px) { .quick-action span, .quick-action { font-size: 0; padding: 0.5rem; } .quick-action svg { font-size: initial; } }
 
 .quick-actions__menu {
@@ -566,7 +685,11 @@ body { min-height: 100vh; }
   gap: 0.9rem;
   border-radius: var(--radius-md);
   padding: 0.9rem 1.15rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: box-shadow 0.2s ease-out, transform 0.2s ease-out;
 }
+.exception-card:hover { transform: translateY(-2px); box-shadow: var(--card-shadow-hover); }
 .exception-card--ok { background: color-mix(in srgb, var(--good) 8%, transparent); border: 1px solid color-mix(in srgb, var(--good) 25%, transparent); }
 .exception-card--warn { background: color-mix(in srgb, var(--signal) 8%, transparent); border: 1px solid color-mix(in srgb, var(--signal) 25%, transparent); }
 .exception-card__icon {
@@ -574,9 +697,10 @@ body { min-height: 100vh; }
   width: 34px; height: 34px;
   border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
+  color: #fff;
 }
-.exception-card--ok .exception-card__icon { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
-.exception-card--warn .exception-card__icon { background: color-mix(in srgb, var(--signal) 16%, transparent); color: var(--signal); }
+.exception-card--ok .exception-card__icon { background: var(--good-gradient); box-shadow: 0 0 14px var(--glow-good); }
+.exception-card--warn .exception-card__icon { background: var(--signal-gradient); box-shadow: 0 0 14px var(--glow-signal); }
 .exception-card__body { flex: 1; min-width: 0; }
 .exception-card__title { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
 .exception-card__subtitle { font-size: 0.78rem; color: var(--ink-soft); margin-top: 0.1rem; }
@@ -658,15 +782,18 @@ body { min-height: 100vh; }
   align-items: flex-start;
   gap: 0.65rem;
   width: 100%;
-  border: 1px solid var(--rule);
-  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-radius: var(--radius-sm);
   padding: 0.7rem;
   cursor: pointer;
   text-align: left;
   font-family: var(--font-body);
+  transition: border-color 0.2s ease-out, transform 0.2s ease-out, box-shadow 0.2s ease-out;
 }
-.routes-preview__row:hover { border-color: var(--accent); }
+.routes-preview__row:hover { border-color: var(--glass-border-hover); transform: translateY(-2px); box-shadow: var(--card-shadow-hover); }
 .routes-preview__row--empty { opacity: 0.7; }
 .routes-preview__seq {
   flex: none;
@@ -711,18 +838,38 @@ body { min-height: 100vh; }
   .routes-preview { width: 100%; }
 }
 .kpi-tile {
-  background: var(--surface-2);
-  border: 1px solid var(--rule);
+  position: relative;
+  /* Glass: a translucent tint of --surface-2 (not --surface-2 itself) over
+     the page's own gradient background, plus a blur so whatever's behind
+     the card (the ambient header glow, other cards) softly shows through. */
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
   padding: 1.35rem 1.4rem;
-  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease-out, transform 0.2s ease-out, border-color 0.2s ease-out;
   animation: rp-rise 0.35s ease both;
 }
-.kpi-tile:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--accent); }
+/* The "lit top edge" - a bright-to-transparent hairline instead of a
+   uniform border, so the card reads as catching light from above. */
+.kpi-tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--glass-border-hover), transparent 70%);
+}
+.kpi-tile:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+  border-color: var(--glass-border-hover);
+}
 .kpi-tile__top { display: flex; align-items: flex-start; gap: 0.85rem; }
 .kpi-tile__icon {
   flex: none;
@@ -738,6 +885,13 @@ body { min-height: 100vh; }
   letter-spacing: -0.02em;
   line-height: 1.15;
   color: var(--ink);
+  /* Headline numbers pop with a subtle gradient fill instead of flat ink -
+     background-clip:text needs a background to clip, hence the gradient
+     as background-image with the text itself made transparent. */
+  background: var(--accent-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .kpi-tile__suffix { font-size: 15px; font-weight: 600; margin-left: 0.15rem; color: var(--ink-faint); }
 .kpi-tile__label {
@@ -750,21 +904,25 @@ body { min-height: 100vh; }
   color: var(--ink-soft);
 }
 
-/* Every tile shares one clean, flat background - color is spent only on
-   the icon badge (below), not smeared across the whole card as a tinted
-   gradient. Keeps the strip calm and legible instead of a strip of
-   differently-colored glowing cards. */
-
-/* One neutral chip style for every metric that isn't itself a status
-   signal - "available bikes" or "total distance" isn't good/bad, so it
-   doesn't get a status color. Only Pending and Failed genuinely represent
-   something needing attention, so only those two keep semantic color. */
+/* Every tile shares one glass background - color is spent on the icon
+   chip and (for the ones that are a real status signal) the number
+   itself, not smeared across the whole card. Each non-status tile still
+   gets its own quiet accent tint on the chip only, so the row stays
+   scannable at a glance without turning into a rainbow of card fills. */
 .kpi-tile__icon { background: var(--surface-2); color: var(--ink-soft); }
+.kpi-tile--orders .kpi-tile__icon { background: color-mix(in srgb, #5b8cff 16%, var(--surface-2)); color: #5b8cff; }
+.kpi-tile--assigned .kpi-tile__icon { background: color-mix(in srgb, #34d399 16%, var(--surface-2)); color: #34d399; }
+.kpi-tile--pending .kpi-tile__icon { background: color-mix(in srgb, var(--ink-faint) 20%, var(--surface-2)); color: var(--ink-soft); }
 .kpi-tile--unassigned {
   border-color: color-mix(in srgb, var(--signal) 30%, transparent);
 }
-.kpi-tile--unassigned .kpi-tile__value { color: var(--signal); }
-.kpi-tile--unassigned .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
+.kpi-tile--unassigned .kpi-tile__value {
+  background: var(--signal-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kpi-tile--unassigned .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); box-shadow: 0 0 12px var(--glow-signal); }
 .kpi-tile--failed .kpi-tile__icon { background: var(--critical-soft); color: var(--critical); }
 
 /* Mini graphics — real proportions/breakdowns from today's data, not a
@@ -900,7 +1058,22 @@ body { min-height: 100vh; }
 }
 .toolbar-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: var(--shadow-md); }
 .toolbar-btn:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
-.toolbar-btn:disabled { background: var(--ink-faint); color: var(--paper); cursor: not-allowed; }
+.toolbar-btn:disabled { background: var(--ink-faint); color: var(--paper); cursor: not-allowed; box-shadow: none !important; }
+.toolbar-btn:not(.toolbar-btn--ghost):not(.toolbar-btn--danger):not(:disabled) {
+  box-shadow: 0 0 20px var(--glow-accent);
+}
+.toolbar-btn:not(.toolbar-btn--ghost):not(.toolbar-btn--danger):hover:not(:disabled) {
+  box-shadow: 0 0 30px var(--glow-accent);
+}
+.toolbar-btn:not(.toolbar-btn--ghost):not(.toolbar-btn--danger)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.25) 50%, transparent 60%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.toolbar-btn:not(.toolbar-btn--ghost):not(.toolbar-btn--danger):hover::after { animation: rp-shine-sweep 1.1s ease-out; }
 
 .toolbar-btn--ghost {
   color: var(--ink-soft);
@@ -1484,12 +1657,41 @@ body { min-height: 100vh; }
   cursor: pointer;
   color: var(--btn-text, #fff);
   background: var(--btn-fill);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 .btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: var(--shadow-md); }
 .btn:active:not(:disabled) { transform: translateY(0); }
 .btn:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; filter: none; transform: none; box-shadow: none; }
+
+/* The "shine": a soft outer glow on the primary gradient-filled buttons,
+   intensifying on hover, plus a diagonal light sweep across the surface
+   once on load and again on every hover. Scoped away from the outline/
+   ghost/secondary/destructive variants below, which stay flat. */
+.btn:not(.btn--secondary):not(.btn--outline):not(.btn--ghost):not(.btn--danger):not(.btn--danger-ghost) {
+  box-shadow: 0 0 20px var(--glow-accent);
+}
+.btn:not(.btn--secondary):not(.btn--outline):not(.btn--ghost):not(.btn--danger):not(.btn--danger-ghost):hover:not(:disabled) {
+  box-shadow: 0 0 30px var(--glow-accent);
+}
+.btn:not(.btn--secondary):not(.btn--outline):not(.btn--ghost):not(.btn--danger):not(.btn--danger-ghost)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.25) 50%, transparent 60%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.btn:not(.btn--secondary):not(.btn--outline):not(.btn--ghost):not(.btn--danger):not(.btn--danger-ghost):hover:not(:disabled)::after {
+  animation: rp-shine-sweep 1.1s ease-out;
+}
+.btn:disabled { box-shadow: none !important; }
+@keyframes rp-shine-sweep {
+  to { transform: translateX(120%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn::after { display: none; }
+}
 .btn--loading { color: transparent !important; pointer-events: none; }
 .btn--loading::before {
   content: '';
