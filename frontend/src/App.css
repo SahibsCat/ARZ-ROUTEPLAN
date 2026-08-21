@@ -357,10 +357,10 @@ body { min-height: 100vh; }
   border-bottom: 1px solid var(--rule);
 }
 .topbar__inner {
-  padding: 0.75rem 1.75rem;
+  padding: 1rem 2rem;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 .topbar__menu-btn {
   display: none;
@@ -468,7 +468,7 @@ body { min-height: 100vh; }
   width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), #7c73f0);
+  background: var(--primary);
   color: #fff;
   font-size: 0.78rem;
   font-weight: 700;
@@ -482,8 +482,8 @@ body { min-height: 100vh; }
   padding: 0.45rem 0.8rem;
   font-family: var(--font-body);
   font-size: 0.82rem;
-  font-weight: 600;
-  color: #fff;
+  font-weight: var(--btn-font-weight, 600);
+  color: var(--btn-text, #fff);
   background: var(--btn-fill);
   border: none;
   border-radius: var(--radius-md);
@@ -532,60 +532,55 @@ body { min-height: 100vh; }
    KPI strip — premium stat cards
 ======================================================================= */
 .kpi-strip {
-  padding: 1.4rem 1.75rem 0;
+  padding: 1.75rem 2rem 0;
 }
 .kpi-strip__inner {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
 }
 .kpi-tile {
+  background: var(--surface-2);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  padding: 1.1rem 1.2rem;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  gap: 0.8rem;
+  padding: 1.35rem 1.4rem;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
   animation: rp-rise 0.35s ease both;
 }
-.kpi-tile:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.kpi-tile:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--accent); }
 .kpi-tile__top { display: flex; align-items: flex-start; gap: 0.85rem; }
 .kpi-tile__icon {
   flex: none;
-  width: 38px; height: 38px;
+  width: 40px; height: 40px;
   display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius-md);
 }
 .kpi-tile__value {
   display: block;
   font-family: var(--font-display);
-  font-size: 1.65rem;
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
+  color: var(--ink);
 }
-.kpi-tile__suffix { font-size: 0.95rem; font-weight: 600; margin-left: 0.15rem; color: var(--ink-faint); }
+.kpi-tile__suffix { font-size: 1rem; font-weight: 600; margin-left: 0.15rem; color: var(--ink-faint); }
 .kpi-tile__label {
   display: block;
   margin-top: 0.1rem;
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 500;
   color: var(--ink-faint);
 }
 
-/* Subtle directional tint per variant - a gradient, not a flat fill, kept
-   light enough that text stays crisp against it in both themes. */
-.kpi-tile--orders { background: linear-gradient(135deg, var(--surface) 55%, var(--surface-2)); }
-.kpi-tile--assigned { background: linear-gradient(135deg, var(--surface) 55%, var(--good-soft)); }
-.kpi-tile--pending { background: linear-gradient(135deg, var(--surface) 55%, var(--signal-soft)); }
-.kpi-tile--failed { background: linear-gradient(135deg, var(--surface) 55%, var(--critical-soft)); }
-.kpi-tile--bikes { background: linear-gradient(135deg, var(--surface) 55%, var(--good-soft)); }
-.kpi-tile--cars { background: linear-gradient(135deg, var(--surface) 55%, var(--good-soft)); }
-.kpi-tile--distance { background: linear-gradient(135deg, var(--surface) 55%, var(--primary-soft)); }
-.kpi-tile--eta { background: linear-gradient(135deg, var(--surface) 55%, var(--signal-soft)); }
-.kpi-tile--routes { background: linear-gradient(135deg, var(--surface) 55%, var(--primary-soft)); }
+/* Every tile shares one clean, flat background - color is spent only on
+   the icon badge (below), not smeared across the whole card as a tinted
+   gradient. Keeps the strip calm and legible instead of a strip of
+   differently-colored glowing cards. */
 
 .kpi-tile--orders .kpi-tile__icon { background: var(--surface-2); color: var(--ink-soft); }
 .kpi-tile--routes .kpi-tile__icon { background: var(--primary-soft); color: var(--primary); }
@@ -719,17 +714,17 @@ body { min-height: 100vh; }
   padding: 0.55rem 0.95rem;
   font-family: var(--font-body);
   font-size: 0.82rem;
-  font-weight: 600;
-  color: #fff;
+  font-weight: var(--btn-font-weight, 600);
+  color: var(--btn-text, #fff);
   background: var(--btn-fill);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease, background 0.15s ease;
 }
-.toolbar-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(124, 58, 237, 0.35); }
-.toolbar-btn:focus-visible { outline: 2px solid var(--btn-fill); outline-offset: 2px; }
-.toolbar-btn:disabled { background: var(--ink-faint); cursor: not-allowed; }
+.toolbar-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.toolbar-btn:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.toolbar-btn:disabled { background: var(--ink-faint); color: var(--paper); cursor: not-allowed; }
 
 .toolbar-btn--ghost {
   color: var(--ink-soft);
@@ -739,9 +734,13 @@ body { min-height: 100vh; }
 .toolbar-btn--ghost:hover:not(:disabled) { filter: none; background: var(--accent-soft); box-shadow: none; color: var(--ink); }
 .toolbar-btn--ghost:disabled { background: transparent; color: var(--ink-faint); }
 
-.toolbar-btn--save { background: var(--good); }
-.toolbar-btn--save:disabled { background: var(--good); opacity: 0.6; cursor: default; }
-.toolbar-btn--danger { background: var(--critical); }
+/* Save/Delete sit on saturated semantic fills (green/red), not the
+   near-white --btn-fill the base button uses - they need their own fixed
+   white text rather than inheriting --btn-text (which is a dark navy,
+   meant for the light --btn-fill and unreadable on these). */
+.toolbar-btn--save { background: var(--good); color: #fff; }
+.toolbar-btn--save:disabled { background: var(--good); color: #fff; opacity: 0.6; cursor: default; }
+.toolbar-btn--danger { background: var(--critical); color: #fff; }
 .toolbar-btn--danger:hover:not(:disabled) { box-shadow: 0 4px 10px rgba(220, 38, 38, 0.35); }
 
 .icon-spin { animation: rp-spin 0.8s linear infinite; }
@@ -1516,8 +1515,8 @@ body { min-height: 100vh; }
   font-family: var(--font-body);
   text-decoration: none;
   font-size: 0.82rem;
-  font-weight: 600;
-  color: #fff;
+  font-weight: var(--btn-font-weight, 600);
+  color: var(--btn-text, #fff);
   background: var(--btn-fill);
   padding: 0.4rem 0.8rem;
   border-radius: var(--radius-sm);
@@ -1525,7 +1524,7 @@ body { min-height: 100vh; }
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-.download-link:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 3px 10px rgba(14, 140, 130, 0.35); }
+.download-link:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: var(--shadow-md); }
 .download-link:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 
 /* A real grid instead of flex-wrap - stats line up in neat columns/rows
