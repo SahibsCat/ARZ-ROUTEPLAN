@@ -54,7 +54,21 @@
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
-  --sidebar-bg: #ffffff;
+  /* Sidebar is its own deliberately dark surface in every theme - a deep
+     navy in light mode (the PDF's Primary #163a8a, deepened for contrast),
+     true black in dark mode - so the product carries real color identity
+     from the first pixel instead of white-on-white chrome. Its own text
+     tokens exist because --ink/--ink-soft assume a light surface behind
+     them; reusing those here would be unreadable on a dark sidebar. */
+  --sidebar-bg: #101d42;
+  --sidebar-ink: #f3f5ff;
+  --sidebar-ink-soft: #a9b6dd;
+  --sidebar-ink-faint: #7385b8;
+  --sidebar-rule: rgba(255, 255, 255, 0.09);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
+  --sidebar-active-bg: rgba(111, 155, 255, 0.2);
+  --sidebar-active-ink: #ffffff;
+  --sidebar-soon-active-bg: rgba(224, 166, 63, 0.18);
 
   --radius-sm: 10px;
   --radius-md: 14px;
@@ -103,6 +117,14 @@
     --neutral-soft: #201d2d;
 
     --sidebar-bg: #0a0a0a;
+    --sidebar-ink: #f5f5f7;
+    --sidebar-ink-soft: #9a9aa4;
+    --sidebar-ink-faint: #63636b;
+    --sidebar-rule: #262626;
+    --sidebar-hover-bg: #1c1c1c;
+    --sidebar-active-bg: #1c2740;
+    --sidebar-active-ink: #93b3ff;
+    --sidebar-soon-active-bg: #2f2717;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
@@ -141,6 +163,14 @@
   --neutral-soft: #201d2d;
 
   --sidebar-bg: #0a0a0a;
+  --sidebar-ink: #f5f5f7;
+  --sidebar-ink-soft: #9a9aa4;
+  --sidebar-ink-faint: #63636b;
+  --sidebar-rule: #262626;
+  --sidebar-hover-bg: #1c1c1c;
+  --sidebar-active-bg: #1c2740;
+  --sidebar-active-ink: #93b3ff;
+  --sidebar-soon-active-bg: #2f2717;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.5), 0 20px 40px -8px rgba(0, 0, 0, 0.7);
@@ -177,7 +207,15 @@
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
-  --sidebar-bg: #ffffff;
+  --sidebar-bg: #101d42;
+  --sidebar-ink: #f3f5ff;
+  --sidebar-ink-soft: #a9b6dd;
+  --sidebar-ink-faint: #7385b8;
+  --sidebar-rule: rgba(255, 255, 255, 0.09);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
+  --sidebar-active-bg: rgba(111, 155, 255, 0.2);
+  --sidebar-active-ink: #ffffff;
+  --sidebar-soon-active-bg: rgba(224, 166, 63, 0.18);
   --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.05);
   --shadow-md: 0 1px 3px rgba(20, 30, 60, 0.04), 0 8px 20px -4px rgba(20, 30, 60, 0.08);
   --shadow-lg: 0 4px 8px rgba(20, 30, 60, 0.04), 0 16px 36px -8px rgba(20, 30, 60, 0.14);
@@ -226,7 +264,7 @@ body { min-height: 100vh; }
   top: 0;
   height: 100vh;
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--sidebar-rule);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -239,7 +277,7 @@ body { min-height: 100vh; }
   align-items: center;
   gap: 0.65rem;
   padding: 1.1rem 1.15rem;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--sidebar-rule);
   min-height: 73px;
 }
 .sidebar__brand-text { overflow: hidden; white-space: nowrap; }
@@ -247,16 +285,17 @@ body { min-height: 100vh; }
   font-weight: 700;
   font-size: 1.05rem;
   letter-spacing: -0.01em;
-  color: var(--ink);
+  color: var(--sidebar-ink);
   line-height: 1.2;
 }
-.sidebar__brand-sub { font-size: 0.7rem; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar__brand-sub { font-size: 0.7rem; color: var(--sidebar-ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar--collapsed .sidebar__brand-text { display: none; }
 
 .brand-logo { width: auto; flex: none; }
-/* Two renders of the mark - the navy original for a light sidebar, a
-   recolored one for dark - swapped via the same theme signal as
-   everything else on the page. */
+/* The sidebar is always a dark surface now (navy in light mode, black in
+   dark mode - see --sidebar-bg), so it always wants the light-on-dark mark,
+   regardless of which logo variant the rest of the page's theme would
+   otherwise pick. */
 .brand-logo--light { display: block; }
 .brand-logo--dark { display: none; }
 @media (prefers-color-scheme: dark) {
@@ -267,20 +306,22 @@ body { min-height: 100vh; }
 :root[data-theme="dark"] .brand-logo--dark { display: block; }
 :root[data-theme="light"] .brand-logo--light { display: block; }
 :root[data-theme="light"] .brand-logo--dark { display: none; }
+.sidebar .brand-logo--light { display: none !important; }
+.sidebar .brand-logo--dark { display: block !important; }
 
 .sidebar__toggle {
   margin-left: auto;
   flex: none;
   width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--rule);
-  background: var(--surface);
-  color: var(--ink-soft);
+  border: 1px solid var(--sidebar-rule);
+  background: transparent;
+  color: var(--sidebar-ink-soft);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease, transform 0.2s ease;
 }
-.sidebar__toggle:hover { color: var(--primary); border-color: var(--primary); }
+.sidebar__toggle:hover { color: var(--sidebar-active-ink); border-color: var(--sidebar-active-ink); }
 .sidebar--collapsed .sidebar__toggle { margin-left: 0; transform: rotate(180deg); }
 .sidebar--collapsed .sidebar__brand { justify-content: center; }
 
@@ -297,7 +338,7 @@ body { min-height: 100vh; }
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--sidebar-ink-faint);
   padding: 0.9rem 0.6rem 0.35rem;
 }
 .sidebar--collapsed .sidebar__section-label { text-align: center; padding: 0.9rem 0 0.35rem; }
@@ -315,16 +356,20 @@ body { min-height: 100vh; }
   font-family: var(--font-body);
   font-size: 0.88rem;
   font-weight: 500;
-  color: var(--ink-soft);
+  color: var(--sidebar-ink-soft);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .nav-item svg { flex: none; }
 .nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-item:hover { background: var(--surface-2); color: var(--ink); }
-.nav-item--active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 600; }
-.nav-item--soon { cursor: default; opacity: 0.6; }
-.nav-item--soon:hover { background: none; color: var(--ink-soft); }
+.nav-item:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-ink); }
+.nav-item--active { background: var(--sidebar-active-bg); color: var(--sidebar-active-ink); font-weight: 600; }
+/* "Soon" items are real, clickable pages now (see ComingSoonPage) - just
+   dimmer than a working page, and the badge (not the whole row) carries
+   the "not built yet" signal. */
+.nav-item--soon { opacity: 0.75; }
+.nav-item--soon:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-ink); opacity: 1; }
+.nav-item--soon.nav-item--active { background: var(--sidebar-soon-active-bg); color: var(--signal); font-weight: 600; opacity: 1; }
 .nav-item__badge {
   margin-left: auto;
   flex: none;
@@ -334,15 +379,16 @@ body { min-height: 100vh; }
   text-transform: uppercase;
   padding: 0.1rem 0.4rem;
   border-radius: 20px;
-  background: var(--surface-2);
-  color: var(--ink-faint);
+  background: var(--sidebar-hover-bg);
+  color: var(--sidebar-ink-faint);
 }
+.nav-item--soon.nav-item--active .nav-item__badge { background: var(--signal); color: #fff; }
 .sidebar--collapsed .nav-item { justify-content: center; padding: 0.6rem; }
 .sidebar--collapsed .nav-item span, .sidebar--collapsed .nav-item__badge { display: none; }
 
 .sidebar__footer {
   padding: 0.85rem;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--sidebar-rule);
 }
 
 /* Mobile: sidebar becomes an off-canvas drawer */
@@ -619,11 +665,84 @@ body { min-height: 100vh; }
   color: var(--ink-soft);
 }
 
-/* One flat neutral chip for every icon - none of these five (bikes, cars,
-   routes, distance, ETA) is itself a status signal worth a semantic
-   color; that's reserved for the Unassigned Orders / Failed Addresses
-   boards' own real status pills. */
+/* Each stat gets its own tint from the PDF's semantic palette - not as a
+   status signal (that's still reserved for the Unassigned Orders / Failed
+   Addresses boards' own pills), just so five numbers in a row read as five
+   distinct things at a glance instead of one gray block. */
 .kpi-tile__icon { background: var(--surface); color: var(--ink-soft); }
+.kpi-tile--bikes .kpi-tile__icon { background: var(--info-soft); color: var(--info); }
+.kpi-tile--cars .kpi-tile__icon { background: var(--good-soft); color: var(--good); }
+.kpi-tile--routes .kpi-tile__icon { background: var(--primary-soft); color: var(--primary-strong); }
+.kpi-tile--distance .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
+.kpi-tile--eta .kpi-tile__icon { background: var(--critical-soft); color: var(--critical); }
+
+/* Dashboard hub links - the four other real pages, one tap away, each
+   carrying the same tint as its own page's primary signal so the color
+   here is a preview of where you're headed, not decoration. */
+.dash-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  padding: 0 2rem 1.5rem;
+}
+.dash-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dash-link:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.dash-link svg { flex: none; width: 32px; height: 32px; padding: 7px; border-radius: var(--radius-sm); box-sizing: border-box; }
+.dash-link:nth-child(1) svg { background: var(--primary-soft); color: var(--primary-strong); }
+.dash-link:nth-child(2) svg { background: var(--signal-soft); color: var(--signal); }
+.dash-link:nth-child(3) svg { background: var(--critical-soft); color: var(--critical); }
+.dash-link:nth-child(4) svg { background: var(--good-soft); color: var(--good); }
+.dash-link div { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.dash-link strong { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.dash-link span { font-size: 0.76rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A real page for every "Soon" sidebar item - centered, honest about what's
+   missing, one click back to somewhere real. */
+.coming-soon-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.6rem;
+  max-width: 420px;
+  margin: 3rem auto;
+  padding: 2.5rem 2rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+}
+.coming-soon-page__icon {
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  margin-bottom: 0.4rem;
+}
+.coming-soon-page h2 { font-size: 18px; font-weight: 600; color: var(--ink); margin: 0; }
+.coming-soon-page p { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
+.coming-soon-page__tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--signal);
+  background: var(--signal-soft);
+  padding: 0.25rem 0.6rem;
+  border-radius: 20px;
+  margin: 0.3rem 0 0.6rem;
+}
 
 .console {
   max-width: 1440px;
@@ -1824,6 +1943,7 @@ body { min-height: 100vh; }
   .topbar__inner { padding: 0.65rem 1rem; }
   .console { padding: 1.5rem 1.25rem 3rem; }
   .stat-row { padding: 1rem 1rem 0.75rem; grid-template-columns: repeat(2, 1fr); }
+  .dash-links { padding: 0 1rem 1rem; grid-template-columns: 1fr; }
   .app-footer { padding: 1rem 1.25rem; flex-direction: column; }
 }
 

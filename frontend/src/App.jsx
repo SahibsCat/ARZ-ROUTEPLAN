@@ -38,24 +38,38 @@ const maxCapacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_MAX_CAPACIT
 // glance - cycles if there are more routes than colors.
 const ROUTE_HUES = 6;
 
-// Sidebar sections. The first group anchors to real, working parts of this
-// single-page app (or, for 'history', opens the Route History panel). The
-// second group names the rest of what a full dispatch platform would
-// eventually cover - deliberately inert (no fabricated screens or fake
-// data) until there's a backend behind them.
+// Sidebar sections. The first group is real, individual pages - clicking
+// one swaps the whole console over to it (see activeNav below), it doesn't
+// scroll you down a long shared page. 'drivers' and 'history' instead open
+// an overlay panel, since those are genuinely a picker/record list you dip
+// into and dismiss. The second group names the rest of what a full
+// dispatch platform would eventually cover - each still a real, dedicated
+// page (ComingSoonPage), just deliberately honest that there's no backend
+// behind it yet (no fabricated data).
 const NAV_ITEMS = [
-  { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid, anchor: 'top' },
-  { key: 'generate', label: 'Generate Routes', icon: IconRoute, anchor: 'toolbar-section' },
-  { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
-  { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
+  { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
+  { key: 'generate', label: 'Routes', icon: IconRoute },
+  { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox },
+  { key: 'failed', label: 'Failed Addresses', icon: IconAlert },
   { key: 'drivers', label: 'Drivers', icon: IconUsers },
   { key: 'history', label: 'Route History', icon: IconHistory },
 ];
 const NAV_ITEMS_SOON = [
+  { key: 'vehicles', label: 'Vehicles', icon: IconCar },
+  { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge },
+  { key: 'notifications', label: 'Notifications', icon: IconBell },
   { key: 'reports', label: 'Reports', icon: IconFileText },
   { key: 'analytics', label: 'Analytics', icon: IconBarChart },
   { key: 'settings', label: 'Settings', icon: IconSettings },
 ];
+const SOON_BLURBS = {
+  vehicles: 'Individual vehicle records - plate number, type, and which driver each one belongs to - not just the car/bike counts on the Routes page. Needs its own backend table.',
+  'live-tracking': 'A single map showing every driver on the road at once. Today, live tracking is per-route (open a route, click Track Driver) - this would be the fleet-wide view.',
+  notifications: 'A persistent inbox for alerts like route-started - today those are toasts that vanish once you dismiss them or leave the page.',
+  reports: 'Delivery performance over time - on-time rate, distance, driver totals - once there is enough saved route history to report on honestly.',
+  analytics: 'Trend and pattern analysis across saved route plans.',
+  settings: 'Route capacity defaults and notification preferences as real, saved configuration instead of only what is set per-session in Generate Routes.',
+};
 
 // Counts up/down to a new value instead of snapping - used on the KPI tiles.
 function useCountUp(value, duration = 500) {
@@ -91,6 +105,24 @@ function SkeletonCard() {
       <div className="skeleton-line skeleton-line--title" />
       <div className="skeleton-line" />
       <div className="skeleton-line skeleton-line--short" />
+    </div>
+  );
+}
+
+// A real, standalone page for every sidebar item that doesn't have a
+// backend behind it yet - not a toast that vanishes and leaves you on
+// whatever page you were already on. Says plainly what's missing instead
+// of showing fabricated numbers, and gives a way back to a working page.
+function ComingSoonPage({ label, icon: Icon, blurb, onBack }) {
+  return (
+    <div className="coming-soon-page">
+      <div className="coming-soon-page__icon"><Icon width={26} height={26} /></div>
+      <h2>{label}</h2>
+      <p>{blurb}</p>
+      <span className="coming-soon-page__tag">Not built yet - no backend data behind it</span>
+      <button type="button" className="btn btn--outline" onClick={onBack}>
+        <IconLayoutGrid width={14} height={14} /> Back to Dashboard
+      </button>
     </div>
   );
 }
@@ -619,24 +651,30 @@ function App() {
   const isDark = theme === 'system' ? systemPrefersDark : theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
+  // Each sidebar item is now a real, individual page - only one section of
+  // the console mounts at a time (see the activeNav gates around the
+  // toolbar/boards below), swapped straight away rather than scrolled to.
+  // Drivers and Route History stay as overlay panels layered on top, since
+  // that's genuinely how they work (a picker/record list you dip into and
+  // dismiss), not a page you'd otherwise navigate away from.
   const handleNavClick = (item) => {
     setActiveNav(item.key);
     setMobileNavOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (item.key === 'history') {
       openHistory();
     } else if (item.key === 'drivers') {
       openDrivers();
     } else if (item.key === 'generate') {
       setToolbarExpanded(true);
-      document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else if (item.anchor === 'top') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
+  // "Soon" pages are real, dedicated pages too (see ComingSoonPage) - not a
+  // toast that leaves you stranded on whatever page you clicked from.
   const handleSoonClick = (item) => {
-    showToast(`${item.label} isn't built yet - no backend data behind it.`);
+    setActiveNav(item.key);
+    setMobileNavOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Client-side search across orders and routes - never mutates state,
@@ -689,48 +727,74 @@ function App() {
   // never lose an upload, its routes, its pending pool, or its failed
   // addresses. If there's nothing saved yet, this just seeds the fleet
   // defaults and leaves the normal "Ready to upload Excel" empty state.
+  //
+  // Render's backend spins down when idle and takes 20-50s to wake back up;
+  // a request that lands mid-boot gets a connection error (not a slow
+  // response) and used to fail silently on the very first try, which is why
+  // the restored session ("testing.xlsx · 36 orders …") would sometimes just
+  // not appear - not a data-loss bug, a single unretried fetch racing a cold
+  // start. Retried with backoff below so a cold backend gets a real chance
+  // to answer before this gives up.
   useEffect(() => {
     let cancelled = false;
+    const delaysMs = [0, 2000, 4000, 8000, 8000, 8000]; // ~30s of coverage
     (async () => {
-      try {
-        const response = await apiFetch('/api/dashboard');
-        const data = await response.json();
+      for (let attempt = 0; attempt < delaysMs.length; attempt++) {
+        if (attempt > 0) {
+          setStatus('Reconnecting to the server…');
+          await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+        }
         if (cancelled) return;
+        try {
+          const response = await apiFetch('/api/dashboard');
+          if (!response.ok) throw new Error(`dashboard fetch failed: ${response.status}`);
+          const data = await response.json();
+          if (cancelled) return;
 
-        if (data.settings) {
-          setCars(data.settings.default_car_count ?? 1);
-          setBikes(data.settings.default_bike_count ?? 2);
+          if (data.settings) {
+            setCars(data.settings.default_car_count ?? 1);
+            setBikes(data.settings.default_bike_count ?? 2);
+          }
+
+          if (data.has_data) {
+            setBatchId(data.batch_id ?? null);
+            setColumnOrder(data.column_order || []);
+            setFileName(data.file_name || '');
+            setTotalOrders(data.total_orders || 0);
+            setErrors(data.errors || []);
+            setIsValid(data.is_valid !== false);
+            setOrders(data.orders || []);
+            setFailedOrders(data.failed_orders || []);
+            setSuccessfulOrders((data.orders || []).filter((o) => o.lat != null && o.lng != null));
+            setRoutes(data.routes || []);
+            setPendingOrders(data.pending_orders || []);
+            setWarnings(data.warnings || []);
+            setPlanId(data.plan_id ?? null);
+            setIsPlanSaved(data.plan_is_saved ?? false);
+
+            const initialEdits = {};
+            (data.failed_orders || []).forEach((order) => {
+              initialEdits[order.order_id] = order.address || '';
+            });
+            setEditingAddresses(initialEdits);
+
+            setStatus('Restored your last session.');
+            refreshUnassignedOrders();
+          } else {
+            setStatus('Ready to upload Excel');
+          }
+          if (!cancelled) setIsRestoringSession(false);
+          return;
+        } catch (err) {
+          console.error(`Could not restore previous session (attempt ${attempt + 1}/${delaysMs.length}):`, err);
+          // fall through and retry
         }
-
-        if (data.has_data) {
-          setBatchId(data.batch_id ?? null);
-          setColumnOrder(data.column_order || []);
-          setFileName(data.file_name || '');
-          setTotalOrders(data.total_orders || 0);
-          setErrors(data.errors || []);
-          setIsValid(data.is_valid !== false);
-          setOrders(data.orders || []);
-          setFailedOrders(data.failed_orders || []);
-          setSuccessfulOrders((data.orders || []).filter((o) => o.lat != null && o.lng != null));
-          setRoutes(data.routes || []);
-          setPendingOrders(data.pending_orders || []);
-          setWarnings(data.warnings || []);
-          setPlanId(data.plan_id ?? null);
-          setIsPlanSaved(data.plan_is_saved ?? false);
-
-          const initialEdits = {};
-          (data.failed_orders || []).forEach((order) => {
-            initialEdits[order.order_id] = order.address || '';
-          });
-          setEditingAddresses(initialEdits);
-
-          setStatus('Restored your last session.');
-          refreshUnassignedOrders();
-        }
-      } catch (err) {
-        console.error('Could not restore previous session:', err);
-      } finally {
-        if (!cancelled) setIsRestoringSession(false);
+      }
+      // Every attempt failed - say so instead of quietly sitting on the
+      // blank empty state as if nothing had ever been uploaded.
+      if (!cancelled) {
+        setStatus("Couldn't reach the server - showing a blank session. Refresh to try again.");
+        setIsRestoringSession(false);
       }
     })();
     return () => { cancelled = true; };
@@ -2093,6 +2157,13 @@ function App() {
     generate: { title: 'Routes', subtitle: `${routes.length} route${routes.length === 1 ? '' : 's'} today` },
     unassigned: { title: 'Unassigned Orders', subtitle: `${pendingOrders.length} order${pendingOrders.length === 1 ? '' : 's'} waiting on assignment` },
     failed: { title: 'Failed Addresses', subtitle: `${failedOrders.length} address${failedOrders.length === 1 ? '' : 'es'} needing attention` },
+    drivers: { title: 'Drivers', subtitle: `${drivers.length} driver${drivers.length === 1 ? '' : 's'} on the roster` },
+    vehicles: { title: 'Vehicles', subtitle: 'Fleet records - coming soon' },
+    'live-tracking': { title: 'Live Tracking', subtitle: 'Fleet-wide live map - coming soon' },
+    notifications: { title: 'Notifications', subtitle: 'Alert inbox - coming soon' },
+    reports: { title: 'Reports', subtitle: 'Coming soon' },
+    analytics: { title: 'Analytics', subtitle: 'Coming soon' },
+    settings: { title: 'Settings', subtitle: 'Coming soon' },
   };
   const headerContent = HEADER_CONTENT[activeNav] || HEADER_CONTENT.dashboard;
 
@@ -2156,7 +2227,7 @@ function App() {
           {NAV_ITEMS_SOON.map((item) => (
             <button
               key={item.key}
-              className="nav-item nav-item--soon"
+              className={`nav-item nav-item--soon${activeNav === item.key ? ' nav-item--active' : ''}`}
               onClick={() => handleSoonClick(item)}
               title={`${item.label} - coming soon`}
             >
@@ -2302,20 +2373,48 @@ function App() {
           </button>
         </div>
 
-      {/* One flat row of compact stat cards - no embedded charts, no
-          redundant "is everything OK" banners duplicating what these
-          numbers (and the Unassigned Orders / Failed Addresses boards
-          themselves) already say. Real counts only. */}
-      <div className="stat-row">
-        <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" />
-        <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" />
-        <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" />
-        <KpiTile variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance" />
-        <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" />
-      </div>
+      {/* Dashboard is now its own page: the stat row plus a hub of links
+          into the other real pages, rather than a KPI strip sitting above
+          every other page's content too. */}
+      {activeNav === 'dashboard' && (
+        <>
+          {/* One flat row of compact stat cards - no embedded charts, no
+              redundant "is everything OK" banners duplicating what these
+              numbers (and the Unassigned Orders / Failed Addresses boards
+              themselves) already say. Real counts only. */}
+          <div className="stat-row">
+            <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" />
+            <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" />
+            <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" />
+            <KpiTile variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance" />
+            <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" />
+          </div>
+
+          <div className="dash-links">
+            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[1])}>
+              <IconRoute width={18} height={18} />
+              <div><strong>Routes</strong><span>{fileName ? `${fileName} · ${totalOrders} orders` : 'Generate today’s routes'}</span></div>
+            </button>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[2])}>
+              <IconInbox width={18} height={18} />
+              <div><strong>Unassigned Orders</strong><span>{pendingOrders.length} waiting on assignment</span></div>
+            </button>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[3])}>
+              <IconAlert width={18} height={18} />
+              <div><strong>Failed Addresses</strong><span>{failedOrders.length} needing attention</span></div>
+            </button>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[4])}>
+              <IconUsers width={18} height={18} />
+              <div><strong>Drivers</strong><span>{drivers.length} on the roster</span></div>
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="console">
-        {/* Toolbar */}
+        {/* Toolbar - the Routes page (generate/regenerate/save/delete a plan
+            and load a manifest) */}
+        {activeNav === 'generate' && (
         <div className="toolbar" id="toolbar-section">
           <button
             type="button"
@@ -2452,6 +2551,7 @@ function App() {
           </>
           )}
         </div>
+        )}
 
         {/* Loading */}
         {isProcessing && (
@@ -2505,7 +2605,8 @@ function App() {
         {/* Boards */}
         <div className="board-grid">
 
-          {/* RETURNS BOARD: failed orders, master/detail */}
+          {/* RETURNS BOARD: failed orders, master/detail - its own page */}
+          {activeNav === 'failed' && (
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               <h2 className="board__title">Returns</h2>
@@ -2627,7 +2728,13 @@ function App() {
               )}
             </div>
           </div>
+          )}
 
+          {/* Routes page (tab="routes") and Unassigned Orders page
+              (tab="unassigned") share this component's own internal
+              tab-switching - each is still its own distinct sidebar page,
+              just backed by the same list/detail workspace. */}
+          {(activeNav === 'generate' || activeNav === 'unassigned') && (
           <RouteWorkspace
             routes={routes}
             pendingOrders={pendingOrders}
@@ -2647,12 +2754,22 @@ function App() {
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
-            requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
+            requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
             drivers={drivers}
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}
             fetchRouteTracking={fetchRouteTracking}
           />
+          )}
+
+          {NAV_ITEMS_SOON.some((item) => item.key === activeNav) && (
+            <ComingSoonPage
+              label={headerContent.title}
+              icon={NAV_ITEMS_SOON.find((item) => item.key === activeNav).icon}
+              blurb={SOON_BLURBS[activeNav] || "This page isn't wired up to real data yet."}
+              onBack={() => handleNavClick(NAV_ITEMS[0])}
+            />
+          )}
 
         </div>
       </div>
