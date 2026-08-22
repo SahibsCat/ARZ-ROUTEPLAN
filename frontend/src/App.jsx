@@ -83,38 +83,6 @@ function useCountUp(value, duration = 500) {
   return display;
 }
 
-// A single-row stacked bar showing real proportions (e.g. assigned vs
-// pending vs failed out of today's orders) - never a fabricated trend.
-function MiniProportionBar({ segments }) {
-  const total = segments.reduce((sum, seg) => sum + seg.value, 0) || 1;
-  return (
-    <div className="kpi-mini-bar">
-      {segments.map((seg, i) => (
-        <span
-          key={i}
-          className="kpi-mini-bar__seg"
-          style={{ width: `${(seg.value / total) * 100}%`, background: seg.color }}
-        />
-      ))}
-    </div>
-  );
-}
-
-// A tiny bar-per-route sparkline (e.g. today's route distances) - a real
-// breakdown of today's routes, not a simulated history.
-function MiniSparkBars({ values, color }) {
-  const max = Math.max(1, ...values);
-  return (
-    <div className="kpi-spark">
-      {values.length === 0
-        ? <span className="kpi-spark__empty">No routes yet</span>
-        : values.map((v, i) => (
-          <span key={i} className="kpi-spark__bar" style={{ height: `${Math.max(10, (v / max) * 100)}%`, background: color }} />
-        ))}
-    </div>
-  );
-}
-
 // Placeholder shimmer card shown the first time a board is populating,
 // so the page reads as "working" rather than blank while data loads.
 function SkeletonCard() {
@@ -127,20 +95,17 @@ function SkeletonCard() {
   );
 }
 
-function KpiTile({ variant, icon: Icon, value, label, suffix, graphic }) {
+function KpiTile({ variant, icon: Icon, value, label, suffix }) {
   const display = useCountUp(value);
   return (
     <div className={`kpi-tile kpi-tile--${variant}`}>
-      <div className="kpi-tile__top">
-        <span className="kpi-tile__icon"><Icon width={18} height={18} /></span>
-        <div>
-          <span className="kpi-tile__value mono-num">
-            {display}{suffix && <span className="kpi-tile__suffix">{suffix}</span>}
-          </span>
-          <span className="kpi-tile__label">{label}</span>
-        </div>
+      <span className="kpi-tile__icon"><Icon width={16} height={16} /></span>
+      <div>
+        <span className="kpi-tile__value mono-num">
+          {display}{suffix && <span className="kpi-tile__suffix">{suffix}</span>}
+        </span>
+        <span className="kpi-tile__label">{label}</span>
       </div>
-      {graphic}
     </div>
   );
 }
@@ -2131,21 +2096,12 @@ function App() {
   };
   const headerContent = HEADER_CONTENT[activeNav] || HEADER_CONTENT.dashboard;
 
-  // All nine KPIs below are computed straight from live state - no
+  // The five stat-row KPIs, computed straight from live state - no
   // simulated history, no placeholder numbers.
-  const assignedOrdersCount = routes.reduce((sum, r) => sum + (r.orders?.length || 0), 0);
   const totalDistanceKm = Math.round(routes.reduce((sum, r) => sum + (r.route_distance_km || 0), 0));
   const avgEtaMinutes = routes.length
     ? Math.round(routes.reduce((sum, r) => sum + (r.route_time_minutes || 0), 0) / routes.length)
     : 0;
-  const carRoutesCount = routes.filter((r) => r.vehicle_type === 'car').length;
-  const bikeRoutesCount = routes.filter((r) => r.vehicle_type === 'bike').length;
-  // The Unassigned Orders pool is two real, distinct order statuses
-  // (crud.list_unassigned_orders combines them for the pool, but each
-  // order still carries its own) - "pending" never had a route at all,
-  // "unassigned" had one and was taken off it. Worth showing separately.
-  const unassignedOnlyCount = pendingOrders.filter((o) => o.status === 'unassigned').length;
-  const trulyPendingCount = pendingOrders.filter((o) => o.status === 'pending').length;
 
   const selectedFailedOrder = failedOrders.find((o) => String(o.order_id) === String(selectedFailedId)) || null;
   const selectedFeedback = selectedFailedId != null ? retryFeedback[String(selectedFailedId)] : null;
@@ -2346,153 +2302,16 @@ function App() {
           </button>
         </div>
 
-      {/* Exception strip - the two things worth knowing about before
-          anything else: did anything fail to geocode, and is anything
-          waiting on a route. Real counts, not decoration; "Review" jumps
-          straight to the Unassigned Orders view. */}
-      <div className="exception-strip">
-        <div className={`exception-card${failedOrders.length > 0 ? ' exception-card--warn' : ' exception-card--ok'}`}>
-          <div className="exception-card__icon">
-            {failedOrders.length > 0 ? <IconAlert width={17} height={17} /> : <IconCheck width={17} height={17} />}
-          </div>
-          <div className="exception-card__body">
-            <div className="exception-card__title">{failedOrders.length} failed address{failedOrders.length === 1 ? '' : 'es'}</div>
-            <div className="exception-card__subtitle">
-              {failedOrders.length > 0 ? 'Needs a corrected address before it can be routed' : 'Everything geocoded cleanly today'}
-            </div>
-          </div>
-          {failedOrders.length > 0 && (
-            <button type="button" className="exception-card__link" onClick={() => handleNavClick({ key: 'failed', anchor: 'returns-board' })}>
-              Review →
-            </button>
-          )}
-        </div>
-        <div className={`exception-card${pendingOrders.length > 0 ? ' exception-card--warn' : ' exception-card--ok'}`}>
-          <div className="exception-card__icon">
-            {pendingOrders.length > 0 ? <IconClock width={17} height={17} /> : <IconCheck width={17} height={17} />}
-          </div>
-          <div className="exception-card__body">
-            <div className="exception-card__title">{pendingOrders.length} order{pendingOrders.length === 1 ? '' : 's'} unassigned</div>
-            <div className="exception-card__subtitle">
-              {pendingOrders.length > 0 ? 'Waiting on a route before the next batch' : 'Every order is on a route'}
-            </div>
-          </div>
-          {pendingOrders.length > 0 && (
-            <button type="button" className="exception-card__link" onClick={() => handleNavClick({ key: 'unassigned', anchor: 'unassigned-board' })}>
-              Review →
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="kpi-strip">
-          <div className="kpi-cluster">
-            <span className="kpi-cluster__label">Orders</span>
-            <div className="kpi-cluster__grid">
-              <KpiTile
-                variant="orders" icon={IconInbox} value={totalOrders} label="Today's orders"
-              />
-              <KpiTile
-                variant="assigned" icon={IconCheck} value={assignedOrdersCount} label="Assigned"
-              />
-              <KpiTile
-                variant="unassigned" icon={IconAlert} value={unassignedOnlyCount} label="Unassigned"
-              />
-              <KpiTile
-                variant="pending" icon={IconClock} value={trulyPendingCount} label="Pending"
-              />
-            </div>
-          </div>
-
-      </div>
-
-      <div className="dashboard-lower">
-        <div className="dashboard-lower__clusters">
-          <div className="kpi-cluster">
-            <span className="kpi-cluster__label">Fleet</span>
-            <div className="kpi-cluster__grid kpi-cluster__grid--2">
-              <KpiTile
-                variant="bikes" icon={IconBike} value={bikes} label="Bikes available"
-                graphic={<MiniProportionBar segments={[
-                  { value: bikes, color: 'var(--primary)' },
-                  { value: cars, color: 'var(--rule)' },
-                ]} />}
-              />
-              <KpiTile
-                variant="cars" icon={IconCar} value={cars} label="Cars available"
-                graphic={<MiniProportionBar segments={[
-                  { value: cars, color: 'var(--primary)' },
-                  { value: bikes, color: 'var(--rule)' },
-                ]} />}
-              />
-            </div>
-          </div>
-
-          <div className="kpi-cluster">
-            <span className="kpi-cluster__label">Routes</span>
-            <div className="kpi-cluster__grid kpi-cluster__grid--3">
-              <KpiTile
-                variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today"
-                graphic={<MiniProportionBar segments={[
-                  { value: carRoutesCount, color: 'var(--primary)' },
-                  { value: bikeRoutesCount, color: 'var(--neutral)' },
-                ]} />}
-              />
-              <KpiTile
-                variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance"
-                graphic={<MiniSparkBars values={routes.map((r) => r.route_distance_km || 0)} color="var(--primary)" />}
-              />
-              <KpiTile
-                variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA"
-                graphic={<MiniSparkBars values={routes.map((r) => r.route_time_minutes || 0)} color="var(--primary)" />}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Today's routes preview - the same status logic as the Routes
-            page (routeStatusFor), just the first three, so the dashboard
-            gives a real preview instead of only aggregate numbers. */}
-        <div className="routes-preview">
-          <div className="routes-preview__head">
-            <span className="routes-preview__title">Today's routes</span>
-            <button type="button" className="routes-preview__link" onClick={() => handleNavClick({ key: 'generate', anchor: 'toolbar-section' })}>
-              View all →
-            </button>
-          </div>
-          <div className="routes-preview__list">
-            {routes.length === 0 ? (
-              <div className="routes-preview__empty">No routes yet.</div>
-            ) : (
-              routes.slice(0, 3).map((route) => {
-                const capacity = capacityFor(route.vehicle_type);
-                const count = route.orders.length;
-                const status = count === 0 ? 'empty'
-                  : (route.late_deliveries && route.late_deliveries.length > 0) ? 'delayed'
-                  : count >= capacity ? 'full' : 'open';
-                const statusLabel = { empty: 'No deliveries', delayed: 'Delayed', full: 'Full', open: 'Open' }[status];
-                const subtitle = route.areas && route.areas.length ? route.areas.slice(0, 3).join(' → ') : 'No deliveries yet';
-                return (
-                  <button
-                    type="button"
-                    key={route.route_name}
-                    className={`routes-preview__row${status === 'empty' ? ' routes-preview__row--empty' : ''}`}
-                    onClick={() => handleNavClick({ key: 'generate', anchor: 'toolbar-section' })}
-                  >
-                    <span className="routes-preview__seq mono-num">{route.route_name.replace(/^Route\s*/i, '')}</span>
-                    <span className="routes-preview__info">
-                      <span className="routes-preview__name">{subtitle}</span>
-                      <span className="routes-preview__meta">
-                        {route.vehicle_type === 'car' ? 'Car' : 'Bike'} · {count} stop{count === 1 ? '' : 's'}{route.route_distance_km != null ? ` · ${route.route_distance_km} km` : ''}
-                      </span>
-                    </span>
-                    <span className={`routes-preview__badge routes-preview__badge--${status}`}>{statusLabel}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+      {/* One flat row of compact stat cards - no embedded charts, no
+          redundant "is everything OK" banners duplicating what these
+          numbers (and the Unassigned Orders / Failed Addresses boards
+          themselves) already say. Real counts only. */}
+      <div className="stat-row">
+        <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" />
+        <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" />
+        <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" />
+        <KpiTile variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance" />
+        <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" />
       </div>
 
       <div className="console">
