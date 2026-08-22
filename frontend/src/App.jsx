@@ -41,26 +41,26 @@ const ROUTE_HUES = 6;
 // Sidebar structure - grouped by what you're actually trying to do, not by
 // "is this real yet" (that used to split a plain Workspace/Platform-Soon
 // list, which put Vehicles nowhere near Drivers and Live Tracking nowhere
-// near Routes). Every item is still a real, individual page - clicking one
-// swaps the whole console over to it (see activeNav below), it doesn't
-// scroll you down a long shared page - except 'drivers' and 'history',
-// which open an overlay panel, since those are genuinely a picker/record
-// list you dip into and dismiss. Items marked soon:true render as
-// ComingSoonPage - a real, dedicated page, just deliberately honest that
-// there's no backend behind it yet (no fabricated data).
+// near Routes). Dashboard/Routes/Unassigned Orders/Failed Addresses are all
+// one continuous page again (back to how it originally worked) - clicking
+// one of these just smooth-scrolls to its anchor rather than swapping the
+// console's content out. 'drivers' and 'history' open an overlay panel,
+// since those are genuinely a picker/record list you dip into and dismiss.
+// Items marked soon:true have no real content to scroll to, so clicking one
+// opens ComingSoonPage as its own small overlay instead (see soonOverlay).
 const NAV_GROUPS = [
   {
     label: 'Overview',
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
+      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid, anchor: 'top' },
     ],
   },
   {
     label: 'Dispatch',
     items: [
-      { key: 'generate', label: 'Routes', icon: IconRoute },
-      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox },
-      { key: 'failed', label: 'Failed Addresses', icon: IconAlert },
+      { key: 'generate', label: 'Routes', icon: IconRoute, anchor: 'toolbar-section' },
+      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
+      { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
       { key: 'history', label: 'Route History', icon: IconHistory },
       { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, soon: true },
     ],
@@ -143,16 +143,21 @@ function SkeletonCard() {
 // backend behind it yet - not a toast that vanishes and leaves you on
 // whatever page you were already on. Says plainly what's missing instead
 // of showing fabricated numbers, and gives a way back to a working page.
-function ComingSoonPage({ label, icon: Icon, blurb, onBack }) {
+// Shown inside a small overlay (see soonOverlay in App) for any sidebar
+// item that doesn't have a backend behind it yet - not a toast that
+// vanishes and leaves you guessing, and not its own full page either now
+// that everything real lives on one page again. Says plainly what's
+// missing instead of showing fabricated numbers.
+function ComingSoonPage({ label, icon: Icon, blurb, onClose }) {
   return (
     <div className="coming-soon-page">
+      <button type="button" className="coming-soon-page__close" onClick={onClose} aria-label="Close">
+        <IconX width={16} height={16} />
+      </button>
       <div className="coming-soon-page__icon"><Icon width={26} height={26} /></div>
       <h2>{label}</h2>
       <p>{blurb}</p>
       <span className="coming-soon-page__tag">Not built yet - no backend data behind it</span>
-      <button type="button" className="btn btn--outline" onClick={onBack}>
-        <IconLayoutGrid width={14} height={14} /> Back to Dashboard
-      </button>
     </div>
   );
 }
@@ -622,6 +627,9 @@ function App() {
   const hasAutoCollapsedToolbar = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('dashboard');
+  // Which "Soon" item's overlay (if any) is open - null when closed. See
+  // handleSoonClick / ComingSoonPage.
+  const [soonOverlay, setSoonOverlay] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const quickActionsRef = useRef(null);
@@ -690,21 +698,24 @@ function App() {
   const handleNavClick = (item) => {
     setActiveNav(item.key);
     setMobileNavOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSoonOverlay(null);
     if (item.key === 'history') {
       openHistory();
     } else if (item.key === 'drivers') {
       openDrivers();
-    } else if (item.key === 'generate') {
-      setToolbarExpanded(true);
+    } else {
+      if (item.key === 'generate') setToolbarExpanded(true);
+      if (item.anchor === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+      else document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
-  // "Soon" pages are real, dedicated pages too (see ComingSoonPage) - not a
-  // toast that leaves you stranded on whatever page you clicked from.
+  // "Soon" items have no real page content to scroll to, so they open
+  // ComingSoonPage as a small overlay instead - same idea as the Drivers
+  // panel, just for a page that's honestly not built yet.
   const handleSoonClick = (item) => {
     setActiveNav(item.key);
     setMobileNavOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSoonOverlay(item.key);
   };
 
   // Client-side search across orders and routes - never mutates state,
@@ -2411,11 +2422,12 @@ function App() {
           </button>
         </div>
 
-      {/* Dashboard is now its own page: the stat row plus a hub of links
-          into the other real pages, rather than a KPI strip sitting above
-          every other page's content too. */}
-      {activeNav === 'dashboard' && (
-        <>
+      {/* Back to one continuous page: the stat row plus a hub of quick
+          links sits at the top, and every board below (toolbar, Failed
+          Addresses, Routes/Unassigned Orders) is always mounted - sidebar
+          clicks smooth-scroll to a section instead of swapping the page's
+          content out. */}
+      <>
           {/* One flat row of compact stat cards - no embedded charts, no
               redundant "is everything OK" banners duplicating what these
               numbers (and the Unassigned Orders / Failed Addresses boards
@@ -2446,13 +2458,12 @@ function App() {
               <div><strong>Drivers</strong><span>{drivers.length} on the roster</span></div>
             </button>
           </div>
-        </>
-      )}
+      </>
 
       <div className="console">
-        {/* Toolbar - the Routes page (generate/regenerate/save/delete a plan
-            and load a manifest) */}
-        {activeNav === 'generate' && (
+        {/* Toolbar - generate/regenerate/save/delete a plan and load a
+            manifest. Always mounted; the header row above still collapses
+            it to a summary bar by default. */}
         <div className="toolbar" id="toolbar-section">
           <button
             type="button"
@@ -2589,7 +2600,6 @@ function App() {
           </>
           )}
         </div>
-        )}
 
         {/* Loading */}
         {isProcessing && (
@@ -2643,8 +2653,7 @@ function App() {
         {/* Boards */}
         <div className="board-grid">
 
-          {/* RETURNS BOARD: failed orders, master/detail - its own page */}
-          {activeNav === 'failed' && (
+          {/* RETURNS BOARD: failed orders, master/detail */}
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               <h2 className="board__title">Returns</h2>
@@ -2766,13 +2775,12 @@ function App() {
               )}
             </div>
           </div>
-          )}
 
-          {/* Routes page (tab="routes") and Unassigned Orders page
-              (tab="unassigned") share this component's own internal
-              tab-switching - each is still its own distinct sidebar page,
-              just backed by the same list/detail workspace. */}
-          {(activeNav === 'generate' || activeNav === 'unassigned') && (
+          {/* Routes tab and Unassigned Orders tab share this component's
+              own internal tab-switching - 'unassigned-board' is what the
+              Unassigned Orders nav item scrolls to, switching the tab as it
+              goes; 'generate' scrolls up to the toolbar instead. */}
+          <div id="unassigned-board">
           <RouteWorkspace
             routes={routes}
             pendingOrders={pendingOrders}
@@ -2792,22 +2800,13 @@ function App() {
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
-            requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
+            requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
             drivers={drivers}
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}
             fetchRouteTracking={fetchRouteTracking}
           />
-          )}
-
-          {NAV_ITEMS_SOON.some((item) => item.key === activeNav) && (
-            <ComingSoonPage
-              label={headerContent.title}
-              icon={NAV_ITEMS_SOON.find((item) => item.key === activeNav).icon}
-              blurb={SOON_BLURBS[activeNav] || "This page isn't wired up to real data yet."}
-              onBack={() => handleNavClick(findNavItem('dashboard'))}
-            />
-          )}
+          </div>
 
         </div>
       </div>
@@ -2980,6 +2979,19 @@ function App() {
           onClose={() => setResetPasswordDriver(null)}
           onSave={handleResetPassword}
         />
+      )}
+
+      {soonOverlay && (
+        <div className="modal-backdrop" onClick={() => setSoonOverlay(null)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <ComingSoonPage
+              label={findNavItem(soonOverlay)?.label}
+              icon={findNavItem(soonOverlay)?.icon}
+              blurb={SOON_BLURBS[soonOverlay] || "This page isn't wired up to real data yet."}
+              onClose={() => setSoonOverlay(null)}
+            />
+          </div>
+        </div>
       )}
 
       {toast && (

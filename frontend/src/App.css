@@ -707,21 +707,34 @@ body { min-height: 100vh; }
 .dash-link strong { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
 .dash-link span { font-size: 0.76rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* A real page for every "Soon" sidebar item - centered, honest about what's
-   missing, one click back to somewhere real. */
+/* A small overlay (see soonOverlay in App.jsx) for any "Soon" sidebar item
+   - centered, honest about what's missing, dismissed with the X or a click
+   on the backdrop, same as the Drivers/Route History overlays. */
 .coming-soon-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   gap: 0.6rem;
+  width: 100%;
   max-width: 420px;
-  margin: 3rem auto;
   padding: 2.5rem 2rem;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
 }
+.coming-soon-page__close {
+  position: absolute;
+  top: 0.75rem; right: 0.75rem;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: none; color: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.coming-soon-page__close:hover { background: var(--surface-2); color: var(--ink); }
 .coming-soon-page__icon {
   width: 52px; height: 52px;
   display: flex; align-items: center; justify-content: center;
