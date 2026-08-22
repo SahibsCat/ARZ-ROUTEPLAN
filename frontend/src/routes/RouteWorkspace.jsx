@@ -131,7 +131,7 @@ function RoutesSummaryStrip({ routes, pendingOrders, capacityFor }) {
   return (
     <div className="routes-summary">
       {items.map((item) => (
-        <div key={item.label} className="routes-summary__item">
+        <div key={item.label} className={`routes-summary__item${item.tone ? ` routes-summary__item--${item.tone}` : ''}`}>
           <span className={`routes-summary__value mono-num${item.tone ? ` routes-summary__value--${item.tone}` : ''}`}>{item.value}</span>
           <span className="routes-summary__label">{item.label}</span>
         </div>
@@ -231,20 +231,26 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
   );
 }
 
-function RouteRow({ route, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute }) {
+function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute }) {
   const capacity = capacityFor(route.vehicle_type);
   const count = route.orders.length;
   const status = routeStatus(route, capacity);
   const subtitle = route.areas && route.areas.length ? route.areas.slice(0, 3).join(' → ') : 'No deliveries yet';
 
   return (
-    <div className="route-row" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
+    <div
+      className={`route-row route-hue-${routeIdx % 6}`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}
+    >
       <div className="route-row__cell route-row__cell--route">
         <span className="route-row__name">{route.route_name}</span>
         <span className="route-row__subtitle">{subtitle}</span>
       </div>
       <div className="route-row__cell route-row__cell--vehicle">
-        <span className="vehicle-pill">
+        <span className={`vehicle-pill vehicle-pill--${route.vehicle_type === 'car' ? 'car' : 'bike'}`}>
           {route.vehicle_type === 'car' ? <IconCar width={12} height={12} /> : <IconBike width={12} height={12} />}
           {route.vehicle_type === 'car' ? 'Car' : 'Bike'}
         </span>
@@ -304,10 +310,11 @@ function RoutesTable({
         <div className="route-row__cell route-row__cell--actions">Actions</div>
       </div>
       <div className="routes-table__body">
-        {routes.map((route) => (
+        {routes.map((route, idx) => (
           <RouteRow
             key={route.route_name}
             route={route}
+            routeIdx={idx}
             capacityFor={capacityFor}
             onOpen={() => onOpen(route.route_name)}
             onDownload={onDownload}
@@ -667,7 +674,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   };
 
   return (
-    <div className="driver-card">
+    <div className={`driver-card${tracking?.driver ? ` driver-card--${tracking.tracking_status}` : ''}`}>
       <div className="driver-card__head">
         <h3><IconUsers width={14} height={14} /> Driver & Live Tracking</h3>
         <button type="button" className="modal__close driver-card__refresh" title="Refresh" onClick={load}>

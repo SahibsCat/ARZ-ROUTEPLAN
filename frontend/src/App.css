@@ -966,14 +966,15 @@ body { min-height: 100vh; }
   gap: 0.65rem;
   align-items: flex-start;
   border-radius: var(--radius-lg);
+  border-left: 4px solid transparent;
   padding: 0.85rem 1.1rem;
   margin-bottom: 1.5rem;
   animation: rp-fade-in 0.2s ease;
 }
 .alert svg { flex: none; margin-top: 0.15rem; }
 .alert p { margin: 0.15rem 0; font-size: 0.9rem; }
-.alert--error { background: var(--critical-soft); color: var(--critical); }
-.alert--warn { background: var(--signal-soft); color: var(--signal); }
+.alert--error { background: var(--critical-soft); color: var(--critical); border-left-color: var(--critical); }
+.alert--warn { background: var(--signal-soft); color: var(--signal); border-left-color: var(--signal); }
 
 @keyframes rp-fade-in {
   from { opacity: 0; transform: translateY(-6px); }
