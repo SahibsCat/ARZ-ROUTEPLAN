@@ -585,6 +585,14 @@ function App() {
 
   // Shell chrome: sidebar, theme, search, toast.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // The fleet/regenerate/upload toolbar used to sit permanently expanded
+  // at full height on the Dashboard, several controls deep, whether or
+  // not you were actually there to generate routes - collapsed to a
+  // single summary bar by default once something's already loaded, and
+  // opened back up by clicking it or by clicking "Generate Routes" in the
+  // sidebar (see handleNavClick).
+  const [toolbarExpanded, setToolbarExpanded] = useState(true);
+  const hasAutoCollapsedToolbar = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
@@ -653,6 +661,9 @@ function App() {
       openHistory();
     } else if (item.key === 'drivers') {
       openDrivers();
+    } else if (item.key === 'generate') {
+      setToolbarExpanded(true);
+      document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else if (item.anchor === 'top') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
@@ -768,6 +779,18 @@ function App() {
     refreshDrivers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Collapses the fleet/regenerate/upload toolbar the first time there's
+  // something to actually show (a generated route) - it's the primary
+  // thing to see before that point, secondary/maintenance after. Only
+  // fires once; the header's own toggle (or clicking "Generate Routes" in
+  // the sidebar) has full manual control from then on.
+  useEffect(() => {
+    if (routes.length > 0 && !hasAutoCollapsedToolbar.current) {
+      hasAutoCollapsedToolbar.current = true;
+      setToolbarExpanded(false);
+    }
+  }, [routes.length]);
 
   // Resets the CURRENT tab back to the pre-upload empty state - file name,
   // order count, orders, failed addresses, everything. Used after deleting
@@ -2473,6 +2496,24 @@ function App() {
       <div className="console">
         {/* Toolbar */}
         <div className="toolbar" id="toolbar-section">
+          <button
+            type="button"
+            className="toolbar__summary"
+            onClick={() => setToolbarExpanded((v) => !v)}
+            aria-expanded={toolbarExpanded}
+          >
+            <span className="toolbar__summary-title"><IconRoute width={15} height={15} /> Generate Routes</span>
+            <span className="toolbar__summary-meta">
+              {fileName || 'No manifest loaded'} · {totalOrders} order{totalOrders === 1 ? '' : 's'} · {cars} car{cars === 1 ? '' : 's'} / {bikes} bike{bikes === 1 ? '' : 's'}
+            </span>
+            <IconChevron
+              width={14} height={14}
+              className={`toolbar__summary-chevron${toolbarExpanded ? ' toolbar__summary-chevron--open' : ''}`}
+            />
+          </button>
+
+          {toolbarExpanded && (
+          <>
           <div className="toolbar__row">
             <div className="toolbar__group toolbar__group--fleet">
               <div className={`fleet-dial${!hasVehicles ? ' fleet-dial--alarm' : ''}`}>
@@ -2587,6 +2628,8 @@ function App() {
               <span><strong>Orders</strong> {totalOrders}</span>
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* Loading */}
