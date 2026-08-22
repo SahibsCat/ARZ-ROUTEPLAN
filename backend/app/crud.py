@@ -1175,6 +1175,9 @@ def _route_stop_to_order_dict(stop: RouteStop) -> Dict[str, object]:
     data["is_late"] = stop.status == "late"
     data["map_link"] = single_stop_maps_link(data)
     data["area"] = resolve_location(data)
+    data["delivery_status"] = stop.delivery_status
+    data["is_delivered"] = stop.delivery_status == "delivered"
+    data["delivered_at"] = stop.delivered_at.isoformat() if stop.delivered_at else None
     return data
 
 
@@ -1236,6 +1239,7 @@ def route_summary(route: Route) -> Dict[str, object]:
         ),
         "delivery_sequence": [stop.order_id for stop in stops],
         "late_deliveries": [stop.order_id for stop in stops if stop.status == "late"],
+        "delivered_count": sum(1 for stop in stops if stop.delivery_status == "delivered"),
         "utilization_percent": route.utilization_percent,
         "is_auto_created": route.is_auto_created,
         "status": route.status,

@@ -1737,7 +1737,7 @@ function App() {
   const XLSX_GOOD = 'FF059669';
   const XLSX_CRITICAL = 'FFDC2626';
   const XLSX_SIGNAL = 'FFD97706';
-  const XLSX_COL_COUNT = 14;
+  const XLSX_COL_COUNT = 15;
   const XLSX_THIN_BORDER_SIDE = { style: 'thin', color: { argb: 'FFE2DFF0' } };
   const XLSX_THIN_BORDER = {
     top: XLSX_THIN_BORDER_SIDE, bottom: XLSX_THIN_BORDER_SIDE,
@@ -1777,11 +1777,11 @@ function App() {
     });
 
     // Stop # / Order ID / Customer / Phone / Address / Location / Delivery
-    // Slot / ETA / Status / Route / Vehicle / Latitude / Longitude / Maps.
+    // Slot / ETA / Status / Delivered / Route / Vehicle / Latitude / Longitude / Maps.
     sheet.columns = [
       { width: 8 }, { width: 12 }, { width: 20 }, { width: 14 }, { width: 38 },
-      { width: 16 }, { width: 14 }, { width: 10 }, { width: 10 }, { width: 12 },
-      { width: 10 }, { width: 12 }, { width: 12 }, { width: 20 },
+      { width: 16 }, { width: 14 }, { width: 10 }, { width: 10 }, { width: 11 },
+      { width: 12 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 20 },
     ];
 
     // --- Title bar ---
@@ -1844,7 +1844,7 @@ function App() {
     const HEADER_ROW = 12;
     const headers = [
       'Stop #', 'Order ID', 'Customer', 'Phone', 'Address', 'Location',
-      'Delivery Slot', 'ETA', 'Status', 'Route', 'Vehicle', 'Latitude', 'Longitude', 'Google Maps',
+      'Delivery Slot', 'ETA', 'Status', 'Delivered', 'Route', 'Vehicle', 'Latitude', 'Longitude', 'Google Maps',
     ];
     headers.forEach((label, c) => {
       const cell = sheet.getCell(HEADER_ROW, c + 1);
@@ -1871,6 +1871,7 @@ function App() {
         order.delivery_time,
         order.eta || '—',
         order.is_late ? 'LATE' : 'On time',
+        order.is_delivered ? 'Delivered' : 'Pending',
         route.route_name,
         route.vehicle_type === 'car' ? 'Car' : 'Bike',
         order.lat != null ? order.lat : '—',
@@ -1880,18 +1881,19 @@ function App() {
         const cell = sheet.getCell(rowNum, c + 1);
         cell.value = value;
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
-        cell.alignment = { horizontal: c === 0 || c >= 11 ? 'center' : 'left', vertical: 'middle' };
+        cell.alignment = { horizontal: c === 0 || c >= 12 ? 'center' : 'left', vertical: 'middle' };
         cell.border = XLSX_THIN_BORDER;
         cell.font = { color: { argb: XLSX_INK } };
       });
       sheet.getCell(rowNum, 9).font = { bold: true, color: { argb: order.is_late ? XLSX_CRITICAL : XLSX_GOOD } };
+      sheet.getCell(rowNum, 10).font = { bold: true, color: { argb: order.is_delivered ? XLSX_GOOD : XLSX_INK } };
 
       // order.map_link is the backend's precise single-pin link (lat/lng
       // when geocoded - always resolves exactly, no address parsing);
       // buildStopMapsLink is only a client-side fallback for an order that
       // predates that field (e.g. a route plan generated before this was
       // added and not yet re-saved).
-      const mapsCell = sheet.getCell(rowNum, 14);
+      const mapsCell = sheet.getCell(rowNum, 15);
       mapsCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
       mapsCell.border = XLSX_THIN_BORDER;
       mapsCell.alignment = { horizontal: 'left', vertical: 'middle' };

@@ -197,3 +197,7 @@ class DriverLocationRequest(BaseModel):
     speed: Optional[float] = None
     heading: Optional[float] = None
     accuracy: Optional[float] = None
+
+
+class SetStopDeliveredRequest(BaseModel):
+    delivered: bool = True

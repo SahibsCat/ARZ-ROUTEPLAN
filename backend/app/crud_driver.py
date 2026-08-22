@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 from app import crud
 from app.crud import RootplanError, RouteNotFoundError
 from app.driver_auth import create_session, generate_driver_code, hash_password, revoke_driver_sessions, verify_password
-from app.models import Driver, DriverLocationPing, DriverSession, Route
+from app.models import Driver, DriverLocationPing, DriverSession, Route, RouteStop
 
 # A ping newer than this reads as genuinely live; older than that but
 # within the delayed window reads as "location delayed"; anything older
@@ -308,6 +308,22 @@ def end_route(db: Session, driver: Driver, route_id: int) -> Route:
 # --------------------------------------------------------------------------
 # Live location
 # --------------------------------------------------------------------------
+
+def set_stop_delivered(db: Session, driver: Driver, route_id: int, order_id: str, delivered: bool) -> RouteStop:
+    """Toggle, not just set-true - a driver can mis-tap and needs to undo
+    it without contacting an admin. Ownership goes through
+    get_route_for_driver first, same as every other driver route action,
+    so driver A can't mark a stop delivered on driver B's route."""
+    route = get_route_for_driver(db, driver, route_id)
+    stop = db.query(RouteStop).filter(RouteStop.route_id == route.id, RouteStop.order_id == order_id).first()
+    if stop is None:
+        raise crud.OrderNotFoundError(f"Order {order_id} not found on this route")
+    stop.delivery_status = "delivered" if delivered else "pending"
+    stop.delivered_at = datetime.now(timezone.utc) if delivered else None
+    db.commit()
+    db.refresh(stop)
+    return stop
+
 
 def record_location(
     db: Session, driver: Driver, route_id: int,

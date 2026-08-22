@@ -303,6 +303,45 @@ def test_driver_cannot_record_location_on_another_drivers_route(db_session):
         crud_driver.record_location(db_session, driver_b, route.id, lat=13.0, lng=80.2)
 
 
+def test_set_stop_delivered_and_undo(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+
+    stop = crud_driver.set_stop_delivered(db_session, driver, route.id, "1", delivered=True)
+    assert stop.delivery_status == "delivered"
+    assert stop.delivered_at is not None
+
+    summary = crud.route_summary(route)
+    assert summary["delivered_count"] == 1
+    delivered_order = next(o for o in summary["orders"] if o["order_id"] == "1")
+    assert delivered_order["is_delivered"] is True
+
+    # A mis-tap is undoable, not a one-way door.
+    stop = crud_driver.set_stop_delivered(db_session, driver, route.id, "1", delivered=False)
+    assert stop.delivery_status == "pending"
+    assert stop.delivered_at is None
+
+
+def test_set_stop_delivered_unknown_order_raises(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+
+    with pytest.raises(crud.OrderNotFoundError):
+        crud_driver.set_stop_delivered(db_session, driver, route.id, "not-a-real-order", delivered=True)
+
+
+def test_driver_cannot_mark_delivered_on_another_drivers_route(db_session):
+    driver_a = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    driver_b = crud_driver.create_driver(db_session, "Suresh", "suresh", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver_a.id)
+
+    with pytest.raises(crud.RouteNotFoundError):
+        crud_driver.set_stop_delivered(db_session, driver_b, route.id, "1", delivered=True)
+
+
 def test_driver_active_route_matches_admin_route_summary(db_session):
     driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
     route = _route(db_session)

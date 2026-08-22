@@ -441,6 +441,13 @@
   font-size: 0.78rem; font-weight: 600; color: var(--good);
 }
 .stop-status--late { color: var(--critical); }
+.stop-status--delivered { color: var(--good); }
+
+/* A delivered stop reads as "done" at a glance - dimmed body text, but the
+   delivered pill itself stays full-color so it's still the thing your eye
+   catches. */
+.route-stop--delivered { opacity: 0.72; }
+.route-stop--delivered .stop-status--delivered { opacity: 1; }
 
 /* --- Delivery identity block (Unassigned Orders list only) --- */
 .delivery-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.18rem; }
@@ -681,6 +688,8 @@
 .driver-card__identity { display: flex; flex-direction: column; gap: 0.15rem; }
 .driver-card__name { font-size: 1rem; font-weight: 700; color: var(--ink); }
 .driver-card__meta { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.3rem; }
+.driver-card__progress { margin-top: 0.8rem; }
+.driver-card__progress-label { font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 0.35rem; }
 .driver-card__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.9rem; }
 
 .tracking-status-pill {

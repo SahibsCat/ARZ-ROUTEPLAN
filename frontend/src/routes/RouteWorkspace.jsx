@@ -700,6 +700,19 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
               Last seen {new Date(tracking.last_location.recorded_at).toLocaleTimeString()}
             </div>
           )}
+          {route.orders.length > 0 && (
+            <div className="driver-card__progress">
+              <div className="driver-card__progress-label">
+                <span>{route.delivered_count || 0} / {route.orders.length} delivered</span>
+              </div>
+              <div className="capacity-bar">
+                <span
+                  className={`capacity-bar__fill${(route.delivered_count || 0) >= route.orders.length ? ' capacity-bar__fill--full' : ''}`}
+                  style={{ width: `${Math.round(((route.delivered_count || 0) / route.orders.length) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
           <div className="driver-card__actions">
             {tracking.last_location ? (
               <button type="button" className="btn btn--secondary" onClick={() => setShowLiveMap(true)}>
@@ -918,7 +931,7 @@ function RouteDetail({
             {route.orders.map((order, stopIdx) => (
               <div
                 key={order.order_id}
-                className={`route-stop${String(order.order_id) === String(selectedOrderId) ? ' route-stop--selected' : ''}`}
+                className={`route-stop${String(order.order_id) === String(selectedOrderId) ? ' route-stop--selected' : ''}${order.is_delivered ? ' route-stop--delivered' : ''}`}
                 ref={(el) => { nodeRefs.current[order.order_id] = el; }}
                 draggable
                 title="Drag to reorder this delivery within the route"
@@ -938,6 +951,7 @@ function RouteDetail({
                     <span className={`stop-status${order.is_late ? ' stop-status--late' : ''}`}>
                       {order.is_late ? '🔴 Late' : '🟢 On time'}
                     </span>
+                    {order.is_delivered && <span className="stop-status stop-status--delivered">✅ Delivered</span>}
                   </div>
                   {order.area && <span className="route-stop__area">{order.area}</span>}
                   <p className="route-stop__address">{order.address || 'No address on file'}</p>

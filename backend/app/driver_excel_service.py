@@ -33,7 +33,7 @@ def build_route_workbook(route_summary: Dict[str, object]) -> BytesIO:
 
     headers = [
         "Stop #", "Order ID", "Customer", "Phone", "Address", "Location",
-        "Delivery Slot", "ETA", "Status", "Route", "Vehicle", "Latitude", "Longitude", "Google Maps",
+        "Delivery Slot", "ETA", "Status", "Delivered", "Route", "Vehicle", "Latitude", "Longitude", "Google Maps",
     ]
     for col, label in enumerate(headers, start=1):
         cell = sheet.cell(row=1, column=col, value=label)
@@ -54,6 +54,7 @@ def build_route_workbook(route_summary: Dict[str, object]) -> BytesIO:
             order.get("delivery_time"),
             order.get("eta") or "—",
             "LATE" if order.get("is_late") else "On time",
+            "Delivered" if order.get("is_delivered") else "Pending",
             route_summary.get("route_name"),
             vehicle_label,
             order.get("lat") if order.get("lat") is not None else "—",
@@ -63,7 +64,7 @@ def build_route_workbook(route_summary: Dict[str, object]) -> BytesIO:
         for col, value in enumerate(values, start=1):
             sheet.cell(row=row, column=col, value=value)
 
-    widths = [8, 12, 20, 14, 38, 16, 14, 10, 10, 12, 10, 12, 12, 40]
+    widths = [8, 12, 20, 14, 38, 16, 14, 10, 10, 11, 12, 10, 12, 12, 40]
     for col, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(col)].width = width
 

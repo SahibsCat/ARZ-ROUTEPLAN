@@ -180,8 +180,14 @@ class RouteStop(Base):
     travel_distance_km = Column(Float, nullable=True)
     travel_time_minutes = Column(Float, nullable=True)
     eta = Column(String, nullable=True)
-    # on_time | late
+    # on_time | late - purely a timing signal (was this stop late against
+    # its slot), unrelated to whether it was actually delivered.
     status = Column(String, default="on_time", nullable=False)
+    # pending | delivered - the driver's own record of having completed
+    # this stop, set from the Driver App's Mark Delivered action. Separate
+    # from `status` above on purpose: a stop can be late AND delivered.
+    delivery_status = Column(String, default="pending", nullable=False)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
     # Full order dict (customer name, address, slot, ...) as it looked at
     # generation time, so a route card can be rendered from this table alone.
     order_snapshot = Column(JSON, default=dict)

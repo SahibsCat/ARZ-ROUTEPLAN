@@ -49,6 +49,7 @@ from app.schemas import (
     RoutePlanHistoryResponse,
     RoutePlanResponse,
     RoutePlanSaveRequest,
+    SetStopDeliveredRequest,
     SettingsResponse,
     SettingsUpdateRequest,
     UpdateDriverRequest,
@@ -601,7 +602,7 @@ def _raise_for_driver_error(e: Exception) -> None:
     """Same idea as _raise_for_crud_error, for the driver-management/auth
     exceptions in crud_driver.py - checked first since they're more
     specific than the generic RootplanError they all still inherit from."""
-    if isinstance(e, crud_driver.DriverNotFoundError) or isinstance(e, crud.RouteNotFoundError):
+    if isinstance(e, crud_driver.DriverNotFoundError) or isinstance(e, crud.RouteNotFoundError) or isinstance(e, crud.OrderNotFoundError):
         raise HTTPException(status_code=404, detail=str(e))
     if isinstance(e, crud_driver.InvalidCredentialsError):
         raise HTTPException(status_code=401, detail=str(e))
@@ -963,3 +964,16 @@ def driver_location_ping_endpoint(payload: DriverLocationRequest = Body(...), dr
     except crud.RootplanError as e:
         _raise_for_driver_error(e)
     return {"recorded_at": ping.recorded_at.isoformat()}
+
+
+@app.patch("/api/driver/routes/{route_id}/stops/{order_id}/delivered")
+def set_stop_delivered_endpoint(
+    route_id: int, order_id: str, payload: SetStopDeliveredRequest = Body(...),
+    driver=Depends(get_current_driver), db: Session = Depends(get_db),
+):
+    try:
+        crud_driver.set_stop_delivered(db, driver, route_id, order_id, payload.delivered)
+        route = crud_driver.get_route_for_driver(db, driver, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"route": crud.route_summary(route)}
