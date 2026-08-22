@@ -19,12 +19,13 @@ from app.models import Driver, DriverLocationPing, DriverSession, Route
 # within the delayed window reads as "location delayed"; anything older
 # (or no ping at all) reads as offline. The driver app requests an 8s
 # ping interval, but Android's own location provider throttles that down
-# to roughly 70-110s once the phone is idle/stationary/screen-off - normal
-# OS-level power management, confirmed via real device testing, not a bug
-# to route around. 30s was too strict and read every idle moment as
-# "Delayed"; these windows give real headroom for that throttling while
-# still catching a driver who's genuinely gone offline.
-LIVE_WINDOW_SECONDS = 120
+# to roughly 70-110s (sometimes more) once the phone is idle/stationary/
+# screen-off - normal OS-level power management, confirmed via real device
+# testing, not a bug to route around. 120s still flickered to "Delayed" on
+# an ordinary slightly-longer gap; this gives real headroom above the
+# observed range while still catching a driver who's genuinely gone
+# offline within a few minutes.
+LIVE_WINDOW_SECONDS = 180
 DELAYED_WINDOW_SECONDS = 600
 
 

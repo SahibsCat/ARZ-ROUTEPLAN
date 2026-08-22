@@ -360,7 +360,7 @@ def test_tracking_status_delayed_between_the_live_and_offline_windows(db_session
     crud_driver.start_route(db_session, driver, route.id)
     ping = crud_driver.record_location(db_session, driver, route.id, lat=13.05, lng=80.25)
 
-    ping.recorded_at = datetime.now(timezone.utc) - timedelta(seconds=180)  # past "live", within "delayed"
+    ping.recorded_at = datetime.now(timezone.utc) - timedelta(seconds=300)  # past "live", within "delayed"
     db_session.commit()
 
     tracking = crud_driver.get_route_tracking(db_session, route.id)
