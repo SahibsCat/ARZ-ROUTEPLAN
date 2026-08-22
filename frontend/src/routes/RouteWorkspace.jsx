@@ -1,10 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
   IconUsers, IconChevron,
 } from '../icons';
+import 'leaflet/dist/leaflet.css';
 import './routeWorkspace.css';
+
+// A small colored dot instead of Leaflet's default marker image - the
+// default icon's asset paths don't resolve correctly through Vite's
+// bundler without extra config, and a plain dot reads fine at this scale.
+const driverMarkerIcon = L.divIcon({
+  className: 'live-map__marker',
+  html: '<span class="live-map__marker-dot"></span><span class="live-map__marker-pulse"></span>',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
+// react-leaflet's MapContainer only reads `center` on first render - this
+// re-centers the view every time the driver's position actually moves,
+// which is the whole point of a *live* map instead of a static pin.
+function RecenterOnMove({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) map.setView(position, map.getZoom(), { animate: true });
+  }, [position, map]);
+  return null;
+}
 
 function capacityText(count, capacity) {
   if (!capacity) return `${count}`;
@@ -529,6 +553,76 @@ function AssignDriverModal({ route, drivers, onAssign, onClose }) {
   );
 }
 
+function timeAgo(iso) {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m ago`;
+}
+
+// The actual "watch them move" view - "Track Driver" used to just open a
+// static Google Maps pin frozen at whatever the last location happened to
+// be the moment you clicked it, with no way to see it update. This is a
+// real embedded map (Leaflet + OpenStreetMap tiles, no API key/billing -
+// Google Maps was deliberately removed from this admin panel earlier)
+// that re-polls tracking on its own faster timer and re-centers on the
+// driver's marker every time it actually moves, plus the breadcrumb trail
+// already available from the tracking endpoint's `path`.
+function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onClose }) {
+  const [tracking, setTracking] = useState(initialTracking);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => fetchRouteTracking(route.route_id).then((data) => { if (!cancelled) setTracking(data); }).catch(() => {});
+    poll();
+    const interval = setInterval(poll, 8000); // faster than the card's own 15s - this view is the one you're actually watching
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [route.route_id, fetchRouteTracking]);
+
+  const last = tracking?.last_location;
+  const position = last ? [last.lat, last.lng] : null;
+  const path = (tracking?.path || []).map((p) => [p.lat, p.lng]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal--wide live-map-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__header">
+          <h3>Live Location — {driver.name}</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+        <div className="modal__meta">
+          <span>{route.route_name}</span>
+          <TrackingStatusPill status={tracking?.tracking_status || 'not_started'} />
+          {last && <span>Updated {timeAgo(last.recorded_at)}</span>}
+        </div>
+        {position ? (
+          <MapContainer center={position} zoom={16} scrollWheelZoom className="live-map-modal__map">
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
+            />
+            {path.length > 1 && <Polyline positions={path} pathOptions={{ color: '#6d5ef5', weight: 3, opacity: 0.7 }} />}
+            <Marker position={position} icon={driverMarkerIcon}>
+              <Popup>{driver.name} · {timeAgo(last.recorded_at)}</Popup>
+            </Marker>
+            <RecenterOnMove position={position} />
+          </MapContainer>
+        ) : (
+          <div className="empty-state live-map-modal__empty">No location reported yet - the map appears as soon as the first ping lands.</div>
+        )}
+        <div className="modal__footer">
+          {last && (
+            <a className="btn btn--outline" href={last.maps_url} target="_blank" rel="noopener noreferrer">
+              <IconPin width={14} height={14} /> Open in Google Maps
+            </a>
+          )}
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Live status + assignment for the route currently open in detail view.
 // Polls GET /api/routes/{id}/tracking on its own timer while this card is
 // mounted (i.e. only while an admin actually has this route's detail view
@@ -538,6 +632,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showLiveMap, setShowLiveMap] = useState(false);
   const [isUnassigning, setIsUnassigning] = useState(false);
 
   const load = async () => {
@@ -606,10 +701,10 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
             </div>
           )}
           <div className="driver-card__actions">
-            {tracking.last_location?.maps_url ? (
-              <a className="btn btn--secondary" href={tracking.last_location.maps_url} target="_blank" rel="noopener noreferrer">
+            {tracking.last_location ? (
+              <button type="button" className="btn btn--secondary" onClick={() => setShowLiveMap(true)}>
                 <IconPin width={14} height={14} /> Track Driver
-              </a>
+              </button>
             ) : (
               <button type="button" className="btn btn--secondary" disabled title="No location reported yet">
                 <IconPin width={14} height={14} /> Track Driver
@@ -633,6 +728,16 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
             if (!result.conflict) await load();
             return result;
           }}
+        />
+      )}
+
+      {showLiveMap && tracking?.driver && (
+        <LiveMapModal
+          route={route}
+          driver={tracking.driver}
+          initialTracking={tracking}
+          fetchRouteTracking={fetchRouteTracking}
+          onClose={() => setShowLiveMap(false)}
         />
       )}
     </div>
