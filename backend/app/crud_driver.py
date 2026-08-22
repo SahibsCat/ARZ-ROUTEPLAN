@@ -239,6 +239,17 @@ def assign_driver_to_route(db: Session, route_id: int, driver_id: int, force: bo
 
     route.driver_id = driver.id
     route.driver = driver.name
+    # Every (re)assignment starts the route fresh for whoever's driving it
+    # now, even if it's the same driver being assigned to the same route
+    # again - that's the admin's way of resetting a route stuck mid-run
+    # (e.g. the driver's app crashed before End Route) back to a clean
+    # "not started yet" state without a separate reset action. A route
+    # that's still genuinely in progress under a different driver already
+    # returned a conflict above unless force=True was passed, so reaching
+    # this line means the admin explicitly meant this as a fresh start.
+    route.route_run_status = "planned"
+    route.started_at = None
+    route.completed_at = None
     db.commit()
     db.refresh(route)
     return {"conflict": False, "route": route, "driver": driver}

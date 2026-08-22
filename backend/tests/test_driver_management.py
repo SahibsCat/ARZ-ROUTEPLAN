@@ -194,6 +194,56 @@ def test_assign_driver_with_force_moves_them(db_session):
     assert route1.driver_id is None  # freed from the old route
 
 
+def test_reassigning_same_driver_to_same_route_resets_it_to_planned(db_session):
+    # The bug report this covers: a route stuck "in progress" (e.g. the
+    # driver's app crashed before End Route) - re-assigning the same
+    # driver to the same route is the admin's way of resetting it back to
+    # a clean, startable state, without a separate "reset route" action.
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    db_session.refresh(route)
+    assert route.route_run_status == "in_progress"
+    assert route.started_at is not None
+
+    result = crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+
+    assert result["conflict"] is False
+    db_session.refresh(route)
+    assert route.route_run_status == "planned"
+    assert route.started_at is None
+    assert route.completed_at is None
+
+
+def test_force_reassigning_a_different_driver_resets_the_route_to_planned(db_session):
+    driver1 = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    driver2 = crud_driver.create_driver(db_session, "Suresh", "suresh", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver1.id)
+    crud_driver.start_route(db_session, driver1, route.id)
+
+    result = crud_driver.assign_driver_to_route(db_session, route.id, driver2.id, force=True)
+
+    assert result["conflict"] is False
+    db_session.refresh(route)
+    assert route.driver_id == driver2.id
+    assert route.route_run_status == "planned"
+    assert route.started_at is None
+
+
+def test_assigning_a_driver_to_a_fresh_route_leaves_it_planned(db_session):
+    # Not a regression by itself (a brand new route is already "planned"),
+    # but locks in that assignment never *starts* a route on its own -
+    # only the driver's own Start Route action does.
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+
+    result = crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+
+    assert result["route"].route_run_status == "planned"
+
+
 def test_assign_inactive_driver_is_rejected(db_session):
     driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
     crud_driver.set_driver_status(db_session, driver.id, "inactive")
