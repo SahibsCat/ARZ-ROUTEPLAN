@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import ExcelJS from 'exceljs';
 import RouteWorkspace from './routes/RouteWorkspace';
 import './App.css';
@@ -38,30 +38,60 @@ const maxCapacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_MAX_CAPACIT
 // glance - cycles if there are more routes than colors.
 const ROUTE_HUES = 6;
 
-// Sidebar sections. The first group is real, individual pages - clicking
-// one swaps the whole console over to it (see activeNav below), it doesn't
-// scroll you down a long shared page. 'drivers' and 'history' instead open
-// an overlay panel, since those are genuinely a picker/record list you dip
-// into and dismiss. The second group names the rest of what a full
-// dispatch platform would eventually cover - each still a real, dedicated
-// page (ComingSoonPage), just deliberately honest that there's no backend
-// behind it yet (no fabricated data).
-const NAV_ITEMS = [
-  { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
-  { key: 'generate', label: 'Routes', icon: IconRoute },
-  { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox },
-  { key: 'failed', label: 'Failed Addresses', icon: IconAlert },
-  { key: 'drivers', label: 'Drivers', icon: IconUsers },
-  { key: 'history', label: 'Route History', icon: IconHistory },
+// Sidebar structure - grouped by what you're actually trying to do, not by
+// "is this real yet" (that used to split a plain Workspace/Platform-Soon
+// list, which put Vehicles nowhere near Drivers and Live Tracking nowhere
+// near Routes). Every item is still a real, individual page - clicking one
+// swaps the whole console over to it (see activeNav below), it doesn't
+// scroll you down a long shared page - except 'drivers' and 'history',
+// which open an overlay panel, since those are genuinely a picker/record
+// list you dip into and dismiss. Items marked soon:true render as
+// ComingSoonPage - a real, dedicated page, just deliberately honest that
+// there's no backend behind it yet (no fabricated data).
+const NAV_GROUPS = [
+  {
+    label: 'Overview',
+    items: [
+      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
+    ],
+  },
+  {
+    label: 'Dispatch',
+    items: [
+      { key: 'generate', label: 'Routes', icon: IconRoute },
+      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox },
+      { key: 'failed', label: 'Failed Addresses', icon: IconAlert },
+      { key: 'history', label: 'Route History', icon: IconHistory },
+      { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, soon: true },
+    ],
+  },
+  {
+    label: 'Fleet',
+    items: [
+      { key: 'drivers', label: 'Drivers', icon: IconUsers },
+      { key: 'vehicles', label: 'Vehicles', icon: IconCar, soon: true },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { key: 'reports', label: 'Reports', icon: IconFileText, soon: true },
+      { key: 'analytics', label: 'Analytics', icon: IconBarChart, soon: true },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { key: 'notifications', label: 'Notifications', icon: IconBell, soon: true },
+      { key: 'settings', label: 'Settings', icon: IconSettings, soon: true },
+    ],
+  },
 ];
-const NAV_ITEMS_SOON = [
-  { key: 'vehicles', label: 'Vehicles', icon: IconCar },
-  { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge },
-  { key: 'notifications', label: 'Notifications', icon: IconBell },
-  { key: 'reports', label: 'Reports', icon: IconFileText },
-  { key: 'analytics', label: 'Analytics', icon: IconBarChart },
-  { key: 'settings', label: 'Settings', icon: IconSettings },
-];
+// Flattened views - most of the app just needs "every item" or "every soon
+// item" without caring which group it's in.
+const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+const NAV_ITEMS_SOON = NAV_ITEMS.filter((item) => item.soon);
+const findNavItem = (key) => NAV_ITEMS.find((item) => item.key === key);
 const SOON_BLURBS = {
   vehicles: 'Individual vehicle records - plate number, type, and which driver each one belongs to - not just the car/bike counts on the Routes page. Needs its own backend table.',
   'live-tracking': 'A single map showing every driver on the road at once. Today, live tracking is per-route (open a route, click Track Driver) - this would be the fleet-wide view.',
@@ -2210,31 +2240,39 @@ function App() {
         </div>
 
         <nav className="sidebar__nav">
-          <div className="sidebar__section-label">Workspace</div>
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.key}
-              className={`nav-item${activeNav === item.key ? ' nav-item--active' : ''}`}
-              onClick={() => handleNavClick(item)}
-              title={item.label}
-            >
-              <item.icon width={17} height={17} />
-              <span>{item.label}</span>
-            </button>
-          ))}
-
-          <div className="sidebar__section-label">Platform</div>
-          {NAV_ITEMS_SOON.map((item) => (
-            <button
-              key={item.key}
-              className={`nav-item nav-item--soon${activeNav === item.key ? ' nav-item--active' : ''}`}
-              onClick={() => handleSoonClick(item)}
-              title={`${item.label} - coming soon`}
-            >
-              <item.icon width={17} height={17} />
-              <span>{item.label}</span>
-              <span className="nav-item__badge">Soon</span>
-            </button>
+          {/* Grouped by what you're trying to do (Dispatch, Fleet, Insights,
+              System) rather than by build status - a "Soon" item sits next
+              to its real siblings (Vehicles under Fleet with Drivers, Live
+              Tracking under Dispatch with Routes) instead of being exiled
+              to one catch-all section at the bottom. */}
+          {NAV_GROUPS.map((group) => (
+            <Fragment key={group.label}>
+              <div className="sidebar__section-label">{group.label}</div>
+              {group.items.map((item) => (
+                item.soon ? (
+                  <button
+                    key={item.key}
+                    className={`nav-item nav-item--soon${activeNav === item.key ? ' nav-item--active' : ''}`}
+                    onClick={() => handleSoonClick(item)}
+                    title={`${item.label} - coming soon`}
+                  >
+                    <item.icon width={17} height={17} />
+                    <span>{item.label}</span>
+                    <span className="nav-item__badge">Soon</span>
+                  </button>
+                ) : (
+                  <button
+                    key={item.key}
+                    className={`nav-item${activeNav === item.key ? ' nav-item--active' : ''}`}
+                    onClick={() => handleNavClick(item)}
+                    title={item.label}
+                  >
+                    <item.icon width={17} height={17} />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              ))}
+            </Fragment>
           ))}
         </nav>
 
@@ -2391,19 +2429,19 @@ function App() {
           </div>
 
           <div className="dash-links">
-            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[1])}>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('generate'))}>
               <IconRoute width={18} height={18} />
               <div><strong>Routes</strong><span>{fileName ? `${fileName} · ${totalOrders} orders` : 'Generate today’s routes'}</span></div>
             </button>
-            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[2])}>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('unassigned'))}>
               <IconInbox width={18} height={18} />
               <div><strong>Unassigned Orders</strong><span>{pendingOrders.length} waiting on assignment</span></div>
             </button>
-            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[3])}>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('failed'))}>
               <IconAlert width={18} height={18} />
               <div><strong>Failed Addresses</strong><span>{failedOrders.length} needing attention</span></div>
             </button>
-            <button type="button" className="dash-link" onClick={() => handleNavClick(NAV_ITEMS[4])}>
+            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('drivers'))}>
               <IconUsers width={18} height={18} />
               <div><strong>Drivers</strong><span>{drivers.length} on the roster</span></div>
             </button>
@@ -2767,7 +2805,7 @@ function App() {
               label={headerContent.title}
               icon={NAV_ITEMS_SOON.find((item) => item.key === activeNav).icon}
               blurb={SOON_BLURBS[activeNav] || "This page isn't wired up to real data yet."}
-              onBack={() => handleNavClick(NAV_ITEMS[0])}
+              onBack={() => handleNavClick(findNavItem('dashboard'))}
             />
           )}
 
