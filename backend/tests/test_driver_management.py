@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -344,6 +346,25 @@ def test_tracking_status_live_right_after_a_fresh_ping(db_session):
     assert tracking["tracking_status"] == "live"
     assert tracking["last_location"]["lat"] == 13.05
     assert "maps_url" in tracking["last_location"]
+
+
+def test_tracking_status_delayed_between_the_live_and_offline_windows(db_session):
+    # Locks in the real-world-driven thresholds (crud_driver.LIVE_WINDOW_
+    # SECONDS / DELAYED_WINDOW_SECONDS) - Android throttles the driver
+    # app's requested 8s ping interval down to ~70-110s once the phone is
+    # idle/stationary, confirmed via real device testing, so a ping this
+    # old is normal mid-route behavior, not a dropped connection.
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    ping = crud_driver.record_location(db_session, driver, route.id, lat=13.05, lng=80.25)
+
+    ping.recorded_at = datetime.now(timezone.utc) - timedelta(seconds=180)  # past "live", within "delayed"
+    db_session.commit()
+
+    tracking = crud_driver.get_route_tracking(db_session, route.id)
+    assert tracking["tracking_status"] == "delayed"
 
 
 def test_tracking_status_offline_with_no_pings_while_in_progress(db_session):

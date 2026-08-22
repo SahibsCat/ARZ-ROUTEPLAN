@@ -17,11 +17,15 @@ from app.models import Driver, DriverLocationPing, DriverSession, Route
 
 # A ping newer than this reads as genuinely live; older than that but
 # within the delayed window reads as "location delayed"; anything older
-# (or no ping at all) reads as offline. Matches the driver app's ~5-10s
-# ping interval with headroom for a couple of missed pings before
-# downgrading the admin's status badge.
-LIVE_WINDOW_SECONDS = 30
-DELAYED_WINDOW_SECONDS = 300
+# (or no ping at all) reads as offline. The driver app requests an 8s
+# ping interval, but Android's own location provider throttles that down
+# to roughly 70-110s once the phone is idle/stationary/screen-off - normal
+# OS-level power management, confirmed via real device testing, not a bug
+# to route around. 30s was too strict and read every idle moment as
+# "Delayed"; these windows give real headroom for that throttling while
+# still catching a driver who's genuinely gone offline.
+LIVE_WINDOW_SECONDS = 120
+DELAYED_WINDOW_SECONDS = 600
 
 
 class DriverNotFoundError(RootplanError):
