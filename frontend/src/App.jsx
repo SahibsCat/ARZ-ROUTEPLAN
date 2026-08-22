@@ -153,15 +153,6 @@ function DriverStatusPill({ status }) {
   );
 }
 
-// Random, readable-enough starter password for the "Generate" shortcut in
-// the create/reset-password forms - the admin can still type their own.
-function generateRandomPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let out = '';
-  for (let i = 0; i < 10; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
 // One-time credential reveal shown after a successful create/reset - the
 // backend only ever stores a password hash, so this screen (copyable,
 // staying open until the admin explicitly dismisses it) is the only chance
@@ -292,10 +283,7 @@ function DriverFormModal({ driver, onSave, onClose, isSubmitting }) {
                 </div>
                 <div>
                   <label className="modal__field-label" htmlFor="driver-password">Initial password</label>
-                  <div className="modal__inline-row">
-                    <input id="driver-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
-                    <button type="button" className="btn btn--outline btn--compact" onClick={() => setPassword(generateRandomPassword())}>Generate</button>
-                  </div>
+                  <input id="driver-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
                 </div>
               </>
             )}
@@ -366,10 +354,7 @@ function ResetPasswordModal({ driver, onSave, onClose, isSubmitting }) {
             password with them directly - it isn't emailed or texted automatically.
           </p>
           <label className="modal__field-label" htmlFor="driver-new-password">New password</label>
-          <div className="modal__inline-row">
-            <input id="driver-new-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" autoFocus />
-            <button type="button" className="btn btn--outline btn--compact" onClick={() => setPassword(generateRandomPassword())}>Generate</button>
-          </div>
+          <input id="driver-new-password" className="modal__input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" autoFocus />
         </div>
         {error && <div className="modal__warning"><IconAlert width={13} height={13} />{error}</div>}
         <div className="modal__footer">
@@ -1069,6 +1054,39 @@ function App() {
     if (!response.ok) throw new Error(`Could not load tracking (${response.status})`);
     return response.json();
   };
+
+  // Global "a driver just started their route" notification - fires as a
+  // toast from anywhere in the app, not only while that route's detail
+  // view happens to be open (DriverTrackingCard's own polling is scoped to
+  // its one route and doesn't help here). Polls every route currently
+  // loaded rather than filtering by routes[].driver_id first, since that
+  // field is only ever set at load time and goes stale the moment a
+  // driver is assigned mid-session - /tracking itself is always current.
+  const routeRunStatusRef = useRef({});
+  useEffect(() => {
+    if (routes.length === 0) return undefined;
+    let cancelled = false;
+    const poll = async () => {
+      for (const r of routes) {
+        try {
+          const data = await fetchRouteTracking(r.route_id);
+          if (cancelled) return;
+          const prev = routeRunStatusRef.current[r.route_id];
+          if (prev && prev !== 'in_progress' && data.route_run_status === 'in_progress') {
+            showToast(`🚗 ${data.driver?.name || 'A driver'} started ${r.route_name}`);
+          }
+          routeRunStatusRef.current[r.route_id] = data.route_run_status;
+        } catch {
+          // A transient failure on one route this cycle isn't worth
+          // surfacing - the next poll tries again.
+        }
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 25000);
+    return () => { cancelled = true; clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes.map((r) => r.route_id).join(',')]);
 
   // Switches the whole working view over to a saved plan from history -
   // its routes/pending/fleet, and (if it's tied to an upload) that
@@ -2836,7 +2854,7 @@ function App() {
         </div>
       )}
 
-      {driversOpen && (
+      {driversOpen && !driverFormOpen && (
         <div className="history-overlay" role="dialog" aria-modal="true" aria-label="Drivers">
           <div className="history-overlay__scrim" onClick={() => setDriversOpen(false)} />
           <div className="history-panel">
