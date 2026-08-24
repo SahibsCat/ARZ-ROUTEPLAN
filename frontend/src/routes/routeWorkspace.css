@@ -23,8 +23,13 @@
 
 /* "Create Route" is the one primary call-to-action in this workspace - a
    native <select> doubles as the car/bike choice, styled to read as a
-   filled primary button rather than a plain form control. */
-.add-route-select {
+   filled primary button rather than a plain form control. Selector is
+   `select.add-route-select` (not just `.add-route-select`) specifically
+   to outrank the shared `.stop-move` class this element also carries -
+   same specificity would otherwise leave the winner to import order,
+   and it was losing its blue fill/white text to .stop-move's plain gray
+   chip styling. */
+select.add-route-select {
   appearance: none;
   font-family: var(--font-body);
   font-weight: 700;
@@ -37,8 +42,8 @@
   cursor: pointer;
   transition: filter 0.15s ease, transform 0.15s ease;
 }
-.add-route-select:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
-.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
+select.add-route-select:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .select-compact {
   font-family: var(--font-body);
@@ -671,9 +676,9 @@
 .credential-row__value { font-size: 1rem; font-weight: 700; color: var(--ink); user-select: all; }
 
 /* =======================================================================
-   Drivers panel (App.jsx sidebar overlay) - roster table + status pills.
+   Drivers board (App.jsx, full page in the board-grid) - roster table +
+   status pills.
 ======================================================================= */
-.drivers-panel__toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.9rem; }
 .drivers-table-wrap { overflow-x: auto; }
 .drivers-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
 .drivers-table th {

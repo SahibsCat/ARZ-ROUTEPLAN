@@ -41,13 +41,18 @@ const ROUTE_HUES = 6;
 // Sidebar structure - grouped by what you're actually trying to do, not by
 // "is this real yet" (that used to split a plain Workspace/Platform-Soon
 // list, which put Vehicles nowhere near Drivers and Live Tracking nowhere
-// near Routes). Dashboard/Routes/Unassigned Orders/Failed Addresses are all
-// one continuous page again (back to how it originally worked) - clicking
-// one of these just smooth-scrolls to its anchor rather than swapping the
-// console's content out. 'drivers' and 'history' open an overlay panel,
-// since those are genuinely a picker/record list you dip into and dismiss.
-// Items marked soon:true have no real content to scroll to, so clicking one
-// opens ComingSoonPage as its own small overlay instead (see soonOverlay).
+// near Routes). Dashboard/Routes/Unassigned Orders/Failed Addresses/Drivers
+// are all one continuous page again (back to how it originally worked) -
+// clicking one of these just smooth-scrolls to its anchor rather than
+// swapping the console's content out or opening a side drawer. Drivers used
+// to be a right-side overlay panel; it's a full board in the page flow now,
+// same as Failed Addresses, so both creating a driver and seeing every
+// driver's status live on a real page instead of a drawer you dip into and
+// dismiss. 'history' (Route History, a long append-only record list rather
+// than something you work in) is the one nav item that still opens as an
+// overlay. Items marked soon:true have no real content to scroll to, so
+// clicking one opens ComingSoonPage as its own small overlay instead (see
+// soonOverlay).
 const NAV_GROUPS = [
   {
     label: 'Overview',
@@ -68,7 +73,7 @@ const NAV_GROUPS = [
   {
     label: 'Fleet',
     items: [
-      { key: 'drivers', label: 'Drivers', icon: IconUsers },
+      { key: 'drivers', label: 'Drivers', icon: IconUsers, anchor: 'drivers-board' },
       { key: 'vehicles', label: 'Vehicles', icon: IconCar, soon: true },
     ],
   },
@@ -450,10 +455,9 @@ function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState(null);
 
-  // Drivers panel (roster CRUD) - the assignment picker on a route's detail
+  // Drivers board (roster CRUD) - the assignment picker on a route's detail
   // view (RouteWorkspace) reads from this same `drivers` list, so it stays
-  // fresh even when the panel itself has never been opened this session.
-  const [driversOpen, setDriversOpen] = useState(false);
+  // fresh even before the Drivers board has scrolled into view this session.
   const [drivers, setDrivers] = useState([]);
   const [isLoadingDrivers, setIsLoadingDrivers] = useState(false);
   const [driversError, setDriversError] = useState(null);
@@ -623,7 +627,6 @@ function App() {
   // single summary bar by default once something's already loaded, and
   // opened back up by clicking it or by clicking "Generate Routes" in the
   // sidebar (see handleNavClick).
-  const [toolbarExpanded, setToolbarExpanded] = useState(true);
   const hasAutoCollapsedToolbar = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('dashboard');
@@ -701,8 +704,6 @@ function App() {
     setSoonOverlay(null);
     if (item.key === 'history') {
       openHistory();
-    } else if (item.key === 'drivers') {
-      openDrivers();
     } else {
       if (item.key === 'generate') setToolbarExpanded(true);
       if (item.anchor === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -977,11 +978,6 @@ function App() {
     } finally {
       setIsLoadingDrivers(false);
     }
-  };
-
-  const openDrivers = () => {
-    setDriversOpen(true);
-    refreshDrivers();
   };
 
   const handleSaveDriver = async (formValues) => {
@@ -2433,6 +2429,7 @@ function App() {
               numbers (and the Unassigned Orders / Failed Addresses boards
               themselves) already say. Real counts only. */}
           <div className="stat-row">
+            <KpiTile variant="orders" icon={IconInbox} value={totalOrders} label="Orders today" />
             <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" />
             <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" />
             <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" />
@@ -2465,24 +2462,13 @@ function App() {
             manifest. Always mounted; the header row above still collapses
             it to a summary bar by default. */}
         <div className="toolbar" id="toolbar-section">
-          <button
-            type="button"
-            className="toolbar__summary"
-            onClick={() => setToolbarExpanded((v) => !v)}
-            aria-expanded={toolbarExpanded}
-          >
+          <div className="toolbar__summary">
             <span className="toolbar__summary-title"><IconRoute width={15} height={15} /> Generate Routes</span>
             <span className="toolbar__summary-meta">
               {fileName || 'No manifest loaded'} · {totalOrders} order{totalOrders === 1 ? '' : 's'} · {cars} car{cars === 1 ? '' : 's'} / {bikes} bike{bikes === 1 ? '' : 's'}
             </span>
-            <IconChevron
-              width={14} height={14}
-              className={`toolbar__summary-chevron${toolbarExpanded ? ' toolbar__summary-chevron--open' : ''}`}
-            />
-          </button>
+          </div>
 
-          {toolbarExpanded && (
-          <>
           <div className="toolbar__row">
             <div className="toolbar__group toolbar__group--fleet">
               <div className={`fleet-dial${!hasVehicles ? ' fleet-dial--alarm' : ''}`}>
@@ -2597,8 +2583,6 @@ function App() {
               <span><strong>Orders</strong> {totalOrders}</span>
             </div>
           </div>
-          </>
-          )}
         </div>
 
         {/* Loading */}
@@ -2653,7 +2637,130 @@ function App() {
         {/* Boards */}
         <div className="board-grid">
 
-          {/* RETURNS BOARD: failed orders, master/detail */}
+          {/* Routes tab and Unassigned Orders tab share this component's
+              own internal tab-switching - 'unassigned-board' is what the
+              Unassigned Orders nav item scrolls to, switching the tab as it
+              goes; 'generate' scrolls up to the toolbar instead. */}
+          <div id="unassigned-board">
+          <RouteWorkspace
+            routes={routes}
+            pendingOrders={pendingOrders}
+            isProcessing={isProcessing}
+            capacityFor={capacityFor}
+            maxCapacityFor={maxCapacityFor}
+            isRouteFull={isRouteFull}
+            isCreatingRoute={isCreatingRoute}
+            isChangingVehicle={isChangingVehicle}
+            isDeletingRoute={isDeletingRoute}
+            isMovingAddresses={isMovingAddresses}
+            onCreateRoute={handleCreateRoute}
+            onToggleVehicle={handleToggleVehicleType}
+            onDeleteRoute={handleDeleteRoute}
+            onReassignOrder={handleReassignOrder}
+            onReorderRoute={persistReorder}
+            onAssignOrders={handleAssignUnassignedOrders}
+            onDownloadRoute={handleDownloadRoute}
+            onMoveOrders={handleMoveOrdersBetweenRoutes}
+            requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
+            drivers={drivers}
+            onAssignDriver={handleAssignDriver}
+            onUnassignDriver={handleUnassignDriver}
+            fetchRouteTracking={fetchRouteTracking}
+          />
+          </div>
+
+          {/* DRIVERS BOARD: roster + status, a real page in the scroll now
+              instead of a right-side drawer - "Add Driver" still opens a
+              small modal (a creation form genuinely is a focused, in-and-
+              out task), but the roster and every driver's live status sit
+              on this board same as any other page content. */}
+          <div className="board board--drivers" id="drivers-board">
+            <div className="board__header">
+              <div className="board__header-group">
+                <h2 className="board__title"><IconUsers width={18} height={18} /> Drivers</h2>
+                <span className="board__count mono-num">{drivers.length}</span>
+              </div>
+              <button type="button" className="btn btn--primary board__header-action" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
+                <IconPlus width={14} height={14} /> Add Driver
+              </button>
+            </div>
+            <p className="board__intro">
+              Create driver logins for the Driver App, and assign them to routes from each route's detail view.
+              Deactivating a driver signs them out everywhere immediately.
+            </p>
+            <div className="board__body">
+              {isLoadingDrivers ? (
+                <div className="history-panel__skeletons">
+                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
+                </div>
+              ) : driversError ? (
+                <div className="empty-state">{driversError}</div>
+              ) : drivers.length === 0 ? (
+                <div className="empty-state">
+                  No drivers yet. Click <strong>Add Driver</strong> to create the first login for the Driver App.
+                </div>
+              ) : (
+                <div className="drivers-table-wrap">
+                  <table className="drivers-table">
+                    <thead>
+                      <tr>
+                        <th>Driver</th>
+                        <th>Login</th>
+                        <th>Vehicle</th>
+                        <th>Status</th>
+                        <th>Assigned Route</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drivers.map((driver) => (
+                        <tr key={driver.id}>
+                          <td>
+                            <div className="drivers-table__name">{driver.name}</div>
+                            <div className="drivers-table__code mono-num">{driver.driver_code}</div>
+                          </td>
+                          <td>
+                            <div>{driver.username}</div>
+                            {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
+                          </td>
+                          <td>{driver.vehicle_number || '—'}</td>
+                          <td><DriverStatusPill status={driver.status} /></td>
+                          <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
+                          <td>
+                            <div className="drivers-table__actions">
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>Edit</button>
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>Reset Password</button>
+                              <button
+                                type="button"
+                                className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
+                                disabled={isTogglingDriverStatus === driver.id}
+                                onClick={() => handleToggleDriverStatus(driver)}
+                              >
+                                {isTogglingDriverStatus === driver.id ? '…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--compact btn--danger-ghost"
+                                disabled={isDeletingDriver === driver.id}
+                                onClick={() => handleDeleteDriver(driver)}
+                              >
+                                {isDeletingDriver === driver.id ? '…' : 'Delete'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RETURNS BOARD: failed orders, master/detail - kept at the end
+              of the page, after Routes/Unassigned Orders, so the boards
+              read top-to-bottom in the order dispatch actually works
+              through them. */}
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               <h2 className="board__title">Returns</h2>
@@ -2776,38 +2883,6 @@ function App() {
             </div>
           </div>
 
-          {/* Routes tab and Unassigned Orders tab share this component's
-              own internal tab-switching - 'unassigned-board' is what the
-              Unassigned Orders nav item scrolls to, switching the tab as it
-              goes; 'generate' scrolls up to the toolbar instead. */}
-          <div id="unassigned-board">
-          <RouteWorkspace
-            routes={routes}
-            pendingOrders={pendingOrders}
-            isProcessing={isProcessing}
-            capacityFor={capacityFor}
-            maxCapacityFor={maxCapacityFor}
-            isRouteFull={isRouteFull}
-            isCreatingRoute={isCreatingRoute}
-            isChangingVehicle={isChangingVehicle}
-            isDeletingRoute={isDeletingRoute}
-            isMovingAddresses={isMovingAddresses}
-            onCreateRoute={handleCreateRoute}
-            onToggleVehicle={handleToggleVehicleType}
-            onDeleteRoute={handleDeleteRoute}
-            onReassignOrder={handleReassignOrder}
-            onReorderRoute={persistReorder}
-            onAssignOrders={handleAssignUnassignedOrders}
-            onDownloadRoute={handleDownloadRoute}
-            onMoveOrders={handleMoveOrdersBetweenRoutes}
-            requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
-            drivers={drivers}
-            onAssignDriver={handleAssignDriver}
-            onUnassignDriver={handleUnassignDriver}
-            fetchRouteTracking={fetchRouteTracking}
-          />
-          </div>
-
         </div>
       </div>
 
@@ -2866,97 +2941,6 @@ function App() {
                     </li>
                   ))}
                 </ul>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {driversOpen && !driverFormOpen && (
-        <div className="history-overlay" role="dialog" aria-modal="true" aria-label="Drivers">
-          <div className="history-overlay__scrim" onClick={() => setDriversOpen(false)} />
-          <div className="history-panel">
-            <div className="history-panel__head">
-              <h2><IconUsers width={18} height={18} /> Drivers</h2>
-              <button className="topbar__icon-btn" onClick={() => setDriversOpen(false)} aria-label="Close Drivers">
-                <IconX width={18} height={18} />
-              </button>
-            </div>
-            <p className="history-panel__sub">
-              Create driver logins for the Driver App, and assign them to routes from each route's detail view.
-              Deactivating a driver signs them out everywhere immediately.
-            </p>
-            <div className="history-panel__body">
-              <div className="drivers-panel__toolbar">
-                <button type="button" className="btn btn--primary" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
-                  <IconPlus width={14} height={14} /> Add Driver
-                </button>
-              </div>
-
-              {isLoadingDrivers ? (
-                <div className="history-panel__skeletons">
-                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
-                </div>
-              ) : driversError ? (
-                <div className="empty-state">{driversError}</div>
-              ) : drivers.length === 0 ? (
-                <div className="empty-state">
-                  No drivers yet. Click <strong>Add Driver</strong> to create the first login for the Driver App.
-                </div>
-              ) : (
-                <div className="drivers-table-wrap">
-                  <table className="drivers-table">
-                    <thead>
-                      <tr>
-                        <th>Driver</th>
-                        <th>Login</th>
-                        <th>Vehicle</th>
-                        <th>Status</th>
-                        <th>Assigned Route</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {drivers.map((driver) => (
-                        <tr key={driver.id}>
-                          <td>
-                            <div className="drivers-table__name">{driver.name}</div>
-                            <div className="drivers-table__code mono-num">{driver.driver_code}</div>
-                          </td>
-                          <td>
-                            <div>{driver.username}</div>
-                            {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
-                          </td>
-                          <td>{driver.vehicle_number || '—'}</td>
-                          <td><DriverStatusPill status={driver.status} /></td>
-                          <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
-                          <td>
-                            <div className="drivers-table__actions">
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>Edit</button>
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>Reset Password</button>
-                              <button
-                                type="button"
-                                className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
-                                disabled={isTogglingDriverStatus === driver.id}
-                                onClick={() => handleToggleDriverStatus(driver)}
-                              >
-                                {isTogglingDriverStatus === driver.id ? '…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn--compact btn--danger-ghost"
-                                disabled={isDeletingDriver === driver.id}
-                                onClick={() => handleDeleteDriver(driver)}
-                              >
-                                {isDeletingDriver === driver.id ? '…' : 'Delete'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               )}
             </div>
           </div>

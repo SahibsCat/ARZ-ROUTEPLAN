@@ -25,7 +25,9 @@
   --surface-2: #eef1f8;
   --ink: #1a2233;
   --ink-soft: #5b6478;
-  --ink-faint: #94a0b4;
+  --ink-faint: #6b7690; /* darkened from #94a0b4 - the old value sat under
+    ~3:1 against --surface, too low for the meta/timestamp text it's used
+    on throughout the app; this clears 4.5:1 while keeping the same hue. */
   --rule: #e2e6f0;
 
   --primary: #2457d6;
@@ -51,6 +53,8 @@
   --critical-soft: #fbe6e6;
   --info: #2e9ccb;
   --info-soft: #e6f4fa;
+  --violet: #7c3aed;
+  --violet-soft: #f1e9fd;
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
@@ -113,6 +117,8 @@
     --critical-soft: #2f1c1c;
     --info: #5fbcdf;
     --info-soft: #172733;
+    --violet: #a78bfa;
+    --violet-soft: #271f42;
     --neutral: #9a96ab;
     --neutral-soft: #201d2d;
 
@@ -159,6 +165,8 @@
   --critical-soft: #2f1c1c;
   --info: #5fbcdf;
   --info-soft: #172733;
+  --violet: #a78bfa;
+  --violet-soft: #271f42;
   --neutral: #9a96ab;
   --neutral-soft: #201d2d;
 
@@ -181,7 +189,9 @@
   --surface-2: #eef1f8;
   --ink: #1a2233;
   --ink-soft: #5b6478;
-  --ink-faint: #94a0b4;
+  --ink-faint: #6b7690; /* darkened from #94a0b4 - the old value sat under
+    ~3:1 against --surface, too low for the meta/timestamp text it's used
+    on throughout the app; this clears 4.5:1 while keeping the same hue. */
   --rule: #e2e6f0;
 
   --primary: #2457d6;
@@ -204,6 +214,8 @@
   --critical-soft: #fbe6e6;
   --info: #2e9ccb;
   --info-soft: #e6f4fa;
+  --violet: #7c3aed;
+  --violet-soft: #f1e9fd;
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
@@ -257,11 +269,12 @@ html {
   ::-webkit-scrollbar-thumb { transition: none; }
 }
 
-/* Dark sidebar surface needs its own lighter-on-dark thumb - the paper
-   token above would be nearly invisible against --sidebar-bg. */
-.sidebar__nav { scrollbar-color: var(--sidebar-rule) transparent; }
-.sidebar__nav::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.16); }
-.sidebar__nav::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.3); }
+/* Sidebar nav scrolls (long nav lists on short viewports) but never
+   shows a track - it's a small, always-in-view chrome panel, not a
+   content area, so even the slim themed thumb read as clutter next to
+   the nav items. Wheel/touch/keyboard scrolling still works. */
+.sidebar__nav { scrollbar-width: none; -ms-overflow-style: none; }
+.sidebar__nav::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 /* =======================================================================
    Focus fallback — every specific interactive component below already
@@ -395,6 +408,7 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .sidebar--collapsed .sidebar__section-label { text-align: center; padding: 0.9rem 0 0.35rem; }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -415,12 +429,27 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-ink); }
 .nav-item--active { background: var(--sidebar-active-bg); color: var(--sidebar-active-ink); font-weight: 600; }
+/* A solid color spine on whichever page is current - the translucent
+   background alone read too close to :hover at a glance; this makes
+   "where am I" unambiguous even in peripheral vision. */
+.nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--sidebar-active-ink);
+}
+.sidebar--collapsed .nav-item--active::before { left: -0.75rem; }
 /* "Soon" items are real, clickable pages now (see ComingSoonPage) - just
    dimmer than a working page, and the badge (not the whole row) carries
    the "not built yet" signal. */
 .nav-item--soon { opacity: 0.75; }
 .nav-item--soon:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-ink); opacity: 1; }
 .nav-item--soon.nav-item--active { background: var(--sidebar-soon-active-bg); color: var(--signal); font-weight: 600; opacity: 1; }
+.nav-item--soon.nav-item--active::before { background: var(--signal); }
 .nav-item__badge {
   margin-left: auto;
   flex: none;
@@ -679,57 +708,71 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   padding: 1.25rem 2rem 1.5rem;
 }
 .kpi-tile {
-  background: var(--surface-2);
+  position: relative;
+  background: var(--tile-tint, var(--surface-2));
   border: 1px solid var(--rule);
+  border-left: 4px solid var(--tile-accent, var(--rule));
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.7rem 0.85rem;
-  transition: border-color 0.15s ease;
+  gap: 0.65rem;
+  padding: 0.7rem 0.9rem;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   animation: rp-rise 0.35s ease both;
 }
-.kpi-tile:hover { border-color: var(--accent); }
+.kpi-tile:hover { border-color: var(--tile-accent, var(--accent)); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.kpi-tile:hover { border-left-color: var(--tile-accent, var(--accent)); }
 .kpi-tile__icon {
   flex: none;
-  width: 30px; height: 30px;
+  width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 .kpi-tile__value {
   display: block;
   font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.15;
   color: var(--ink);
 }
-.kpi-tile__suffix { font-size: 11px; font-weight: 600; margin-left: 0.1rem; color: var(--ink-faint); }
+.kpi-tile__suffix { font-size: 11px; font-weight: 600; margin-left: 0.1rem; color: var(--ink-soft); }
 .kpi-tile__label {
   display: block;
   margin-top: 0.05rem;
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--ink-soft);
 }
 
-/* Each stat gets its own tint from the PDF's semantic palette - not as a
-   status signal (that's still reserved for the Unassigned Orders / Failed
-   Addresses boards' own pills), just so five numbers in a row read as five
-   distinct things at a glance instead of one gray block. */
-.kpi-tile__icon { background: var(--surface); color: var(--ink-soft); }
-.kpi-tile--bikes .kpi-tile__icon { background: var(--info-soft); color: var(--info); }
-.kpi-tile--cars .kpi-tile__icon { background: var(--good-soft); color: var(--good); }
-.kpi-tile--routes .kpi-tile__icon { background: var(--primary-soft); color: var(--primary-strong); }
-.kpi-tile--distance .kpi-tile__icon { background: var(--signal-soft); color: var(--signal); }
-.kpi-tile--eta .kpi-tile__icon { background: var(--critical-soft); color: var(--critical); }
+/* Each stat gets a full colored treatment - tinted card, colored left
+   spine, and a solid (not soft-on-soft) icon chip - from the PDF's
+   semantic palette. Not a status signal (that's still reserved for the
+   Unassigned Orders / Failed Addresses boards' own pills); just so five
+   numbers in a row read as five distinct, unmissable things at a glance
+   instead of one gray block with a faint tint hiding in a corner icon. */
+.kpi-tile__icon { background: var(--primary); color: #fff; }
+.kpi-tile--orders { --tile-accent: var(--violet); --tile-tint: var(--violet-soft); }
+.kpi-tile--orders .kpi-tile__icon { background: var(--violet); color: #fff; }
+.kpi-tile--bikes { --tile-accent: var(--info); --tile-tint: var(--info-soft); }
+.kpi-tile--bikes .kpi-tile__icon { background: var(--info); color: #fff; }
+.kpi-tile--cars { --tile-accent: var(--good); --tile-tint: var(--good-soft); }
+.kpi-tile--cars .kpi-tile__icon { background: var(--good); color: #fff; }
+.kpi-tile--routes { --tile-accent: var(--primary); --tile-tint: var(--primary-soft); }
+.kpi-tile--routes .kpi-tile__icon { background: var(--primary); color: #fff; }
+.kpi-tile--distance { --tile-accent: var(--signal); --tile-tint: var(--signal-soft); }
+.kpi-tile--distance .kpi-tile__icon { background: var(--signal); color: #fff; }
+.kpi-tile--eta { --tile-accent: var(--critical); --tile-tint: var(--critical-soft); }
+.kpi-tile--eta .kpi-tile__icon { background: var(--critical); color: #fff; }
 
 /* Dashboard hub links - the four other real pages, one tap away, each
-   carrying the same tint as its own page's primary signal so the color
-   here is a preview of where you're headed, not decoration. */
+   carrying the same accent as its own page's primary signal (a colored
+   spine plus a solid icon chip, not just a faint tint) so the color here
+   is a preview of where you're headed, not decoration. */
 .dash-links {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -742,21 +785,32 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   gap: 0.75rem;
   background: var(--surface);
   border: 1px solid var(--rule);
+  border-left: 4px solid var(--link-accent, var(--rule));
   border-radius: var(--radius-md);
   padding: 0.9rem 1rem;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
-.dash-link:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-.dash-link svg { flex: none; width: 32px; height: 32px; padding: 7px; border-radius: var(--radius-sm); box-sizing: border-box; }
-.dash-link:nth-child(1) svg { background: var(--primary-soft); color: var(--primary-strong); }
-.dash-link:nth-child(2) svg { background: var(--signal-soft); color: var(--signal); }
-.dash-link:nth-child(3) svg { background: var(--critical-soft); color: var(--critical); }
-.dash-link:nth-child(4) svg { background: var(--good-soft); color: var(--good); }
+.dash-link:hover {
+  border-color: var(--link-accent, var(--accent));
+  border-left-color: var(--link-accent, var(--accent));
+  background: var(--link-tint, var(--surface-2));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.dash-link svg { flex: none; width: 34px; height: 34px; padding: 8px; border-radius: var(--radius-sm); box-sizing: border-box; }
+.dash-link:nth-child(1) { --link-accent: var(--primary); --link-tint: var(--primary-soft); }
+.dash-link:nth-child(1) svg { background: var(--primary); color: #fff; }
+.dash-link:nth-child(2) { --link-accent: var(--signal); --link-tint: var(--signal-soft); }
+.dash-link:nth-child(2) svg { background: var(--signal); color: #fff; }
+.dash-link:nth-child(3) { --link-accent: var(--critical); --link-tint: var(--critical-soft); }
+.dash-link:nth-child(3) svg { background: var(--critical); color: #fff; }
+.dash-link:nth-child(4) { --link-accent: var(--good); --link-tint: var(--good-soft); }
+.dash-link:nth-child(4) svg { background: var(--good); color: #fff; }
 .dash-link div { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-.dash-link strong { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
-.dash-link span { font-size: 0.76rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-link strong { font-size: 0.9rem; font-weight: 700; color: var(--ink); }
+.dash-link span { font-size: 0.78rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* A small overlay (see soonOverlay in App.jsx) for any "Soon" sidebar item
    - centered, honest about what's missing, dismissed with the X or a click
@@ -860,11 +914,10 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   padding-top: 0.85rem;
 }
 
-/* Collapsed-by-default summary bar (App.jsx toolbarExpanded) - this used
-   to be the always-visible top of the toolbar; now it's the whole toolbar
-   until you click it or "Generate Routes" in the sidebar, so the
-   Dashboard isn't several rows of fleet/upload controls deep before you
-   even get to routes. */
+/* Always-open header row for the toolbar - this used to be a
+   click-to-expand summary bar; it's now a plain, permanently-visible
+   heading, and everything below it (fleet counts, actions, upload,
+   status) is always on screen with no toggle to find first. */
 .toolbar__summary {
   width: 100%;
   display: flex;
@@ -874,7 +927,6 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   border: none;
   padding: 0;
   margin: 0;
-  cursor: pointer;
   text-align: left;
   font-family: var(--font-body);
   color: var(--ink);
@@ -896,8 +948,6 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.toolbar__summary-chevron { color: var(--ink-faint); flex-shrink: 0; transition: transform 0.15s ease; }
-.toolbar__summary-chevron--open { transform: rotate(180deg); }
 
 .fleet-dial__label {
   display: block;
@@ -1008,6 +1058,25 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .intake__input:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
 .intake__input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .intake__input:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The "Choose File" control itself can't be replaced (browsers won't let
+   JS restyle the picker), but its button half can - left as the OS
+   default it was the one plain-gray control on an otherwise fully
+   themed toolbar. Matches .btn's shape/weight so it reads as part of
+   this app, not a leftover system widget. */
+.intake__input::file-selector-button {
+  margin-right: 0.65rem;
+  padding: 0.4rem 0.8rem;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: var(--btn-font-weight);
+  color: var(--btn-text);
+  background: var(--btn-fill);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.intake__input::file-selector-button:hover { background: var(--btn-fill-hover); }
 
 .status-readout {
   font-family: var(--font-mono);
@@ -1297,6 +1366,7 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   padding: 1rem 1.4rem;
   border-bottom: 1px solid var(--rule);
   border-top: 3px solid var(--critical);
@@ -1305,7 +1375,27 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   border-top-color: var(--accent);
   padding: 1.35rem 1.75rem;
 }
+/* Drivers board's spine is --good (a roster/people page, not an error
+   board) - title+count are grouped together so a third header element
+   (Add Driver) can sit at the far right via the same space-between
+   without splitting the count away from its title. */
+.board--drivers .board__header { border-top-color: var(--good); }
+.board__header-group { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+/* Two classes, not one - needs to outrank .btn's own `width: 100%`
+   default (same specificity, but .btn is declared later in the
+   cascade so a same-specificity override here would silently lose). */
+.btn.board__header-action { width: auto; flex: none; }
+.board__intro {
+  margin: 0;
+  padding: 0.85rem 1.4rem 0;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
 .board__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 18px;
@@ -1322,6 +1412,7 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   background: var(--critical-soft);
   color: var(--critical);
 }
+.board--drivers .board__count { background: var(--good-soft); color: var(--good); }
 .board--dispatch .board__count { background: var(--accent-soft); color: var(--accent-strong); font-size: 0.88rem; }
 
 .board__body { padding: 1.25rem 1.4rem; }
