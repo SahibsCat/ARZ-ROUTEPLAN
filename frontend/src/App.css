@@ -229,6 +229,57 @@ body { min-height: 100vh; }
 .mono-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* =======================================================================
+   Scrollbars — one slim, theme-aware treatment for every scrollable
+   region in the app (page window, sidebar nav, tables, modals, tab
+   strips, side lists) instead of the bare OS scrollbar every browser
+   ships by default. No visible track; a soft rounded thumb, inset off
+   the edge, that only darkens on hover/drag - present and fully
+   grabbable, just not a chunky permanent fixture on the page. Firefox
+   gets the same look via scrollbar-width/color; Chromium/Safari/Edge
+   via ::-webkit-scrollbar. `.no-scrollbar` (defined per-page) still wins
+   where a track shouldn't render at all. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--rule);
+  border-radius: 20px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.15s ease;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--ink-faint); }
+::-webkit-scrollbar-corner { background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  ::-webkit-scrollbar-thumb { transition: none; }
+}
+
+/* Dark sidebar surface needs its own lighter-on-dark thumb - the paper
+   token above would be nearly invisible against --sidebar-bg. */
+.sidebar__nav { scrollbar-color: var(--sidebar-rule) transparent; }
+.sidebar__nav::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.16); }
+.sidebar__nav::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.3); }
+
+/* =======================================================================
+   Focus fallback — every specific interactive component below already
+   carries its own tuned :focus-visible ring; this is the safety net so
+   nothing focusable (keyboard nav through nav-items, tabs, chips, table
+   rows, etc.) is ever silently unringed. Components with a bespoke rule
+   simply override this on specificity. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.sidebar :is(a, button, [tabindex]):focus-visible {
+  outline-color: var(--sidebar-active-ink);
+}
+
+/* =======================================================================
    Shell — persistent sidebar + scrolling main column, the standard
    enterprise dashboard skeleton.
 ======================================================================= */

@@ -748,39 +748,13 @@
 }
 
 /* =======================================================================
-   Live Location map (LiveMapModal) - Leaflet + OpenStreetMap tiles, no
-   API key/billing (Google Maps was deliberately removed from this admin
-   panel earlier). The map itself needs an explicit pixel height - Leaflet
-   can't size off a percentage parent the way flex children usually do.
+   Live Location map (LiveMapModal) - Google Maps JS API. The map itself
+   needs an explicit pixel height - it can't size off a percentage parent
+   the way flex children usually do.
 ======================================================================= */
 .live-map-modal { max-width: 720px; }
 .live-map-modal__map { height: 440px; width: 100%; background: var(--surface-2); }
 .live-map-modal__empty { margin: 1.25rem 1.5rem; }
-
-/* A pulsing dot instead of Leaflet's default pin - reads as "live" at a
-   glance, not just "a location". */
-.live-map__marker { position: relative; }
-.live-map__marker-dot {
-  position: absolute; top: 4px; left: 4px;
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--primary);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
-}
-.live-map__marker-pulse {
-  position: absolute; top: 0; left: 0;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: var(--primary);
-  opacity: 0.35;
-  animation: rp-marker-pulse 1.8s ease-out infinite;
-}
-@keyframes rp-marker-pulse {
-  0% { transform: scale(0.4); opacity: 0.5; }
-  100% { transform: scale(1.8); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .live-map__marker-pulse { animation: none; opacity: 0; }
-}
 
 @media (max-width: 640px) {
   .live-map-modal__map { height: 320px; }

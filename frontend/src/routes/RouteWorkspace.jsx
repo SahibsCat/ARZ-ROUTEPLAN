@@ -1,34 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import L from 'leaflet';
+import { GoogleMap, Marker, Polyline, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
   IconUsers, IconChevron,
 } from '../icons';
-import 'leaflet/dist/leaflet.css';
 import './routeWorkspace.css';
 
-// A small colored dot instead of Leaflet's default marker image - the
-// default icon's asset paths don't resolve correctly through Vite's
-// bundler without extra config, and a plain dot reads fine at this scale.
-const driverMarkerIcon = L.divIcon({
-  className: 'live-map__marker',
-  html: '<span class="live-map__marker-dot"></span><span class="live-map__marker-pulse"></span>',
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
-});
+// A JS-API key is meant to be used client-side (it's restricted by
+// HTTP referrer/app in Google Cloud Console, not a secret like a backend
+// auth token) - same treatment as the Sentry DSN elsewhere in this
+// codebase. VITE_GOOGLE_MAPS_API_KEY can still override it without a
+// code change.
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDodjkyPxxK0C_5m6pX0u-hAj2kHeeI-Zo';
+const GOOGLE_MAPS_LIBRARIES = [];
 
-// react-leaflet's MapContainer only reads `center` on first render - this
-// re-centers the view every time the driver's position actually moves,
-// which is the whole point of a *live* map instead of a static pin.
-function RecenterOnMove({ position }) {
-  const map = useMap();
-  useEffect(() => {
-    if (position) map.setView(position, map.getZoom(), { animate: true });
-  }, [position, map]);
-  return null;
-}
+// A dark map style matching this app's own dark theme (--paper/--surface/
+// --rule/--ink-soft) instead of Google's default light basemap fighting
+// the rest of the UI around it.
+const DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#141414' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#141414' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#9a9aa4' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#262626' }] },
+  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#1c2a1f' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1c1c1c' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#262626' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#262626' }] },
+  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#1c1c1c' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0a0a' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#63636b' }] },
+];
 
 function capacityText(count, capacity) {
   if (!capacity) return `${count}`;
@@ -570,25 +573,40 @@ function timeAgo(iso) {
 // The actual "watch them move" view - "Track Driver" used to just open a
 // static Google Maps pin frozen at whatever the last location happened to
 // be the moment you clicked it, with no way to see it update. This is a
-// real embedded map (Leaflet + OpenStreetMap tiles, no API key/billing -
-// Google Maps was deliberately removed from this admin panel earlier)
-// that re-polls tracking on its own faster timer and re-centers on the
-// driver's marker every time it actually moves, plus the breadcrumb trail
-// already available from the tracking endpoint's `path`.
+// real embedded Google Map (JS API - switched back from the earlier
+// Leaflet/OSM version now that a Maps key is in use) that re-polls
+// tracking on its own faster timer and pans to the driver's marker every
+// time it actually moves, plus the breadcrumb trail already available
+// from the tracking endpoint's `path`.
 function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onClose }) {
   const [tracking, setTracking] = useState(initialTracking);
+  const [showInfo, setShowInfo] = useState(false);
+  const mapRef = useRef(null);
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
 
   useEffect(() => {
     let cancelled = false;
+    // 5s, not the card's own 15s - this view is the one you're actually
+    // watching move, so it gets the tightest poll in the app.
     const poll = () => fetchRouteTracking(route.route_id).then((data) => { if (!cancelled) setTracking(data); }).catch(() => {});
     poll();
-    const interval = setInterval(poll, 8000); // faster than the card's own 15s - this view is the one you're actually watching
+    const interval = setInterval(poll, 5000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [route.route_id, fetchRouteTracking]);
 
   const last = tracking?.last_location;
-  const position = last ? [last.lat, last.lng] : null;
-  const path = (tracking?.path || []).map((p) => [p.lat, p.lng]);
+  const position = last ? { lat: last.lat, lng: last.lng } : null;
+  const path = (tracking?.path || []).map((p) => ({ lat: p.lat, lng: p.lng }));
+
+  // The map only re-centers on its own first render normally - panTo on
+  // every real position change is what makes this read as *live* movement
+  // rather than a map that happens to have loaded near a static pin.
+  useEffect(() => {
+    if (position && mapRef.current) mapRef.current.panTo(position);
+  }, [position?.lat, position?.lng]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -602,18 +620,43 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onCl
           <TrackingStatusPill status={tracking?.tracking_status || 'not_started'} />
           {last && <span>Updated {timeAgo(last.recorded_at)}</span>}
         </div>
-        {position ? (
-          <MapContainer center={position} zoom={16} scrollWheelZoom className="live-map-modal__map">
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
-            />
-            {path.length > 1 && <Polyline positions={path} pathOptions={{ color: '#6d5ef5', weight: 3, opacity: 0.7 }} />}
-            <Marker position={position} icon={driverMarkerIcon}>
-              <Popup>{driver.name} · {timeAgo(last.recorded_at)}</Popup>
+        {loadError ? (
+          <div className="empty-state live-map-modal__empty">Could not load Google Maps.</div>
+        ) : !isLoaded ? (
+          <div className="empty-state live-map-modal__empty">Loading map…</div>
+        ) : position ? (
+          <GoogleMap
+            mapContainerClassName="live-map-modal__map"
+            center={position}
+            zoom={16}
+            onLoad={(map) => { mapRef.current = map; }}
+            options={{
+              styles: DARK_MAP_STYLE, disableDefaultUI: true, zoomControl: true,
+              backgroundColor: '#0a0a0a',
+            }}
+          >
+            {path.length > 1 && (
+              <Polyline path={path} options={{ strokeColor: '#6f9bff', strokeWeight: 3, strokeOpacity: 0.7 }} />
+            )}
+            <Marker
+              position={position}
+              onClick={() => setShowInfo((v) => !v)}
+              icon={{
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#2457d6',
+                fillOpacity: 1,
+                strokeColor: '#fff',
+                strokeWeight: 2,
+              }}
+            >
+              {showInfo && (
+                <InfoWindow onCloseClick={() => setShowInfo(false)}>
+                  <span>{driver.name} · {timeAgo(last.recorded_at)}</span>
+                </InfoWindow>
+              )}
             </Marker>
-            <RecenterOnMove position={position} />
-          </MapContainer>
+          </GoogleMap>
         ) : (
           <div className="empty-state live-map-modal__empty">No location reported yet - the map appears as soon as the first ping lands.</div>
         )}
@@ -657,7 +700,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   useEffect(() => {
     setIsLoading(true);
     load();
-    const interval = setInterval(load, 15000);
+    const interval = setInterval(load, 8000); // tightened from 15s - this card is what you glance at without opening the live map
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.route_id]);
