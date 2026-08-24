@@ -621,13 +621,6 @@ function App() {
 
   // Shell chrome: sidebar, theme, search, toast.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  // The fleet/regenerate/upload toolbar used to sit permanently expanded
-  // at full height on the Dashboard, several controls deep, whether or
-  // not you were actually there to generate routes - collapsed to a
-  // single summary bar by default once something's already loaded, and
-  // opened back up by clicking it or by clicking "Generate Routes" in the
-  // sidebar (see handleNavClick).
-  const hasAutoCollapsedToolbar = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('dashboard');
   // Which "Soon" item's overlay (if any) is open - null when closed. See
@@ -705,7 +698,6 @@ function App() {
     if (item.key === 'history') {
       openHistory();
     } else {
-      if (item.key === 'generate') setToolbarExpanded(true);
       if (item.anchor === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
       else document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -850,18 +842,6 @@ function App() {
     refreshDrivers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Collapses the fleet/regenerate/upload toolbar the first time there's
-  // something to actually show (a generated route) - it's the primary
-  // thing to see before that point, secondary/maintenance after. Only
-  // fires once; the header's own toggle (or clicking "Generate Routes" in
-  // the sidebar) has full manual control from then on.
-  useEffect(() => {
-    if (routes.length > 0 && !hasAutoCollapsedToolbar.current) {
-      hasAutoCollapsedToolbar.current = true;
-      setToolbarExpanded(false);
-    }
-  }, [routes.length]);
 
   // Resets the CURRENT tab back to the pre-upload empty state - file name,
   // order count, orders, failed addresses, everything. Used after deleting
