@@ -42,30 +42,32 @@ const ROUTE_HUES = 6;
 // "is this real yet" (that used to split a plain Workspace/Platform-Soon
 // list, which put Vehicles nowhere near Drivers and Live Tracking nowhere
 // near Routes). Dashboard/Routes/Unassigned Orders/Failed Addresses/Drivers
-// are all one continuous page again (back to how it originally worked) -
-// clicking one of these just smooth-scrolls to its anchor rather than
-// swapping the console's content out or opening a side drawer. Drivers used
-// to be a right-side overlay panel; it's a full board in the page flow now,
-// same as Failed Addresses, so both creating a driver and seeing every
-// driver's status live on a real page instead of a drawer you dip into and
-// dismiss. 'history' (Route History, a long append-only record list rather
-// than something you work in) is the one nav item that still opens as an
-// overlay. Items marked soon:true have no real content to scroll to, so
+// are real, separate pages again - each one swaps the console's content to
+// just its own board instead of every page rendering the full Dashboard
+// (KPI row + shortcuts + Generate Routes panel + tab block) above its own
+// content. Dashboard is the one place all of that overview chrome still
+// lives; the four dash-links shortcuts there are the deep links into the
+// pages below. Drivers used to be a right-side overlay panel; it's a full
+// page now, same as Failed Addresses, so both creating a driver and seeing
+// every driver's status live on a real page instead of a drawer you dip
+// into and dismiss. 'history' (Route History, a long append-only record
+// list rather than something you work in) is the one nav item that still
+// opens as an overlay. Items marked soon:true have no real page yet, so
 // clicking one opens ComingSoonPage as its own small overlay instead (see
 // soonOverlay).
 const NAV_GROUPS = [
   {
     label: 'Overview',
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid, anchor: 'top' },
+      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
     ],
   },
   {
     label: 'Dispatch',
     items: [
-      { key: 'generate', label: 'Routes', icon: IconRoute, anchor: 'toolbar-section' },
-      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
-      { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
+      { key: 'generate', label: 'Routes', icon: IconRoute },
+      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox },
+      { key: 'failed', label: 'Failed Addresses', icon: IconAlert },
       { key: 'history', label: 'Route History', icon: IconHistory },
       { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, soon: true },
     ],
@@ -73,7 +75,7 @@ const NAV_GROUPS = [
   {
     label: 'Fleet',
     items: [
-      { key: 'drivers', label: 'Drivers', icon: IconUsers, anchor: 'drivers-board' },
+      { key: 'drivers', label: 'Drivers', icon: IconUsers },
       { key: 'vehicles', label: 'Vehicles', icon: IconCar, soon: true },
     ],
   },
@@ -698,8 +700,11 @@ function App() {
     if (item.key === 'history') {
       openHistory();
     } else {
-      if (item.anchor === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
-      else document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Each page swaps in fresh below - jump to its top immediately
+      // rather than smooth-scrolling (which used to animate across the
+      // *previous* page's now-stale layout for a frame, the source of
+      // the blank-frame/overlapping-header flash on nav clicks).
+      window.scrollTo(0, 0);
     }
   };
   // "Soon" items have no real page content to scroll to, so they open
@@ -2407,11 +2412,12 @@ function App() {
           </button>
         </div>
 
-      {/* Back to one continuous page: the stat row plus a hub of quick
-          links sits at the top, and every board below (toolbar, Failed
-          Addresses, Routes/Unassigned Orders) is always mounted - sidebar
-          clicks smooth-scroll to a section instead of swapping the page's
-          content out. */}
+      {/* Dashboard is the one page that keeps the full overview: the stat
+          row plus a hub of quick links into every other page. Routes/
+          Unassigned Orders/Failed Addresses/Drivers each open directly on
+          their own content below instead of repeating this block above
+          it - see the activeNav gates through the rest of this render. */}
+      {activeNav === 'dashboard' && (
       <>
           {/* One flat row of compact stat cards - no embedded charts, no
               redundant "is everything OK" banners duplicating what these
@@ -2445,11 +2451,16 @@ function App() {
             </button>
           </div>
       </>
+      )}
 
       <div className="console">
-        {/* Toolbar - generate/regenerate/save/delete a plan and load a
-            manifest. Always mounted; the header row above still collapses
-            it to a summary bar by default. */}
+        {/* Toolbar, loading state, and manifest alerts all live on the
+            Routes page only (its own nav key is literally 'generate') -
+            Unassigned Orders/Failed Addresses/Drivers don't need any of
+            it repeated above their own content, and Dashboard links into
+            this page instead of duplicating it. */}
+        {activeNav === 'generate' && (
+        <>
         <div className="toolbar" id="toolbar-section">
           <div className="toolbar__summary">
             <span className="toolbar__summary-title"><IconRoute width={15} height={15} /> Generate Routes</span>
@@ -2561,15 +2572,15 @@ function App() {
 
           <div className="toolbar__status-row">
             <div className="status-readout">
-              <span><strong>Status</strong> {isRestoringSession ? 'Checking for a saved session…' : status}</span>
+              <span><strong>Status</strong> <span className="status-readout__value">{isRestoringSession ? 'Checking for a saved session…' : status}</span></span>
               {fileName && (
                 // The native <input type="file"> can never be made to show a
                 // previously-picked file again after a refresh - browsers
                 // don't allow JS to set that display for security reasons.
                 // This is the real, state-backed record of what's loaded.
-                <span title="Restored from Upload History"><strong>File</strong> {fileName}</span>
+                <span title="Restored from Upload History"><strong>File</strong> <span className="status-readout__value">{fileName}</span></span>
               )}
-              <span><strong>Orders</strong> {totalOrders}</span>
+              <span><strong>Orders</strong> <span className="status-readout__value">{totalOrders}</span></span>
             </div>
           </div>
         </div>
@@ -2622,14 +2633,16 @@ function App() {
             <div>{warnings.map((warning, idx) => <p key={idx}>{describeErrorDetail(warning, 'Something needs your attention.')}</p>)}</div>
           </div>
         )}
+        </>
+        )}
 
-        {/* Boards */}
+        {/* Boards - each page shows just its own board now (see the
+            activeNav gates below), not the full set every time. */}
         <div className="board-grid">
 
           {/* Routes tab and Unassigned Orders tab share this component's
-              own internal tab-switching - 'unassigned-board' is what the
-              Unassigned Orders nav item scrolls to, switching the tab as it
-              goes; 'generate' scrolls up to the toolbar instead. */}
+              own internal tab-switching, driven by requestedTab below. */}
+          {(activeNav === 'generate' || activeNav === 'unassigned') && (
           <div id="unassigned-board">
           <RouteWorkspace
             routes={routes}
@@ -2650,7 +2663,7 @@ function App() {
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
-            requestedTab={activeNav === 'unassigned' ? 'unassigned' : activeNav === 'generate' || activeNav === 'dashboard' ? 'routes' : undefined}
+            requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
             drivers={drivers}
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}
@@ -2658,12 +2671,13 @@ function App() {
             fetchRoutePlannedPath={fetchRoutePlannedPath}
           />
           </div>
+          )}
 
-          {/* DRIVERS BOARD: roster + status, a real page in the scroll now
-              instead of a right-side drawer - "Add Driver" still opens a
-              small modal (a creation form genuinely is a focused, in-and-
-              out task), but the roster and every driver's live status sit
-              on this board same as any other page content. */}
+          {/* DRIVERS BOARD: its own page, roster + status - "Add Driver"
+              still opens a small modal (a creation form genuinely is a
+              focused, in-and-out task), but the roster and every driver's
+              live status sit on this page same as any other page content. */}
+          {activeNav === 'drivers' && (
           <div className="board board--drivers" id="drivers-board">
             <div className="board__header">
               <div className="board__header-group">
@@ -2746,11 +2760,10 @@ function App() {
               )}
             </div>
           </div>
+          )}
 
-          {/* RETURNS BOARD: failed orders, master/detail - kept at the end
-              of the page, after Routes/Unassigned Orders, so the boards
-              read top-to-bottom in the order dispatch actually works
-              through them. */}
+          {/* RETURNS BOARD: its own page (the Failed Addresses nav item). */}
+          {activeNav === 'failed' && (
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               <h2 className="board__title">Returns</h2>
@@ -2872,6 +2885,7 @@ function App() {
               )}
             </div>
           </div>
+          )}
 
         </div>
       </div>

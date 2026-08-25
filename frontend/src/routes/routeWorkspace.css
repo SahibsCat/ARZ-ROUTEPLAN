@@ -14,12 +14,23 @@
 /* Buttons inside this workspace are inline, not the app-wide full-width
    default - scoped override instead of touching the shared .btn class. */
 .board--workspace .btn { width: auto; }
-.btn--danger-ghost {
-  background: transparent;
+/* Selector is `.btn--danger-ghost.btn` (not just `.btn--danger-ghost`)
+   for the same reason `select.add-route-select` is scoped below - same
+   specificity as the shared `.btn` base, but `.btn` is declared in
+   App.css which this workspace's CSS module loads *before* in the final
+   bundle, so a same-specificity override here would silently lose its
+   background/color to .btn's own blue gradient fill. That's exactly
+   what was happening: a "Delete"/"Deactivate" row action rendering as a
+   solid blue button instead of a destructive one. Given an explicit
+   soft-red background at rest too, matching the ghost/soft treatment
+   `.toolbar-btn--ghost` uses elsewhere, instead of transparent (which
+   made it nearly invisible against the row's own background). */
+.btn--danger-ghost.btn {
+  background: var(--critical-soft);
   color: var(--critical);
   border: 1px solid var(--critical-soft);
 }
-.btn--danger-ghost:hover:not(:disabled) { background: var(--critical-soft); filter: none; }
+.btn--danger-ghost.btn:hover:not(:disabled) { background: var(--critical); color: #fff; filter: none; }
 
 /* "Create Route" is the one primary call-to-action in this workspace - a
    native <select> doubles as the car/bike choice, styled to read as a

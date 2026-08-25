@@ -53,8 +53,6 @@
   --critical-soft: #fbe6e6;
   --info: #2e9ccb;
   --info-soft: #e6f4fa;
-  --violet: #7c3aed;
-  --violet-soft: #f1e9fd;
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
@@ -70,8 +68,8 @@
   --sidebar-ink-faint: #7385b8;
   --sidebar-rule: rgba(255, 255, 255, 0.09);
   --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
-  --sidebar-active-bg: rgba(111, 155, 255, 0.2);
-  --sidebar-active-ink: #ffffff;
+  --sidebar-active-bg: rgba(61, 130, 255, 0.22);
+  --sidebar-active-ink: #8ab4ff;
   --sidebar-soon-active-bg: rgba(224, 166, 63, 0.18);
 
   --radius-sm: 10px;
@@ -97,15 +95,15 @@
     --ink-faint: #63636b;
     --rule: #262626;
 
-    --primary: #6f9bff;
-    --primary-strong: #93b3ff;
-    --primary-soft: #1c2740;
-    --accent: #6f9bff;
-    --accent-strong: #93b3ff;
-    --accent-soft: #1c2740;
+    --primary: #3d82ff;
+    --primary-strong: #8ab4ff;
+    --primary-soft: #152850;
+    --accent: #3d82ff;
+    --accent-strong: #8ab4ff;
+    --accent-soft: #152850;
 
-    --btn-fill: #4c7dff;
-    --btn-fill-hover: #6690ff;
+    --btn-fill: #3d82ff;
+    --btn-fill-hover: #2568e6;
     --btn-text: #ffffff;
     --btn-font-weight: 600;
 
@@ -117,8 +115,6 @@
     --critical-soft: #2f1c1c;
     --info: #5fbcdf;
     --info-soft: #172733;
-    --violet: #a78bfa;
-    --violet-soft: #271f42;
     --neutral: #9a96ab;
     --neutral-soft: #201d2d;
 
@@ -128,8 +124,8 @@
     --sidebar-ink-faint: #63636b;
     --sidebar-rule: #262626;
     --sidebar-hover-bg: #1c1c1c;
-    --sidebar-active-bg: #1c2740;
-    --sidebar-active-ink: #93b3ff;
+    --sidebar-active-bg: #152850;
+    --sidebar-active-ink: #8ab4ff;
     --sidebar-soon-active-bg: #2f2717;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
@@ -145,15 +141,15 @@
   --ink-faint: #63636b;
   --rule: #262626;
 
-  --primary: #6f9bff;
-  --primary-strong: #93b3ff;
-  --primary-soft: #1c2740;
-  --accent: #6f9bff;
-  --accent-strong: #93b3ff;
-  --accent-soft: #1c2740;
+  --primary: #3d82ff;
+  --primary-strong: #8ab4ff;
+  --primary-soft: #152850;
+  --accent: #3d82ff;
+  --accent-strong: #8ab4ff;
+  --accent-soft: #152850;
 
-  --btn-fill: #4c7dff;
-  --btn-fill-hover: #6690ff;
+  --btn-fill: #3d82ff;
+  --btn-fill-hover: #2568e6;
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
@@ -165,8 +161,6 @@
   --critical-soft: #2f1c1c;
   --info: #5fbcdf;
   --info-soft: #172733;
-  --violet: #a78bfa;
-  --violet-soft: #271f42;
   --neutral: #9a96ab;
   --neutral-soft: #201d2d;
 
@@ -176,8 +170,8 @@
   --sidebar-ink-faint: #63636b;
   --sidebar-rule: #262626;
   --sidebar-hover-bg: #1c1c1c;
-  --sidebar-active-bg: #1c2740;
-  --sidebar-active-ink: #93b3ff;
+  --sidebar-active-bg: #152850;
+  --sidebar-active-ink: #8ab4ff;
   --sidebar-soon-active-bg: #2f2717;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
@@ -194,15 +188,15 @@
     on throughout the app; this clears 4.5:1 while keeping the same hue. */
   --rule: #e2e6f0;
 
-  --primary: #2457d6;
-  --primary-strong: #163a8a;
+  --primary: #1f5eea;
+  --primary-strong: #123a9e;
   --primary-soft: #e8edfb;
-  --accent: #2457d6;
-  --accent-strong: #163a8a;
+  --accent: #1f5eea;
+  --accent-strong: #123a9e;
   --accent-soft: #e8edfb;
 
-  --btn-fill: #2457d6;
-  --btn-fill-hover: #1c46b8;
+  --btn-fill: #1f5eea;
+  --btn-fill-hover: #1748c2;
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
@@ -214,8 +208,6 @@
   --critical-soft: #fbe6e6;
   --info: #2e9ccb;
   --info-soft: #e6f4fa;
-  --violet: #7c3aed;
-  --violet-soft: #f1e9fd;
   --neutral: #6b7280;
   --neutral-soft: #eef0f3;
 
@@ -225,8 +217,8 @@
   --sidebar-ink-faint: #7385b8;
   --sidebar-rule: rgba(255, 255, 255, 0.09);
   --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
-  --sidebar-active-bg: rgba(111, 155, 255, 0.2);
-  --sidebar-active-ink: #ffffff;
+  --sidebar-active-bg: rgba(61, 130, 255, 0.22);
+  --sidebar-active-ink: #8ab4ff;
   --sidebar-soon-active-bg: rgba(224, 166, 63, 0.18);
   --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.05);
   --shadow-md: 0 1px 3px rgba(20, 30, 60, 0.04), 0 8px 20px -4px rgba(20, 30, 60, 0.08);
@@ -443,12 +435,19 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   background: var(--sidebar-active-ink);
 }
 .sidebar--collapsed .nav-item--active::before { left: -0.75rem; }
-/* "Soon" items are real, clickable pages now (see ComingSoonPage) - just
-   dimmer than a working page, and the badge (not the whole row) carries
-   the "not built yet" signal. */
-.nav-item--soon { opacity: 0.75; }
-.nav-item--soon:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-ink); opacity: 1; }
-.nav-item--soon.nav-item--active { background: var(--sidebar-soon-active-bg); color: var(--signal); font-weight: 600; opacity: 1; }
+/* "Soon" items are real, clickable pages (see ComingSoonPage) - not
+   disabled, so they still take a click and a hover. But at rest they
+   used to be nearly indistinguishable from a live page (same weight,
+   same icon color, only a subtle 0.75 opacity), and hovering one
+   restored full brightness exactly like a real page - the "not built
+   yet" signal was carried by the small badge alone, easy to miss until
+   you'd already clicked through to a dead end. Now the label/icon read
+   as visibly muted (explicit --sidebar-ink-faint, not just a faded
+   opacity) at rest AND on hover, so "this isn't live yet" is legible
+   before the click, not just on the badge next to it. */
+.nav-item--soon, .nav-item--soon svg { color: var(--sidebar-ink-faint); }
+.nav-item--soon:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-ink-soft); }
+.nav-item--soon.nav-item--active { background: var(--sidebar-soon-active-bg); color: var(--signal); font-weight: 600; }
 .nav-item--soon.nav-item--active::before { background: var(--signal); }
 .nav-item__badge {
   margin-left: auto;
@@ -536,6 +535,13 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 
 .topbar__search {
   flex: 1 1 auto;
+  /* Flex items default to min-width: auto, not 0 - without an explicit
+     min-width this was losing the width fight against title/date/Quick
+     actions/bell/profile on the same row and collapsing to ~84px, well
+     under its own placeholder text ("Search orders, customers,
+     routes…"). 240px keeps it legible; it still grows past that up to
+     max-width on wider viewports. */
+  min-width: 240px;
   max-width: 380px;
   position: relative;
   display: flex;
@@ -756,8 +762,8 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
    numbers in a row read as five distinct, unmissable things at a glance
    instead of one gray block with a faint tint hiding in a corner icon. */
 .kpi-tile__icon { background: var(--primary); color: #fff; }
-.kpi-tile--orders { --tile-accent: var(--violet); --tile-tint: var(--violet-soft); }
-.kpi-tile--orders .kpi-tile__icon { background: var(--violet); color: #fff; }
+.kpi-tile--orders { --tile-accent: var(--neutral); --tile-tint: var(--neutral-soft); }
+.kpi-tile--orders .kpi-tile__icon { background: var(--neutral); color: #fff; }
 .kpi-tile--bikes { --tile-accent: var(--info); --tile-tint: var(--info-soft); }
 .kpi-tile--bikes .kpi-tile__icon { background: var(--info); color: #fff; }
 .kpi-tile--cars { --tile-accent: var(--good); --tile-tint: var(--good-soft); }
@@ -766,8 +772,14 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .kpi-tile--routes .kpi-tile__icon { background: var(--primary); color: #fff; }
 .kpi-tile--distance { --tile-accent: var(--signal); --tile-tint: var(--signal-soft); }
 .kpi-tile--distance .kpi-tile__icon { background: var(--signal); color: #fff; }
-.kpi-tile--eta { --tile-accent: var(--critical); --tile-tint: var(--critical-soft); }
-.kpi-tile--eta .kpi-tile__icon { background: var(--critical); color: #fff; }
+/* Average ETA is a neutral operational number, not a failure state -
+   tinting it --critical (red) trained the eye to read it as "something's
+   wrong," which is exactly what red is supposed to mean everywhere else
+   (error banners, failed geocodes, destructive buttons). --neutral
+   instead - same "plain count, not a signal" tier as Orders, so it
+   doesn't collide with --info (already Bikes' color). */
+.kpi-tile--eta { --tile-accent: var(--neutral); --tile-tint: var(--neutral-soft); }
+.kpi-tile--eta .kpi-tile__icon { background: var(--neutral); color: #fff; }
 
 /* Dashboard hub links - the four other real pages, one tap away, each
    carrying the same accent as its own page's primary signal (a colored
@@ -1078,8 +1090,14 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 }
 .intake__input::file-selector-button:hover { background: var(--btn-fill-hover); }
 
+/* Labels ("Status"/"File"/"Orders") are the regular UI font now, not
+   mono - next to the rounded-card sans-serif UI everywhere else, the
+   whole line in IBM Plex Mono read as a stray console log rather than
+   a designed status readout. The monospace grid is still genuinely
+   useful for the values themselves (a file name, a tabular order
+   count), so it's scoped to .status-readout__value only. */
 .status-readout {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 0.82rem;
   background: var(--surface-2);
   border-radius: var(--radius-md);
@@ -1090,6 +1108,7 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   flex-wrap: wrap;
 }
 .status-readout strong { color: var(--ink); font-weight: 600; }
+.status-readout__value { font-family: var(--font-mono); }
 
 /* =======================================================================
    Alerts
@@ -1711,35 +1730,20 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .manifest + .manifest { margin-top: 1.75rem; }
 .manifest:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
 
-/* Each route gets its own color so it reads as a distinct lane at a
-   glance - independent of vehicle type, since there can be several
-   cars or bikes at once. */
-.route-hue-0 { --route-color: #4338ca; }
-.route-hue-1 { --route-color: #0d9488; }
-.route-hue-2 { --route-color: #c2410c; }
-.route-hue-3 { --route-color: #be185d; }
-.route-hue-4 { --route-color: #0284c7; }
-.route-hue-5 { --route-color: #65a30d; }
-@media (prefers-color-scheme: dark) {
-  .route-hue-0 { --route-color: #818cf8; }
-  .route-hue-1 { --route-color: #2dd4bf; }
-  .route-hue-2 { --route-color: #fb923c; }
-  .route-hue-3 { --route-color: #f472b6; }
-  .route-hue-4 { --route-color: #38bdf8; }
-  .route-hue-5 { --route-color: #a3e635; }
-}
-:root[data-theme="dark"] .route-hue-0 { --route-color: #818cf8; }
-:root[data-theme="dark"] .route-hue-1 { --route-color: #2dd4bf; }
-:root[data-theme="dark"] .route-hue-2 { --route-color: #fb923c; }
-:root[data-theme="dark"] .route-hue-3 { --route-color: #f472b6; }
-:root[data-theme="dark"] .route-hue-4 { --route-color: #38bdf8; }
-:root[data-theme="dark"] .route-hue-5 { --route-color: #a3e635; }
-:root[data-theme="light"] .route-hue-0 { --route-color: #4338ca; }
-:root[data-theme="light"] .route-hue-1 { --route-color: #0d9488; }
-:root[data-theme="light"] .route-hue-2 { --route-color: #c2410c; }
-:root[data-theme="light"] .route-hue-3 { --route-color: #be185d; }
-:root[data-theme="light"] .route-hue-4 { --route-color: #0284c7; }
-:root[data-theme="light"] .route-hue-5 { --route-color: #65a30d; }
+/* Each route keeps its own color so it reads as a distinct lane you can
+   trace across the row, its stop sequence numbers, and the live map
+   polyline at a glance - that cross-referencing is genuinely useful
+   with several routes/vehicles active at once, so the per-route color
+   itself stays. What changed: it used to cycle through 6 unrelated
+   hues (indigo/teal/orange/pink/cyan/lime) with no relationship to the
+   rest of the UI; now it cycles through 3 brand-safe tones pulled from
+   the real token set (brand blue, info blue, neutral slate) instead of
+   a rainbow fighting the new brand-blue system. Uses var() rather than
+   hardcoded hex so it already tracks light/dark and the data-theme
+   override with no separate blocks needed. */
+.route-hue-0, .route-hue-3 { --route-color: var(--primary); }
+.route-hue-1, .route-hue-4 { --route-color: var(--info); }
+.route-hue-2, .route-hue-5 { --route-color: var(--neutral); }
 
 .manifest__head {
   display: flex;
