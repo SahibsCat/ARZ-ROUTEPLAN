@@ -3,7 +3,7 @@ import { GoogleMap, Marker, Polyline, InfoWindow, useJsApiLoader } from '@react-
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
-  IconUsers, IconChevron,
+  IconUsers, IconChevron, IconLocate,
 } from '../icons';
 import './routeWorkspace.css';
 
@@ -538,6 +538,20 @@ function timeAgo(iso) {
   return `${minutes}m ago`;
 }
 
+// Straight-line distance in meters between two {lat, lng} points - used
+// only to tell "the driver actually moved" apart from GPS noise (a
+// stationary phone's reported fix still drifts a few meters between
+// pings), not for anything that needs real accuracy.
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
 // The actual "watch them move" view - "Track Driver" used to just open a
 // static Google Maps pin frozen at whatever the last location happened to
 // be the moment you clicked it, with no way to see it update. This is a
@@ -550,7 +564,21 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   const [tracking, setTracking] = useState(initialTracking);
   const [showInfo, setShowInfo] = useState(false);
   const [plannedPath, setPlannedPath] = useState([]);
+  // Off the moment an admin drags the map to look at something else - a
+  // map that keeps yanking your view back to the driver every 3s poll
+  // isn't inspectable. The recenter button (bottom-right, same spot/glyph
+  // Google Maps itself uses) turns it back on.
+  const [autoFollow, setAutoFollow] = useState(true);
   const mapRef = useRef(null);
+  const lastPannedRef = useRef(null);
+  // Captured once, on the first render that has a real fix - GoogleMap's
+  // own `center` prop is only ever read as the *initial* view; all
+  // repositioning after that goes through the imperative panTo effect
+  // below. Passing the live `position` object as `center` on every render
+  // (the previous version did) fights that effect - react-google-maps
+  // calls the plain, non-animated map.setCenter() on every prop change,
+  // racing the smooth panTo() and reading as a shaky, "unstable" map.
+  const initialCenterRef = useRef(null);
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES,
@@ -587,12 +615,32 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   const position = last ? { lat: last.lat, lng: last.lng } : null;
   const path = (tracking?.path || []).map((p) => ({ lat: p.lat, lng: p.lng }));
 
-  // The map only re-centers on its own first render normally - panTo on
-  // every real position change is what makes this read as *live* movement
-  // rather than a map that happens to have loaded near a static pin.
+  if (position && initialCenterRef.current === null) {
+    initialCenterRef.current = position;
+  }
+
+  // panTo on every real position change is what makes this read as *live*
+  // movement - but GPS noise moves the reported point a few meters even
+  // while the driver is standing still, and panning the map for that
+  // reads as a shaky, "unstable" map rather than a calm live one. Only
+  // pans for a move big enough to actually be movement, and only while
+  // the admin hasn't dragged the map away to look at something else (see
+  // autoFollow above).
   useEffect(() => {
-    if (position && mapRef.current) mapRef.current.panTo(position);
-  }, [position?.lat, position?.lng]);
+    if (!position || !mapRef.current || !autoFollow) return;
+    const prev = lastPannedRef.current;
+    if (prev && haversineMeters(prev, position) < 8) return;
+    lastPannedRef.current = position;
+    mapRef.current.panTo(position);
+  }, [position?.lat, position?.lng, autoFollow]);
+
+  const handleRecenter = () => {
+    setAutoFollow(true);
+    if (position && mapRef.current) {
+      lastPannedRef.current = position;
+      mapRef.current.panTo(position);
+    }
+  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -611,58 +659,81 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
         ) : !isLoaded ? (
           <div className="empty-state live-map-modal__empty">Loading map…</div>
         ) : position ? (
-          <GoogleMap
-            mapContainerClassName="live-map-modal__map"
-            center={position}
-            zoom={16}
-            onLoad={(map) => { mapRef.current = map; }}
-            options={{
-              styles: DARK_MAP_STYLE, disableDefaultUI: true, zoomControl: true,
-              backgroundColor: '#0a0a0a',
-            }}
-          >
-            {plannedPath.length > 1 && (
-              <Polyline path={plannedPath} options={{ strokeColor: '#f5a623', strokeWeight: 4, strokeOpacity: 0.55, zIndex: 1 }} />
-            )}
-            {path.length > 1 && (
-              <Polyline path={path} options={{ strokeColor: '#6f9bff', strokeWeight: 3, strokeOpacity: 0.9, zIndex: 2 }} />
-            )}
-            {(route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o, idx) => (
-              <Marker
-                key={o.order_id}
-                position={{ lat: o.lat, lng: o.lng }}
-                zIndex={1}
-                icon={{
-                  path: window.google.maps.SymbolPath.CIRCLE,
-                  scale: 5,
-                  fillColor: o.is_delivered ? '#4fc98a' : '#63636b',
-                  fillOpacity: 1,
-                  strokeColor: '#0a0a0a',
-                  strokeWeight: 1,
-                }}
-                title={`${idx + 1}. ${o.customer_name || 'Stop'}`}
-              />
-            ))}
-            <Marker
-              position={position}
-              zIndex={3}
-              onClick={() => setShowInfo((v) => !v)}
-              icon={{
-                path: window.google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: '#2457d6',
-                fillOpacity: 1,
-                strokeColor: '#fff',
-                strokeWeight: 2,
+          <div className="live-map-modal__map-wrap">
+            <GoogleMap
+              mapContainerClassName="live-map-modal__map"
+              center={initialCenterRef.current}
+              zoom={16}
+              onLoad={(map) => { mapRef.current = map; }}
+              onDragStart={() => setAutoFollow(false)}
+              options={{
+                styles: DARK_MAP_STYLE, disableDefaultUI: true, zoomControl: true,
+                gestureHandling: 'greedy', backgroundColor: '#0a0a0a',
               }}
             >
-              {showInfo && (
-                <InfoWindow onCloseClick={() => setShowInfo(false)}>
-                  <span>{driver.name} · {timeAgo(last.recorded_at)}</span>
-                </InfoWindow>
+              {plannedPath.length > 1 && (
+                <Polyline path={plannedPath} options={{ strokeColor: '#f5a623', strokeWeight: 4, strokeOpacity: 0.55, zIndex: 1 }} />
               )}
-            </Marker>
-          </GoogleMap>
+              {path.length > 1 && (
+                <Polyline path={path} options={{ strokeColor: '#6f9bff', strokeWeight: 3, strokeOpacity: 0.9, zIndex: 2 }} />
+              )}
+              {(route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o, idx) => (
+                <Marker
+                  key={o.order_id}
+                  position={{ lat: o.lat, lng: o.lng }}
+                  zIndex={1}
+                  icon={{
+                    path: window.google.maps.SymbolPath.CIRCLE,
+                    scale: 5,
+                    fillColor: o.is_delivered ? '#4fc98a' : '#63636b',
+                    fillOpacity: 1,
+                    strokeColor: '#0a0a0a',
+                    strokeWeight: 1,
+                  }}
+                  title={`${idx + 1}. ${o.customer_name || 'Stop'}`}
+                />
+              ))}
+              {/* The translucent halo behind the solid dot is Google Maps'
+                  own "your location" glyph - reads as live/GPS at a glance
+                  instead of just another plain pin. */}
+              <Marker
+                position={position}
+                zIndex={2}
+                clickable={false}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 20,
+                  fillColor: '#2457d6',
+                  fillOpacity: 0.18,
+                  strokeWeight: 0,
+                }}
+              />
+              <Marker
+                position={position}
+                zIndex={3}
+                onClick={() => setShowInfo((v) => !v)}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: '#2457d6',
+                  fillOpacity: 1,
+                  strokeColor: '#fff',
+                  strokeWeight: 2,
+                }}
+              >
+                {showInfo && (
+                  <InfoWindow onCloseClick={() => setShowInfo(false)}>
+                    <span>{driver.name} · {timeAgo(last.recorded_at)}</span>
+                  </InfoWindow>
+                )}
+              </Marker>
+            </GoogleMap>
+            {!autoFollow && (
+              <button type="button" className="live-map-modal__recenter" onClick={handleRecenter} title="Recenter on driver">
+                <IconLocate width={18} height={18} />
+              </button>
+            )}
+          </div>
         ) : (
           <div className="empty-state live-map-modal__empty">No location reported yet - the map appears as soon as the first ping lands.</div>
         )}

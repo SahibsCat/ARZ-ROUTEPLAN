@@ -726,8 +726,30 @@ select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
    the way flex children usually do.
 ======================================================================= */
 .live-map-modal { max-width: 720px; }
+.live-map-modal__map-wrap { position: relative; }
 .live-map-modal__map { height: 440px; width: 100%; background: var(--surface-2); }
 .live-map-modal__empty { margin: 1.25rem 1.5rem; }
+
+/* Google Maps' own recenter-on-location affordance - appears only once
+   the admin has dragged away from following the driver (see autoFollow
+   in LiveMapModal), same bottom-right spot Google's app puts it. */
+.live-map-modal__recenter {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.live-map-modal__recenter:hover { background: var(--surface-2); }
 
 @media (max-width: 640px) {
   .live-map-modal__map { height: 320px; }

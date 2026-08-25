@@ -287,3 +287,14 @@ export function IconMoon(props) {
     </svg>
   );
 }
+
+// The "recenter on my location" crosshair - Google Maps' own glyph for
+// this exact affordance, used on the live-tracking map's recenter button.
+export function IconLocate(props) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
+  );
+}
