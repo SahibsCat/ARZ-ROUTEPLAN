@@ -167,38 +167,6 @@ select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
 .routes-page__title { font-family: var(--font-display); font-size: 1.75rem; font-weight: 800; margin: 0 0 0.3rem; color: var(--ink); }
 .routes-page__subtitle { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
 
-/* Compact indicators in a row, not oversized decorative cards - a thin
-   rule under the number is the only "card" styling. */
-.routes-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 0.85rem;
-  padding: 1rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-/* Each metric gets its own tinted card, not just a colored number on a
-   shared white strip - the summary should read as color blocks first. */
-.routes-summary__item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.75rem 0.9rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-}
-.routes-summary__value { font-size: 1.6rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
-.routes-summary__item--open { background: var(--primary-soft); }
-.routes-summary__value--open { color: var(--primary-strong); }
-.routes-summary__item--full { background: var(--good-soft); }
-.routes-summary__value--full { color: var(--good); }
-.routes-summary__item--delayed { background: var(--signal-soft); }
-.routes-summary__value--delayed { color: var(--signal); }
-.routes-summary__item--unassigned { background: var(--critical-soft); }
-.routes-summary__value--unassigned { color: var(--critical); }
-.routes-summary__label { font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); }
-
 .routes-filter-bar {
   display: flex;
   align-items: center;

@@ -108,40 +108,8 @@ function DeliveryIdentityBlock({ order }) {
 }
 
 // --------------------------------------------------------------------------
-// Routes List — summary strip, filter bar, wide route table.
+// Routes List — filter bar, wide route table.
 // --------------------------------------------------------------------------
-
-function RoutesSummaryStrip({ routes, pendingOrders, capacityFor }) {
-  const counts = useMemo(() => {
-    const acc = { total: routes.length, open: 0, full: 0, delayed: 0 };
-    routes.forEach((route) => {
-      const status = routeStatus(route, capacityFor(route.vehicle_type));
-      if (status === 'open') acc.open += 1;
-      else if (status === 'full') acc.full += 1;
-      else if (status === 'delayed') acc.delayed += 1;
-    });
-    return acc;
-  }, [routes, capacityFor]);
-
-  const items = [
-    { label: 'Total routes', value: counts.total },
-    { label: 'Open', value: counts.open, tone: 'open' },
-    { label: 'Full', value: counts.full, tone: 'full' },
-    { label: 'Delayed', value: counts.delayed, tone: 'delayed' },
-    { label: 'Unassigned orders', value: pendingOrders.length, tone: 'unassigned' },
-  ];
-
-  return (
-    <div className="routes-summary">
-      {items.map((item) => (
-        <div key={item.label} className={`routes-summary__item${item.tone ? ` routes-summary__item--${item.tone}` : ''}`}>
-          <span className={`routes-summary__value mono-num${item.tone ? ` routes-summary__value--${item.tone}` : ''}`}>{item.value}</span>
-          <span className="routes-summary__label">{item.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function RoutesFilterBar({
   search, onSearchChange, vehicleFilter, onVehicleFilterChange, statusFilter, onStatusFilterChange,
@@ -1360,8 +1328,6 @@ export default function RouteWorkspace({
               <option value="car">Car</option>
             </select>
           </div>
-
-          <RoutesSummaryStrip routes={routes} pendingOrders={pendingOrders} capacityFor={capacityFor} />
 
           <RoutesFilterBar
             search={routeSearch}

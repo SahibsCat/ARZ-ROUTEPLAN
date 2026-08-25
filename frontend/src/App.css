@@ -1013,12 +1013,12 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
 .toolbar-btn:disabled { background: var(--ink-faint); color: var(--paper); cursor: not-allowed; }
 
 .toolbar-btn--ghost {
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule, var(--ink-faint));
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft);
 }
-.toolbar-btn--ghost:hover:not(:disabled) { filter: none; background: var(--accent-soft); box-shadow: none; color: var(--ink); }
-.toolbar-btn--ghost:disabled { background: transparent; color: var(--ink-faint); }
+.toolbar-btn--ghost:hover:not(:disabled) { filter: none; background: var(--accent); border-color: var(--accent); box-shadow: none; color: #fff; }
+.toolbar-btn--ghost:disabled { background: transparent; color: var(--ink-faint); border-color: var(--rule, var(--ink-faint)); }
 
 /* Three variants only: Primary (solid accent - Regenerate, Save),
    Secondary (outline - Download all), Destructive (solid danger -
@@ -1655,16 +1655,22 @@ textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   animation: rp-spin 0.7s linear infinite;
 }
 
-.btn--secondary { background: var(--surface-2); color: var(--ink); }
-.btn--secondary:hover:not(:disabled) { filter: none; background: var(--rule); }
-.btn--secondary.btn--loading::before { border-color: rgba(15, 23, 42, 0.2); border-top-color: var(--ink); }
+/* Secondary/outline used to be flat gray at rest, only picking up real
+   color on hover - next to the rest of the now fully-colored UI they
+   read as dead/disabled buttons rather than a deliberate secondary
+   tier. Both now carry the accent by default; ghost (the lowest tier -
+   "Cancel", row overflow triggers) stays neutral so it doesn't compete
+   with real actions on the same row, but still warms up on hover. */
+.btn--secondary { background: var(--accent-soft); color: var(--accent-strong); }
+.btn--secondary:hover:not(:disabled) { filter: none; background: var(--accent); color: #fff; }
+.btn--secondary.btn--loading::before { border-color: rgba(36, 87, 214, 0.25); border-top-color: var(--accent-strong); }
 
-.btn--outline { background: transparent; color: var(--ink); border-color: var(--rule); }
-.btn--outline:hover:not(:disabled) { filter: none; border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
-.btn--outline.btn--loading::before { border-color: rgba(15, 23, 42, 0.2); border-top-color: var(--ink); }
+.btn--outline { background: transparent; color: var(--accent-strong); border-color: var(--accent-soft); }
+.btn--outline:hover:not(:disabled) { filter: none; border-color: var(--primary); color: #fff; background: var(--primary); }
+.btn--outline.btn--loading::before { border-color: rgba(36, 87, 214, 0.25); border-top-color: var(--accent-strong); }
 
 .btn--ghost { background: none; color: var(--ink-soft); box-shadow: none !important; }
-.btn--ghost:hover:not(:disabled) { filter: none; background: var(--surface-2); color: var(--ink); transform: none; }
+.btn--ghost:hover:not(:disabled) { filter: none; background: var(--accent-soft); color: var(--accent-strong); transform: none; }
 .btn--ghost.btn--loading::before { border-color: rgba(15, 23, 42, 0.2); border-top-color: var(--ink-soft); }
 
 .btn--danger { background: var(--critical); }
