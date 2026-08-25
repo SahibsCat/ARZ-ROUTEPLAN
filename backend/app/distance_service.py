@@ -72,6 +72,36 @@ def route_distance_time(lat1: float, lng1: float, lat2: float, lng2: float) -> D
     return result
 
 
+def build_route_geometry(depot: Dict[str, float], stops: List[Dict[str, float]]) -> Optional[List[Dict[str, float]]]:
+    """The actual road-following path for depot -> every stop, in delivery
+    order, as a list of {lat, lng} points - one multi-waypoint OSRM request
+    returns the whole route's shape in a single call, via the same free
+    OSRM server route_distance_time already relies on above. This exists
+    for the admin live-tracking map's "planned route" line: the Maps key
+    only has the JavaScript API enabled, not the (separately-gated)
+    Directions/Routes API, so drawing the road-following line server-side
+    with what's already proven reliable here avoids needing that turned on.
+    """
+    if not stops:
+        return None
+    points = [depot] + list(stops)
+    coordinates = ";".join(f"{p['lng']},{p['lat']}" for p in points)
+    params = {"overview": "full", "geometries": "geojson"}
+    data = _fetch_osrm_json(f"{OSRM_ROUTE_URL}/{coordinates}", params)
+    if not data:
+        return None
+    route_list = data.get("routes")
+    if not route_list or not isinstance(route_list, list):
+        return None
+    geometry = route_list[0].get("geometry") or {}
+    raw_coords = geometry.get("coordinates")
+    if not raw_coords:
+        return None
+    # GeoJSON coordinates are [lng, lat] - flip to the {lat, lng} shape
+    # used everywhere else in this codebase and by the frontend.
+    return [{"lat": c[1], "lng": c[0]} for c in raw_coords]
+
+
 def _table_one_to_many(
     origin: Tuple[float, float],
     destinations: List[Tuple[float, float]],

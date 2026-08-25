@@ -10,21 +10,26 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session, joinedload
 
-from app import crud
+from app import crud, distance_service
 from app.crud import RootplanError, RouteNotFoundError
 from app.driver_auth import create_session, generate_driver_code, hash_password, revoke_driver_sessions, verify_password
 from app.models import Driver, DriverLocationPing, DriverSession, Route, RouteStop
+from app.route_service import VELOCHERY_DEPOT
 
 # A ping newer than this reads as genuinely live; older than that but
 # within the delayed window reads as "location delayed"; anything older
-# (or no ping at all) reads as offline. The driver app requests an 8s
-# ping interval, but Android's own location provider throttles that down
-# to roughly 70-110s (sometimes more) once the phone is idle/stationary/
-# screen-off - normal OS-level power management, confirmed via real device
-# testing, not a bug to route around. 120s still flickered to "Delayed" on
-# an ordinary slightly-longer gap; this gives real headroom above the
-# observed range while still catching a driver who's genuinely gone
-# offline within a few minutes.
+# (or no ping at all) reads as offline. The driver app requests a 5s ping
+# interval (was 8s), but Android's own location provider throttles that
+# down hard once the phone is idle/stationary/screen-off - not a bug to
+# route around, but real recorded pings on this backend show the pattern
+# plainly: short bursts of near-on-time pings (proving the interval *is*
+# honored while the phone is actively awake) separated by 1-3 minute
+# silent gaps once backgrounded, which is Android's Doze "maintenance
+# window" batching background network access, not GPS accuracy. The
+# battery-optimization exemption prompt (see the driver app's src/
+# battery.js) is the real fix for the silent gaps; this window just needs
+# to tolerate them gracefully rather than flicker to "Delayed" on an
+# ordinary slightly-longer gap.
 LIVE_WINDOW_SECONDS = 180
 DELAYED_WINDOW_SECONDS = 600
 
@@ -407,6 +412,26 @@ def get_route_tracking(db: Session, route_id: int, path_limit: int = 200) -> Dic
         ),
         "path": path,
     }
+
+
+def get_route_planned_path(db: Session, route_id: int) -> List[Dict[str, float]]:
+    """Real road-following coordinates for depot -> every stop in delivery
+    order - the live-tracking map's "planned route" line, so an admin can
+    see whether the driver is actually on it, not just a dot with nothing
+    to judge it against. Fetched once per map open (see distance_service.
+    build_route_geometry for why this goes via OSRM rather than Google's
+    Directions/Routes API), not on every tracking poll - the stop sequence
+    doesn't change while a route is in progress."""
+    route = db.query(Route).options(joinedload(Route.stops)).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+
+    stops = []
+    for stop in sorted(route.stops, key=lambda s: s.sequence):
+        snapshot = stop.order_snapshot or {}
+        if snapshot.get("lat") is not None and snapshot.get("lng") is not None:
+            stops.append({"lat": snapshot["lat"], "lng": snapshot["lng"]})
+    return distance_service.build_route_geometry(VELOCHERY_DEPOT, stops) or []
 
 
 # --------------------------------------------------------------------------

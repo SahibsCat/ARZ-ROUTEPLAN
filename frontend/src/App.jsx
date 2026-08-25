@@ -1124,6 +1124,15 @@ function App() {
     return response.json();
   };
 
+  // The planned route's road-following shape (depot -> every stop, in
+  // order) for the live map - fetched once when it opens, not on every
+  // tracking poll, since the stop sequence doesn't change mid-route.
+  const fetchRoutePlannedPath = async (routeId) => {
+    const response = await apiFetch(`/api/routes/${routeId}/route-path`);
+    if (!response.ok) throw new Error(`Could not load the planned route (${response.status})`);
+    return response.json();
+  };
+
   // Global "a driver just started their route" notification - fires as a
   // toast from anywhere in the app, not only while that route's detail
   // view happens to be open (DriverTrackingCard's own polling is scoped to
@@ -2646,6 +2655,7 @@ function App() {
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}
             fetchRouteTracking={fetchRouteTracking}
+            fetchRoutePlannedPath={fetchRoutePlannedPath}
           />
           </div>
 

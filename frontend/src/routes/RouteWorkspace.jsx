@@ -546,9 +546,10 @@ function timeAgo(iso) {
 // tracking on its own faster timer and pans to the driver's marker every
 // time it actually moves, plus the breadcrumb trail already available
 // from the tracking endpoint's `path`.
-function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onClose }) {
+function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetchRoutePlannedPath, onClose }) {
   const [tracking, setTracking] = useState(initialTracking);
   const [showInfo, setShowInfo] = useState(false);
+  const [plannedPath, setPlannedPath] = useState([]);
   const mapRef = useRef(null);
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
@@ -557,13 +558,30 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onCl
 
   useEffect(() => {
     let cancelled = false;
-    // 5s, not the card's own 15s - this view is the one you're actually
-    // watching move, so it gets the tightest poll in the app.
+    // 3s - this view is the one you're actually watching move, so it gets
+    // the tightest poll in the app (the card behind it polls slower).
     const poll = () => fetchRouteTracking(route.route_id).then((data) => { if (!cancelled) setTracking(data); }).catch(() => {});
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [route.route_id, fetchRouteTracking]);
+
+  // The actual road route the driver is meant to be following - depot ->
+  // every stop in delivery order -> last stop - so you can see whether
+  // they're on it, not just a bare dot with no path to judge it against.
+  // Fetched once per route open (stop order doesn't change while a route
+  // is in progress) from the backend's own OSRM-backed endpoint, not
+  // Google's client-side DirectionsService - that legacy Directions API
+  // isn't enabled for this project's Maps key (only the JavaScript API
+  // is), while OSRM is the same routing engine already proven reliable
+  // elsewhere in this codebase (route_distance_time).
+  useEffect(() => {
+    let cancelled = false;
+    fetchRoutePlannedPath(route.route_id)
+      .then((data) => { if (!cancelled) setPlannedPath(data.path || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [route.route_id, fetchRoutePlannedPath]);
 
   const last = tracking?.last_location;
   const position = last ? { lat: last.lat, lng: last.lng } : null;
@@ -603,11 +621,31 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onCl
               backgroundColor: '#0a0a0a',
             }}
           >
-            {path.length > 1 && (
-              <Polyline path={path} options={{ strokeColor: '#6f9bff', strokeWeight: 3, strokeOpacity: 0.7 }} />
+            {plannedPath.length > 1 && (
+              <Polyline path={plannedPath} options={{ strokeColor: '#f5a623', strokeWeight: 4, strokeOpacity: 0.55, zIndex: 1 }} />
             )}
+            {path.length > 1 && (
+              <Polyline path={path} options={{ strokeColor: '#6f9bff', strokeWeight: 3, strokeOpacity: 0.9, zIndex: 2 }} />
+            )}
+            {(route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o, idx) => (
+              <Marker
+                key={o.order_id}
+                position={{ lat: o.lat, lng: o.lng }}
+                zIndex={1}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 5,
+                  fillColor: o.is_delivered ? '#4fc98a' : '#63636b',
+                  fillOpacity: 1,
+                  strokeColor: '#0a0a0a',
+                  strokeWeight: 1,
+                }}
+                title={`${idx + 1}. ${o.customer_name || 'Stop'}`}
+              />
+            ))}
             <Marker
               position={position}
+              zIndex={3}
               onClick={() => setShowInfo((v) => !v)}
               icon={{
                 path: window.google.maps.SymbolPath.CIRCLE,
@@ -645,7 +683,7 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, onCl
 // Polls GET /api/routes/{id}/tracking on its own timer while this card is
 // mounted (i.e. only while an admin actually has this route's detail view
 // open) rather than pushing tracking state up into the whole workspace.
-function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking }) {
+function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath }) {
   const [tracking, setTracking] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -668,7 +706,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   useEffect(() => {
     setIsLoading(true);
     load();
-    const interval = setInterval(load, 8000); // tightened from 15s - this card is what you glance at without opening the live map
+    const interval = setInterval(load, 5000); // tightened again - was 15s, then 8s
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.route_id]);
@@ -768,6 +806,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
           driver={tracking.driver}
           initialTracking={tracking}
           fetchRouteTracking={fetchRouteTracking}
+          fetchRoutePlannedPath={fetchRoutePlannedPath}
           onClose={() => setShowLiveMap(false)}
         />
       )}
@@ -779,7 +818,7 @@ function RouteDetail({
   route, routeIdx, routes, capacityFor, pendingOrders,
   onBack, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
   onReassignOrder, onAssignOrders, onReorderRoute,
-  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking,
+  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
   selectedOrderId, onSelectOrder,
   maxCapacityFor, onMoveOrders, isMovingAddresses,
 }) {
@@ -931,6 +970,7 @@ function RouteDetail({
         onAssignDriver={onAssignDriver}
         onUnassignDriver={onUnassignDriver}
         fetchRouteTracking={fetchRouteTracking}
+        fetchRoutePlannedPath={fetchRoutePlannedPath}
       />
 
       <div className="route-stop-list">
@@ -1177,7 +1217,7 @@ export default function RouteWorkspace({
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders,
   requestedTab,
-  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking,
+  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
 }) {
   const [tab, setTab] = useState('routes');
   // requestedTab is a one-way "command" from the sidebar nav (clicking
@@ -1309,6 +1349,7 @@ export default function RouteWorkspace({
           onAssignDriver={onAssignDriver}
           onUnassignDriver={onUnassignDriver}
           fetchRouteTracking={fetchRouteTracking}
+          fetchRoutePlannedPath={fetchRoutePlannedPath}
         />
       ) : (
         <div className="routes-page">

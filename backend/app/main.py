@@ -897,6 +897,18 @@ def get_route_tracking_endpoint(route_id: int, db: Session = Depends(get_db)):
     return tracking
 
 
+# Separate from /tracking above on purpose - the planned route's road
+# geometry doesn't change while a route is in progress, so the live map
+# fetches this once on open instead of on every few-second tracking poll.
+@app.get("/api/routes/{route_id}/route-path")
+def get_route_planned_path_endpoint(route_id: int, db: Session = Depends(get_db)):
+    try:
+        path = crud_driver.get_route_planned_path(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"path": path}
+
+
 # --- Driver login -------------------------------------------------------------
 
 @app.post("/api/driver/login")
