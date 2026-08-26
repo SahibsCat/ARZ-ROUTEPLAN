@@ -955,16 +955,16 @@ function RouteDetail({
           <IconChevron width={14} height={14} className="route-detail__back-icon" />
           Routes
         </button>
-        <div className="route-detail__title-row">
-          <div className="route-detail__title-block">
+        <div className="route-detail__title-block">
+          <div className="route-detail__title-row">
             <h2 className="route-detail__title">{route.route_name}</h2>
-            <span className="route-detail__subtitle">
-              {route.areas && route.areas.length ? route.areas.join(' → ') : 'No deliveries yet'}
-            </span>
+            <StatusBadge status={status} />
+            {route.is_auto_created && <span className="tag tag--auto"><IconPlus width={11} height={11} />Auto-added</span>}
+            {isEdited && <span className="tag tag--edited"><IconAlert width={11} height={11} />Manually edited</span>}
           </div>
-          <StatusBadge status={status} />
-          {route.is_auto_created && <span className="tag tag--auto"><IconPlus width={11} height={11} />Auto-added</span>}
-          {isEdited && <span className="tag tag--edited"><IconAlert width={11} height={11} />Manually edited</span>}
+          <span className="route-detail__subtitle">
+            {route.areas && route.areas.length ? route.areas.join(' → ') : 'No deliveries yet'}
+          </span>
         </div>
 
         <div className="route-detail__actions">
@@ -1289,6 +1289,7 @@ export default function RouteWorkspace({
   onAssignOrders, onDownloadRoute, onMoveOrders,
   requestedTab,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
+  onViewChange,
 }) {
   const [tab, setTab] = useState('routes');
   // requestedTab is a one-way "command" from the sidebar nav (clicking
@@ -1299,6 +1300,16 @@ export default function RouteWorkspace({
     if (requestedTab === 'routes' || requestedTab === 'unassigned') setTab(requestedTab);
   }, [requestedTab]);
   const [view, setView] = useState('list'); // 'list' | 'detail'
+  // Tells the parent (App.jsx) whenever a single route's detail page opens
+  // or closes, so it can hide the dashboard/toolbar chrome that otherwise
+  // sits above this component on pages where it's rendered inline - a
+  // route's detail is meant to be a focused page, not one more thing
+  // scrolled under the Dashboard's KPI row. `view` alone isn't enough:
+  // switching to the Unassigned Orders tab shows that board regardless of
+  // `view` (see the tab === 'unassigned' check below) without resetting
+  // `view` itself, so a stale 'detail' would otherwise still read as
+  // "showing a route" while a completely different board is on screen.
+  useEffect(() => { onViewChange?.(tab !== 'unassigned' && view === 'detail'); }, [tab, view, onViewChange]);
   const [selectedRouteName, setSelectedRouteName] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [routeSearch, setRouteSearch] = useState('');

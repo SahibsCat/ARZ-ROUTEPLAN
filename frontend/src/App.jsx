@@ -42,32 +42,29 @@ const ROUTE_HUES = 6;
 // "is this real yet" (that used to split a plain Workspace/Platform-Soon
 // list, which put Vehicles nowhere near Drivers and Live Tracking nowhere
 // near Routes). Dashboard/Routes/Unassigned Orders/Failed Addresses/Drivers
-// are real, separate pages again - each one swaps the console's content to
-// just its own board instead of every page rendering the full Dashboard
-// (KPI row + shortcuts + Generate Routes panel + tab block) above its own
-// content. Dashboard is the one place all of that overview chrome still
-// lives; the four dash-links shortcuts there are the deep links into the
-// pages below. Drivers used to be a right-side overlay panel; it's a full
-// page now, same as Failed Addresses, so both creating a driver and seeing
-// every driver's status live on a real page instead of a drawer you dip
-// into and dismiss. 'history' (Route History, a long append-only record
-// list rather than something you work in) is the one nav item that still
-// opens as an overlay. Items marked soon:true have no real page yet, so
-// clicking one opens ComingSoonPage as its own small overlay instead (see
-// soonOverlay).
+// are all one continuous page again - clicking one of these just smooth-
+// scrolls to its anchor rather than swapping the console's content out.
+// Drivers used to be a right-side overlay panel; it's a full board in the
+// page flow now, same as Failed Addresses, so both creating a driver and
+// seeing every driver's status live on a real board instead of a drawer
+// you dip into and dismiss. 'history' (Route History, a long append-only
+// record list rather than something you work in) is the one nav item that
+// still opens as an overlay. Items marked soon:true have no real content
+// to scroll to, so clicking one opens ComingSoonPage as its own small
+// overlay instead (see soonOverlay).
 const NAV_GROUPS = [
   {
     label: 'Overview',
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
+      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid, anchor: 'top' },
     ],
   },
   {
     label: 'Dispatch',
     items: [
-      { key: 'generate', label: 'Routes', icon: IconRoute },
-      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox },
-      { key: 'failed', label: 'Failed Addresses', icon: IconAlert },
+      { key: 'generate', label: 'Routes', icon: IconRoute, anchor: 'toolbar-section' },
+      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
+      { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
       { key: 'history', label: 'Route History', icon: IconHistory },
       { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, soon: true },
     ],
@@ -75,7 +72,7 @@ const NAV_GROUPS = [
   {
     label: 'Fleet',
     items: [
-      { key: 'drivers', label: 'Drivers', icon: IconUsers },
+      { key: 'drivers', label: 'Drivers', icon: IconUsers, anchor: 'drivers-board' },
       { key: 'vehicles', label: 'Vehicles', icon: IconCar, soon: true },
     ],
   },
@@ -625,6 +622,13 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('dashboard');
+  // Whether RouteWorkspace is currently showing a single route's detail
+  // page (as opposed to the Routes/Unassigned Orders list view) - lifted
+  // up via onViewChange so the KPI row/shortcuts/Generate Routes panel
+  // above it can hide once you've drilled into one route, instead of
+  // that whole preamble still sitting above what's meant to be a focused
+  // single-route page.
+  const [routeDetailOpen, setRouteDetailOpen] = useState(false);
   // Which "Soon" item's overlay (if any) is open - null when closed. See
   // handleSoonClick / ComingSoonPage.
   const [soonOverlay, setSoonOverlay] = useState(null);
@@ -699,12 +703,10 @@ function App() {
     setSoonOverlay(null);
     if (item.key === 'history') {
       openHistory();
+    } else if (item.anchor === 'top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      // Each page swaps in fresh below - jump to its top immediately
-      // rather than smooth-scrolling (which used to animate across the
-      // *previous* page's now-stale layout for a frame, the source of
-      // the blank-frame/overlapping-header flash on nav clicks).
-      window.scrollTo(0, 0);
+      document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
   // "Soon" items have no real page content to scroll to, so they open
@@ -2376,6 +2378,7 @@ function App() {
           </div>
         </header>
 
+        {!routeDetailOpen && (
         <div className="session-tabs" role="tablist" aria-label="Sessions">
           {tabs.map((tab) => (
             <button
@@ -2411,18 +2414,20 @@ function App() {
             <IconPlus width={13} height={13} />
           </button>
         </div>
+        )}
 
-      {/* Dashboard is the one page that keeps the full overview: the stat
-          row plus a hub of quick links into every other page. Routes/
-          Unassigned Orders/Failed Addresses/Drivers each open directly on
-          their own content below instead of repeating this block above
-          it - see the activeNav gates through the rest of this render. */}
-      {activeNav === 'dashboard' && (
-      <>
-          {/* One flat row of compact stat cards - no embedded charts, no
-              redundant "is everything OK" banners duplicating what these
-              numbers (and the Unassigned Orders / Failed Addresses boards
-              themselves) already say. Real counts only. */}
+      {/* Back to one continuous page: the stat row, shortcuts, Generate
+          Routes panel, Routes/Unassigned Orders board, Drivers board, and
+          Returns board are all always mounted here in sequence - sidebar
+          clicks smooth-scroll down to the relevant section instead of
+          swapping the page's content out. The one thing that still hides
+          this preamble is routeDetailOpen - drilled into a single route's
+          detail page is still meant to read as its own focused view, not
+          one more thing under the Dashboard's KPI row. */}
+      <div className="console">
+        {!routeDetailOpen && (
+        <>
+          {/* One flat row of compact stat cards */}
           <div className="stat-row">
             <KpiTile variant="orders" icon={IconInbox} value={totalOrders} label="Orders today" />
             <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" />
@@ -2450,16 +2455,11 @@ function App() {
               <div><strong>Drivers</strong><span>{drivers.length} on the roster</span></div>
             </button>
           </div>
-      </>
-      )}
-
-      <div className="console">
-        {/* Toolbar, loading state, and manifest alerts all live on the
-            Routes page only (its own nav key is literally 'generate') -
-            Unassigned Orders/Failed Addresses/Drivers don't need any of
-            it repeated above their own content, and Dashboard links into
-            this page instead of duplicating it. */}
-        {activeNav === 'generate' && (
+        </>
+        )}
+        {/* Toolbar, loading state, and manifest alerts - always mounted,
+            same as everything else on this continuous page. */}
+        {!routeDetailOpen && (
         <>
         <div className="toolbar" id="toolbar-section">
           <div className="toolbar__summary">
@@ -2583,6 +2583,29 @@ function App() {
               <span><strong>Orders</strong> <span className="status-readout__value">{totalOrders}</span></span>
             </div>
           </div>
+
+          {/* Alerts live inside the toolbar card itself now, right under
+              the Status/File/Orders line they're actually about, instead
+              of as their own full-bleed banner floating between the
+              toolbar and the routes table below. describeErrorDetail
+              guards against ever rendering a raw object/array as a
+              message (React stringifies those as "[object Object]") -
+              every entry here is guaranteed plain text by the time it
+              lands in errors/warnings state, but this is the last line
+              of defense right at render time too. */}
+          {errors.length > 0 && (
+            <div className="alert alert--error">
+              <IconAlert />
+              <div>{errors.map((err, idx) => <p key={idx}>{describeErrorDetail(err, 'Something went wrong.')}</p>)}</div>
+            </div>
+          )}
+
+          {warnings.length > 0 && (
+            <div className="alert alert--warn">
+              <IconAlert />
+              <div>{warnings.map((warning, idx) => <p key={idx}>{describeErrorDetail(warning, 'Something needs your attention.')}</p>)}</div>
+            </div>
+          )}
         </div>
 
         {/* Loading */}
@@ -2614,35 +2637,15 @@ function App() {
             <div className="progress-bar"><span className="progress-bar__fill" /></div>
           </div>
         )}
-
-        {/* Alerts. describeErrorDetail guards against ever rendering a raw
-            object/array as a message (React stringifies those as
-            "[object Object]") - every entry here is guaranteed plain text
-            by the time it lands in errors/warnings state, but this is the
-            last line of defense right at render time too. */}
-        {errors.length > 0 && (
-          <div className="alert alert--error">
-            <IconAlert />
-            <div>{errors.map((err, idx) => <p key={idx}>{describeErrorDetail(err, 'Something went wrong.')}</p>)}</div>
-          </div>
-        )}
-
-        {warnings.length > 0 && (
-          <div className="alert alert--warn">
-            <IconAlert />
-            <div>{warnings.map((warning, idx) => <p key={idx}>{describeErrorDetail(warning, 'Something needs your attention.')}</p>)}</div>
-          </div>
-        )}
         </>
         )}
 
-        {/* Boards - each page shows just its own board now (see the
-            activeNav gates below), not the full set every time. */}
+        {/* Boards - all always mounted; sidebar clicks scroll to whichever
+            one is relevant instead of swapping the page's content. */}
         <div className="board-grid">
 
           {/* Routes tab and Unassigned Orders tab share this component's
               own internal tab-switching, driven by requestedTab below. */}
-          {(activeNav === 'generate' || activeNav === 'unassigned') && (
           <div id="unassigned-board">
           <RouteWorkspace
             routes={routes}
@@ -2669,15 +2672,14 @@ function App() {
             onUnassignDriver={handleUnassignDriver}
             fetchRouteTracking={fetchRouteTracking}
             fetchRoutePlannedPath={fetchRoutePlannedPath}
+            onViewChange={setRouteDetailOpen}
           />
           </div>
-          )}
 
-          {/* DRIVERS BOARD: its own page, roster + status - "Add Driver"
+          {/* DRIVERS BOARD: roster + status - "Add Driver"
               still opens a small modal (a creation form genuinely is a
               focused, in-and-out task), but the roster and every driver's
               live status sit on this page same as any other page content. */}
-          {activeNav === 'drivers' && (
           <div className="board board--drivers" id="drivers-board">
             <div className="board__header">
               <div className="board__header-group">
@@ -2760,10 +2762,8 @@ function App() {
               )}
             </div>
           </div>
-          )}
 
-          {/* RETURNS BOARD: its own page (the Failed Addresses nav item). */}
-          {activeNav === 'failed' && (
+          {/* RETURNS BOARD */}
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               <h2 className="board__title">Returns</h2>
@@ -2885,7 +2885,6 @@ function App() {
               )}
             </div>
           </div>
-          )}
 
         </div>
       </div>

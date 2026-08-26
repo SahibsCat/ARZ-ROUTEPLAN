@@ -1,173 +1,280 @@
-/* Route Management workspace - a self-contained redesign of the old
-   Dispatch/Unassigned boards. Reuses App.css's design tokens (--ink,
-   --surface, --accent, --good, --critical, --radius-*, --shadow-*, ...) so
-   it reads as the same product in both themes, rather than inventing a
-   second visual language.
+/* =======================================================================
+   Route Workspace Design — Clean, Modern, Complete Component System
+======================================================================= */
 
-   Structure: a Routes List page (summary strip -> filter bar -> wide
-   table) that drills into a Route Detail page (header -> overview strip ->
-   spacious stop list) on "View" / row click, plus the existing Unassigned
-   Orders tab. No sidebar/dashboard/header changes live here. */
+.board--workspace {
+  padding: 0;
+  order: -1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 
-.board--workspace { padding: 0; order: -1; }
+.board--workspace .btn {
+  width: auto;
+}
 
-/* Buttons inside this workspace are inline, not the app-wide full-width
-   default - scoped override instead of touching the shared .btn class. */
-.board--workspace .btn { width: auto; }
-/* Selector is `.btn--danger-ghost.btn` (not just `.btn--danger-ghost`)
-   for the same reason `select.add-route-select` is scoped below - same
-   specificity as the shared `.btn` base, but `.btn` is declared in
-   App.css which this workspace's CSS module loads *before* in the final
-   bundle, so a same-specificity override here would silently lose its
-   background/color to .btn's own blue gradient fill. That's exactly
-   what was happening: a "Delete"/"Deactivate" row action rendering as a
-   solid blue button instead of a destructive one. Given an explicit
-   soft-red background at rest too, matching the ghost/soft treatment
-   `.toolbar-btn--ghost` uses elsewhere, instead of transparent (which
-   made it nearly invisible against the row's own background). */
+/* Custom button overrides */
 .btn--danger-ghost.btn {
   background: var(--critical-soft);
   color: var(--critical);
   border: 1px solid var(--critical-soft);
 }
-.btn--danger-ghost.btn:hover:not(:disabled) { background: var(--critical); color: #fff; filter: none; }
+.btn--danger-ghost.btn:hover:not(:disabled) {
+  background: var(--critical);
+  color: #ffffff;
+}
 
-/* "Create Route" is the one primary call-to-action in this workspace - a
-   native <select> doubles as the car/bike choice, styled to read as a
-   filled primary button rather than a plain form control. Selector is
-   `select.add-route-select` (not just `.add-route-select`) specifically
-   to outrank the shared `.stop-move` class this element also carries -
-   same specificity would otherwise leave the winner to import order,
-   and it was losing its blue fill/white text to .stop-move's plain gray
-   chip styling. */
 select.add-route-select {
   appearance: none;
   font-family: var(--font-body);
   font-weight: 700;
   font-size: 0.85rem;
-  padding: 0.6rem 2rem 0.6rem 1rem;
-  border: none;
+  padding: 0.6rem 2.2rem 0.6rem 1rem;
+  border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  background: var(--btn-fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E") no-repeat right 0.6rem center / 14px;
-  color: #fff;
+  background: var(--btn-fill);
+  color: var(--btn-text);
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-select.add-route-select:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
-select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
+select.add-route-select:hover:not(:disabled) {
+  background: var(--btn-fill-hover);
+  box-shadow: var(--shadow-md);
+}
 
 .select-compact {
   font-family: var(--font-body);
   font-size: 0.82rem;
-  padding: 0.45rem 0.7rem;
+  padding: 0.45rem 0.8rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s ease;
 }
-.select-compact:hover { border-color: var(--accent); }
-.select-compact:disabled { opacity: 0.6; cursor: not-allowed; }
+.select-compact:hover {
+  border-color: var(--accent);
+}
 
+/* Workspace Navigation Tabs */
 .workspace-tabs {
   display: flex;
-  gap: 0.25rem;
-  padding: 0.75rem 1.1rem 0;
+  gap: 0.5rem;
+  padding: 0.85rem 1.5rem 0;
   border-bottom: 1px solid var(--rule);
+  background: var(--surface);
 }
+
 .workspace-tab {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem 0.9rem;
+  gap: 0.5rem;
+  padding: 0.75rem 1.1rem;
   border: none;
   background: none;
   border-bottom: 2px solid transparent;
   color: var(--ink-soft);
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
 }
-.workspace-tab:hover { color: var(--ink); }
-.workspace-tab--active { color: var(--accent-strong); border-bottom-color: var(--accent-strong); }
-.workspace-tab__count {
-  padding: 0.1rem 0.45rem;
-  border-radius: 20px;
-  font-size: 0.72rem;
+.workspace-tab:hover {
+  color: var(--ink);
+}
+.workspace-tab--active {
+  color: var(--accent);
   font-weight: 700;
+  border-bottom-color: var(--accent);
+}
+
+.workspace-tab__count {
+  padding: 0.15rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 800;
   background: var(--surface-2);
   color: var(--ink-soft);
+  line-height: 1;
 }
-.workspace-tab--active .workspace-tab__count { background: var(--accent); color: #fff; }
-.workspace-tab__count--warn { background: var(--signal); color: #fff; }
+.workspace-tab--active .workspace-tab__count {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.workspace-tab__count--warn {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
 
-/* Any scrollable region left in this workspace (currently just the
-   Unassigned Orders list, which can genuinely be long) keeps working with
-   the mouse wheel / trackpad / touch - it just doesn't show a track. */
-.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
-.no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
-
-/* --- Search field --- */
+/* Search Field */
 .search-field {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink-faint);
+  transition: all 0.2s ease;
+}
+.search-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 .search-field input {
   border: none;
   background: none;
   outline: none;
   color: var(--ink);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   width: 100%;
 }
-.search-field--compact { padding: 0.4rem 0.6rem; }
+.search-field--compact { padding: 0.4rem 0.7rem; }
 
+/* Vehicle Pills */
 .vehicle-pill {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-  padding: 0.15rem 0.45rem; border-radius: var(--radius-sm);
-  background: var(--surface-2); color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--ink-soft);
 }
-/* Car vs. bike gets its own color, not just its own icon - so the vehicle
-   column reads at a glance scanning down a full table of routes. */
-.vehicle-pill--car { background: var(--info-soft); color: var(--info); }
-.vehicle-pill--bike { background: var(--good-soft); color: var(--good); }
+.vehicle-pill--car {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.vehicle-pill--bike {
+  background: var(--good-soft);
+  color: var(--good);
+}
 
-/* --- Capacity bar (the "percentage line") --- */
-/* Sky blue in every theme - a deliberate, specific color choice, not the
-   semantic --good token (which still means "success" everywhere else,
-   e.g. delivered/on-time chips). Only the warn/full states stay tied to
-   the shared signal/critical tokens, since those are real status colors. */
-.capacity-bar { height: 5px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
-/* The one deliberately bold color in an otherwise muted palette - the
-   percentage line is meant to be read at a glance, so it gets a vivid
-   fixed blue instead of the quiet --accent everything else uses. */
-.capacity-bar__fill { display: block; height: 100%; background: #2e90fa; border-radius: 4px; transition: width 0.2s ease; }
-.capacity-bar__fill--warn { background: var(--signal); }
-/* A full route is a normal, desirable outcome - not an error - so it
-   doesn't get --critical (red, "something's wrong"). Matches the
-   route-status-badge--full color for the same reason: full capacity and
-   a genuinely late/critical route are two different signals. */
-.capacity-bar__fill--full { background: var(--neutral); }
+/* Small status pills ("Auto-added", "Manually edited", "Removed from
+   route", "Delayed" on a failed order) - class was used in three places
+   across App.jsx/RouteWorkspace.jsx with no rule anywhere. Same shape
+   as .vehicle-pill above. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.tag--auto { background: var(--info-soft); color: var(--info); }
+.tag--edited { background: var(--signal-soft); color: var(--signal); }
+.tag--late { background: var(--critical-soft); color: var(--critical); }
 
-/* =======================================================================
-   Routes List page - spacious header, compact summary strip, dedicated
-   filter toolbar, then a wide table (not narrow cards) for the routes
-   themselves.
-======================================================================= */
+/* Plain compact select (the per-row "Assign to a route" picker) - not
+   the primary-CTA look select.add-route-select above covers when this
+   class is combined with .add-route-select, just a small bordered
+   control for a secondary, always-visible action on a row. */
+.stop-move {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.stop-move:hover:not(:disabled) { border-color: var(--accent); }
+.stop-move:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Unassigned Orders row - checkbox + identity block + status tag(s) +
+   assign-to-route select. Had no rule at all (no card, no spacing, no
+   alignment), so a real row rendered as its raw text content run
+   together with the next row's. */
+.unassigned-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.unassigned-row + .unassigned-row { margin-top: 0.6rem; }
+.unassigned-row input[type="checkbox"] { flex: none; width: 16px; height: 16px; cursor: pointer; }
+.unassigned-row__meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  max-width: 220px;
+}
+.unassigned-row__prev { font-size: 0.74rem; color: var(--ink-faint); }
+
+/* Capacity Bar */
+.capacity-bar {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  overflow: hidden;
+  position: relative;
+}
+.capacity-bar__fill {
+  /* The element itself is a <span> (RouteWorkspace's CapacityBar), which
+     defaults to display:inline - inline elements ignore the width/height
+     CSS entirely per spec, so the fill's inline `style={{ width }}` was
+     being silently dropped and every bar rendered at 0 visible width
+     regardless of how full the route actually was. */
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #38bdf8 0%, #4f46e5 100%);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.capacity-bar__fill--warn {
+  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+.capacity-bar__fill--full {
+  background: linear-gradient(90deg, #f43f5e 0%, #e11d48 100%);
+}
+
+/* Route Status Badge */
+.route-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  text-transform: capitalize;
+}
+.route-status-badge--empty { background: var(--surface-2); color: var(--ink-faint); }
+.route-status-badge--open { background: var(--good-soft); color: var(--good); }
+.route-status-badge--full { background: var(--critical-soft); color: var(--critical); }
+.route-status-badge--delayed { background: var(--signal-soft); color: var(--signal); }
+
+/* Routes List View & Table */
 .routes-page {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.75rem 2rem 2rem;
 }
-
 .routes-page__header {
   display: flex;
   align-items: flex-start;
@@ -175,8 +282,18 @@ select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
   gap: 1.5rem;
   flex-wrap: wrap;
 }
-.routes-page__title { font-family: var(--font-display); font-size: 1.75rem; font-weight: 800; margin: 0 0 0.3rem; color: var(--ink); }
-.routes-page__subtitle { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
+.routes-page__title {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin: 0 0 0.3rem;
+  color: var(--ink);
+}
+.routes-page__subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
 
 .routes-filter-bar {
   display: flex;
@@ -184,156 +301,91 @@ select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
   gap: 0.75rem;
   flex-wrap: wrap;
 }
-.routes-filter-bar__search { flex: 1; min-width: 220px; max-width: 420px; }
-.routes-filter-bar__clear { margin-left: auto; }
 
-/* --- Routes table --- */
 .routes-table {
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .routes-table__head {
   display: grid;
-  grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 0.9fr 1fr 1.4fr;
-  gap: 1rem;
-  padding: 0.75rem 1.5rem;
+  grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 1.1fr 1fr 1.4fr;
+  gap: 1.5rem;
+  padding: 0.85rem 1.75rem;
   background: var(--surface-2);
   border-bottom: 1px solid var(--rule);
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--ink-soft);
 }
-.routes-table__body { display: flex; flex-direction: column; }
 
 .route-row {
   display: grid;
-  grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 0.9fr 1fr 1.4fr;
-  gap: 1.25rem;
+  grid-template-columns: 2fr 0.9fr 0.8fr 1.3fr 0.9fr 1.1fr 1fr 1.4fr;
+  gap: 1.5rem;
   align-items: center;
-  padding: 1.4rem 1.75rem;
+  padding: 1.35rem 1.75rem;
   border-bottom: 1px solid var(--rule);
-  /* Each route keeps the same color here as it does on its own stop
-     sequence numbers and the live map polyline (.route-hue-N, set in
-     App.css) - scanning the table, a route is a color first, a name
-     second. */
   border-left: 4px solid var(--route-color, var(--rule));
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.15s ease;
 }
-.route-row:last-child { border-bottom: none; }
 .route-row:hover { background: var(--surface-2); }
-.route-row:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
-
-.route-row__cell { min-width: 0; }
-.route-row__cell--route { display: flex; flex-direction: column; gap: 0.25rem; }
 .route-row__name { font-size: 0.95rem; font-weight: 700; color: var(--ink); }
-.route-row__subtitle { font-size: 0.78rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.route-row__muted { color: var(--ink-soft); font-size: 0.82rem; }
-.route-row__cell--stops { font-size: 0.88rem; color: var(--ink); }
-.route-row__cell--progress { display: flex; flex-direction: column; gap: 0.3rem; }
-.route-row__progress-text { font-size: 0.76rem; color: var(--ink-soft); }
-.route-row__cell--distance, .route-row__cell--eta { font-size: 0.85rem; color: var(--ink); }
-.route-row__cell--actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
-.route-row__view { padding: 0.4rem 0.9rem; font-size: 0.8rem; }
+.route-row__subtitle { font-size: 0.78rem; color: var(--ink-soft); }
 
-/* The header row reuses the same .route-row__cell--* classes as the body
-   rows so the columns line up under the grid - but that meant the
-   per-column body styling (stops/distance/eta set their own font-size and
-   color: var(--ink)) leaked into the header labels too, making "STOPS",
-   "DISTANCE" and "FINISH ETA" render bold and bright while the other
-   headers stayed correctly muted. Every header cell now explicitly
-   inherits from .routes-table__head instead, regardless of which
-   column-specific class it also carries. */
-.routes-table__head .route-row__cell {
-  font-size: inherit;
-  font-weight: inherit;
-  color: inherit;
-  text-transform: inherit;
-  letter-spacing: inherit;
-}
-
-.route-status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.25rem 0.65rem;
-  border-radius: 20px;
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-/* Solid fills, not soft tints - a status column you're scanning down a
-   whole table should read as color first, text second. */
-.route-status-badge--open { background: var(--primary); color: #fff; }
-/* Deliberately NOT --good (green) - that already means "on time" on the
-   delivery-status pill below. Route capacity and delivery timing are two
-   different signals; sharing green would make them look like the same
-   thing when a route can be full AND late, or open AND on time. */
-.route-status-badge--full { background: var(--neutral); color: #fff; }
-.route-status-badge--delayed { background: var(--signal); color: #fff; }
-.route-status-badge--empty { background: var(--surface-2); color: var(--ink-soft); }
-
-/* --- Row "More" menu --- */
+/* Row overflow menu ("More") - the trigger reuses .btn.btn--ghost (App.css)
+   and was fine on its own, but the dropdown it opens (.row-menu__panel)
+   had no rule anywhere: no position:absolute, no card, so it rendered as
+   plain unstyled buttons/links inline in the page flow instead of a
+   floating menu. Matches the .quick-actions__menu dropdown pattern
+   elsewhere in the app. */
 .row-menu { position: relative; }
-.row-menu__trigger { padding: 0.4rem 0.7rem; font-size: 0.8rem; }
 .row-menu__panel {
   position: absolute;
+  top: calc(100% + 0.35rem);
   right: 0;
-  top: calc(100% + 0.3rem);
-  z-index: 5;
+  z-index: 20;
   min-width: 190px;
-  display: flex;
-  flex-direction: column;
-  padding: 0.4rem;
+  background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
-  background: var(--surface);
   box-shadow: var(--shadow-lg);
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 .row-menu__panel button, .row-menu__panel a {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.5rem 0.7rem;
   border: none;
-  background: none;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  font-family: var(--font-body);
+  background: transparent;
+  border-radius: var(--radius-xs);
   color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
-  cursor: pointer;
   text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
 }
-.row-menu__panel button:hover, .row-menu__panel a:hover { background: var(--surface-2); }
-.row-menu__panel .row-menu__danger { color: var(--critical); }
-.row-menu__panel .row-menu__danger:hover { background: var(--critical-soft); }
-.row-menu__panel button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-@media (max-width: 1100px) {
-  .routes-table__head { display: none; }
-  .route-row {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "route"
-      "meta"
-      "progress"
-      "actions";
-    gap: 0.6rem;
-  }
-  .route-row__cell--vehicle, .route-row__cell--stops, .route-row__cell--distance, .route-row__cell--eta, .route-row__cell--status {
-    display: inline-flex;
-    margin-right: 0.75rem;
-  }
+.row-menu__panel button:hover:not(:disabled), .row-menu__panel a:hover {
+  background: var(--surface-2);
 }
+.row-menu__danger { color: var(--critical) !important; }
+.row-menu__danger:hover:not(:disabled) { background: var(--critical-soft) !important; }
 
-/* =======================================================================
-   Route Detail page.
-======================================================================= */
+/* Route Detail View */
 .route-detail { display: flex; flex-direction: column; }
-
 .route-detail__header {
   display: flex;
   flex-direction: column;
@@ -341,378 +393,223 @@ select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
   padding: 1.5rem 2rem 1.25rem;
   border-bottom: 1px solid var(--rule);
 }
+/* Was a bare text link (no border/background/padding at all, 0.82rem) -
+   the one way back out of a route's detail to the list, so it reads as
+   a real control now: a proper bordered button, sized and weighted
+   like the .btn family it sits next to, not a small afterthought. */
 .route-detail__back {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  border: none;
-  background: none;
-  color: var(--ink-soft);
-  font-size: 0.82rem;
-  font-weight: 600;
+  gap: 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 0.55rem 1rem;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
   cursor: pointer;
-  padding: 0.2rem 0;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.route-detail__back:hover { color: var(--accent-strong); }
+.route-detail__back:hover { background: var(--surface-2); border-color: var(--accent); color: var(--accent); }
 .route-detail__back-icon { transform: rotate(90deg); }
-.route-detail__title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.route-detail__title-block { display: flex; flex-direction: column; gap: 0.2rem; margin-right: 0.5rem; }
-.route-detail__title { font-family: var(--font-display); font-size: 1.75rem; font-weight: 800; margin: 0; color: var(--ink); }
-.route-detail__subtitle { font-size: 0.88rem; color: var(--ink-soft); }
-.route-detail__actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 
-/* A clean horizontal information bar, not a row of oversized cards. */
+/* Action row (Switch to Bike / add delivery / add-address / download /
+   maps / delete) had no rule at all - every button ran flush against
+   the next with zero gap, and the line wrapped wherever the buttons
+   happened to overflow instead of a controlled row wrap. */
+.route-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.route-detail__actions .btn, .route-detail__actions .select-compact { width: auto; }
+/* Title, subtitle, and the Delayed/Manually edited badges all had no
+   layout rule at all - the badges just fell onto their own line below
+   the subtitle by block-flow accident rather than reading as one
+   deliberate cluster anchored to the top-left corner of the page. */
+.route-detail__title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem; }
+.route-detail__title-block { display: flex; flex-direction: column; gap: 0.25rem; }
+.route-detail__title { font-size: 1.75rem; font-weight: 800; margin: 0; color: var(--ink); }
+.route-detail__subtitle { font-size: 0.9rem; font-weight: 600; color: var(--ink-soft); }
+
 .route-overview {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 1.5rem;
-  padding: 1.25rem 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  row-gap: 1.75rem;
+  column-gap: 1.5rem;
+  padding: 1.5rem 2rem;
   border-bottom: 1px solid var(--rule);
   background: var(--surface-2);
 }
 .route-overview__item { display: flex; flex-direction: column; gap: 0.25rem; }
-.route-overview__label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
-.route-overview__value { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+.route-overview__label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); font-weight: 700; }
+.route-overview__value { font-size: 1.1rem; font-weight: 800; color: var(--ink); }
 
-/* --- Stop list: sequence rail + connecting line + spacious rows --- */
+/* Delivery Stops Timeline */
 .route-stop-list { display: flex; flex-direction: column; padding: 1.5rem 2rem 2rem; }
-
-.route-stop-list__terminal {
-  display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.4rem 0 0.4rem 0;
-  margin-left: 1px;
-  font-size: 0.82rem; font-weight: 600; color: var(--ink-soft);
-}
-.route-stop-list__terminal-dot {
-  width: 24px; height: 24px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--surface-2); color: var(--ink-soft); flex: none;
-}
-.route-stop-list__terminal-dot--end { background: var(--good-soft); color: var(--good); }
-
 .route-stop {
   display: flex;
   gap: 1.25rem;
-  padding: 1.4rem 1rem;
+  padding: 1.25rem 1rem;
   border-radius: var(--radius-md);
-  cursor: grab;
-  transition: background 0.12s ease;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
-.route-stop:active { cursor: grabbing; }
 .route-stop:hover { background: var(--surface-2); }
-.route-stop--selected { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-strong); }
-
-.route-stop__rail { display: flex; flex-direction: column; align-items: center; flex: none; }
+.route-stop--selected { background: var(--primary-soft); }
+.route-stop--delivered { opacity: 0.65; }
 .route-stop__seq {
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
-  background: var(--route-color, var(--accent-strong));
-  color: #fff;
+  background: var(--btn-fill);
+  color: var(--btn-text);
   font-weight: 800;
   font-size: 0.85rem;
   font-family: var(--font-mono);
+  box-shadow: var(--shadow-sm);
 }
 .route-stop__seq--late { background: var(--critical); }
-.route-stop__connector { flex: 1; width: 2px; min-height: 24px; background: var(--rule); margin: 0.3rem 0; }
 
-.route-stop__body { flex: 1; min-width: 0; padding-top: 0.15rem; }
-.route-stop__top { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
-.route-stop__order-id { font-size: 0.78rem; font-weight: 700; color: var(--ink-soft); font-family: var(--font-mono); }
+/* Rail (numbered badge + the connecting line down to the next stop) and
+   body (everything else) were both used with no rule at all - every
+   piece of a stop's text (order id, customer name, status, time slot,
+   ETA) was one unbroken run with no gap between any of it, and the
+   numbered badges had no line joining them into the timeline the design
+   clearly intends (.route-stop__connector existed in the JSX, unused in
+   CSS). */
+.route-stop__rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.route-stop__connector { flex: 1; width: 2px; min-height: 12px; background: var(--rule); }
+.route-stop__body { flex: 1; min-width: 0; }
+.route-stop__top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.15rem;
+}
+.route-stop__order-id { font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700; color: var(--ink-faint); }
 .route-stop__customer { font-size: 1rem; font-weight: 700; color: var(--ink); }
-.route-stop__area {
-  display: inline-block;
-  margin-bottom: 0.2rem;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--accent-strong);
-}
-/* Addresses are the most important field on this row - always full dark
-   ink, generous size, allowed to wrap to 2-3 lines. Never truncated. */
-.route-stop__address {
-  margin: 0.15rem 0 0.6rem;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: var(--ink);
-  max-width: 62ch;
-}
+.route-stop__area { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; color: var(--accent); }
+.route-stop__address { margin: 0.2rem 0 0.5rem; font-size: 0.95rem; font-weight: 600; color: var(--ink); line-height: 1.45; }
 .route-stop__meta {
-  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-  font-size: 0.8rem; color: var(--ink-soft); margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
 }
-.route-stop__actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.route-stop__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; }
 
+/* On time / Late / Delivered pill (emoji already embedded in the text
+   itself - this just gives it a badge to sit in instead of running
+   directly into the customer name next to it). */
 .stop-status {
-  display: inline-flex; align-items: center; gap: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   padding: 0.15rem 0.55rem;
   border-radius: 20px;
-  font-size: 0.74rem; font-weight: 700;
-  background: var(--good-soft); color: var(--good);
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: var(--good-soft);
+  color: var(--good);
 }
 .stop-status--late { background: var(--critical-soft); color: var(--critical); }
-.stop-status--delivered { background: var(--good-soft); color: var(--good); }
+.stop-status--delivered { background: var(--info-soft); color: var(--info); }
 
-/* A delivered stop reads as "done" at a glance - dimmed body text, but the
-   delivered pill itself stays full-color so it's still the thing your eye
-   catches. */
-.route-stop--delivered { opacity: 0.72; }
-.route-stop--delivered .stop-status--delivered { opacity: 1; }
-
-/* --- Delivery identity block (Unassigned Orders list only) --- */
-.delivery-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.18rem; }
-.delivery-identity__customer { font-size: 0.95rem; font-weight: 600; color: var(--ink); }
-.delivery-identity__area {
-  font-size: 0.86rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--accent-strong);
+/* Warehouse / Finish endpoints - same rail width (34px) as .route-stop__seq
+   so the dot lines up in the same column as the numbered badges above/
+   below it, continuing the timeline rather than floating off to the side. */
+.route-stop-list__terminal {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
 }
-.delivery-identity__address {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-  line-height: 1.45;
+.route-stop-list__terminal-dot {
+  flex: none;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-soft);
 }
-.delivery-identity__meta { display: flex; align-items: center; gap: 0.7rem; font-size: 0.74rem; color: var(--ink-soft); margin-top: 0.15rem; flex-wrap: wrap; }
-.delivery-identity__located { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--good); }
-.delivery-identity__unlocated { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--signal); }
+.route-stop-list__terminal-dot--end { background: var(--good-soft); color: var(--good); }
 
-/* A real, recognizable map pin badge on every delivery that has one - not
-   a muted icon tucked in a corner. Opens the precise single-pin Google
-   Maps link (route_service.single_stop_maps_link on the backend) in a new
-   tab. Gold rather than Google's red - red already means "late/critical"
-   elsewhere in this app (stop-status--late, tag--late, critical badges),
-   so a "View pin" action in the same red read as an error at a glance. */
+/* Reorder up/down + move-to-another-route select, the row of controls
+   under each stop's address. */
+.stop-reorder { display: inline-flex; gap: 0.3rem; }
+.stop-reorder__btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.stop-reorder__btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--accent); color: var(--accent); }
+.stop-reorder__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Delivery Identity Block (Unassigned Orders) */
+.delivery-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.delivery-identity__customer { font-size: 0.95rem; font-weight: 700; color: var(--ink); }
+.delivery-identity__area { font-size: 0.82rem; font-weight: 800; text-transform: uppercase; color: var(--accent); }
+.delivery-identity__address { font-size: 0.92rem; font-weight: 600; color: var(--ink); line-height: 1.4; }
+.delivery-identity__meta { display: flex; align-items: center; gap: 0.75rem; font-size: 0.78rem; color: var(--ink-soft); flex-wrap: wrap; }
+.delivery-identity__located, .delivery-identity__unlocated {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 700;
+}
+.delivery-identity__located { color: var(--good); }
+.delivery-identity__unlocated { color: var(--signal); }
+
 .pin-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.15rem 0.55rem 0.15rem 0.4rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 20px;
-  background: #b8860b;
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.72rem;
-  text-decoration: none;
-  transition: filter 0.15s ease, transform 0.15s ease;
-}
-.pin-badge:hover { filter: brightness(1.1); transform: translateY(-1px); }
-
-/* --- Unassigned Orders panel --- */
-.unassigned-panel { padding: 1rem 1.4rem 1.4rem; display: flex; flex-direction: column; gap: 0.9rem; }
-.unassigned-panel__toolbar { display: flex; gap: 0.6rem; align-items: center; }
-.unassigned-panel__toolbar .search-field { flex: 1; }
-.unassigned-panel__list { display: flex; flex-direction: column; gap: 0.55rem; }
-.unassigned-row {
-  display: flex; align-items: flex-start; gap: 0.85rem;
-  padding: 0.8rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface);
-}
-.unassigned-row__meta { flex: none; display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; font-size: 0.74rem; color: var(--ink-soft); }
-.unassigned-row__prev { white-space: nowrap; }
-.bulk-assign-bar {
-  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
-  padding: 0.6rem 0.9rem; border-radius: var(--radius-md);
-  background: var(--accent-soft); color: var(--accent-strong); font-size: 0.85rem; font-weight: 600;
-}
-.bulk-assign-bar select { padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
-
-@media (max-width: 900px) {
-  .routes-page { padding: 1.25rem 1.1rem 1.5rem; gap: 1.1rem; }
-  .route-detail__header, .route-overview, .route-stop-list { padding-left: 1.1rem; padding-right: 1.1rem; }
-}
-
-/* =======================================================================
-   "Add Address from Another Route" modal.
-======================================================================= */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 18, 23, 0.55);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 4vh 1.5rem;
-  z-index: 50;
-  overflow-y: auto;
-}
-.modal {
-  width: 100%;
-  max-width: 460px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  display: flex;
-  flex-direction: column;
-  max-height: 92vh;
-}
-.modal--wide { max-width: 640px; }
-.modal__header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--rule);
-}
-.modal__header h3 { margin: 0; font-family: var(--font-display); font-size: 1.15rem; font-weight: 800; color: var(--ink); }
-.modal__close {
-  border: none; background: none; color: var(--ink-soft); cursor: pointer;
-  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm);
-}
-.modal__close:hover { background: var(--surface-2); color: var(--ink); }
-
-.modal__meta {
-  display: flex; gap: 1.25rem; flex-wrap: wrap;
-  padding: 0.9rem 1.5rem;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--rule);
-  font-size: 0.85rem; color: var(--ink-soft);
-}
-.modal__meta strong { color: var(--ink); }
-
-.modal__body { padding: 1.25rem 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; }
-.modal__field-label { font-size: 0.78rem; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; }
-.modal__source-select { width: 100%; }
-
-.modal__address-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.4rem; max-height: 340px; overflow-y: auto; }
-.address-pick-row {
-  display: flex; align-items: flex-start; gap: 0.7rem;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-.address-pick-row:hover { border-color: var(--accent); background: var(--surface-2); }
-.address-pick-row input[type="checkbox"] { margin-top: 0.2rem; }
-.address-pick-row__body { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; min-width: 0; }
-.address-pick-row__top { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.address-pick-row__order-id { font-size: 0.75rem; font-weight: 700; color: var(--ink-soft); font-family: var(--font-mono); }
-.address-pick-row__customer { font-size: 0.9rem; font-weight: 700; color: var(--ink); }
-.address-pick-row__address { font-size: 0.85rem; color: var(--ink); line-height: 1.4; }
-.address-pick-row__meta { font-size: 0.75rem; color: var(--ink-soft); }
-
-.modal__summary {
-  display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
-  padding: 0.8rem 1.5rem;
-  border-top: 1px solid var(--rule);
-  font-size: 0.85rem; color: var(--ink-soft);
-}
-.modal__summary strong { color: var(--ink); }
-
-.modal__warning {
-  display: flex; align-items: center; gap: 0.5rem;
-  margin: 0 1.5rem;
-  padding: 0.6rem 0.8rem;
-  border-radius: var(--radius-sm);
   background: var(--signal-soft);
   color: var(--signal);
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
 }
+.pin-badge:hover { transform: translateY(-1px); filter: brightness(1.1); }
 
-.modal__footer {
-  display: flex; justify-content: flex-end; gap: 0.6rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid var(--rule);
-}
-
-/* Plain text-input fields reused by the create/edit/reset-password forms
-   (Driver Form, Reset Password) - same shape as .modal__source-select. */
-.modal__input {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-}
-.modal__input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-.modal__inline-row { display: flex; gap: 0.5rem; align-items: center; }
-.modal__inline-row .modal__input { flex: 1; }
-.modal__static-value { font-size: 0.9rem; color: var(--ink); padding: 0.4rem 0; }
-.modal__static-hint { font-size: 0.78rem; color: var(--ink-soft); font-weight: 400; }
-.modal__hint { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.5; margin: 0 0 0.4rem; }
-
-.btn--compact { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
-
-/* One-time credential reveal (CredentialRevealPanel) after creating a
-   driver or resetting a password - the only moment the plaintext password
-   is visible, so it reads as a distinct, deliberate screen, not just
-   another form field. */
-.credential-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  margin-bottom: 0.6rem;
-}
-.credential-row__label { font-size: 0.78rem; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; }
-.credential-row__value { font-size: 1rem; font-weight: 700; color: var(--ink); user-select: all; }
-
-/* =======================================================================
-   Drivers board (App.jsx, full page in the board-grid) - roster table +
-   status pills.
-======================================================================= */
-.drivers-table-wrap { overflow-x: auto; }
-.drivers-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
-.drivers-table th {
-  text-align: left; padding: 0.6rem 0.8rem;
-  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-  color: var(--ink-soft); border-bottom: 1px solid var(--rule);
-}
-.drivers-table td { padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ink); }
-.drivers-table__name { font-weight: 700; }
-.drivers-table__code { font-size: 0.75rem; color: var(--ink-soft); margin-top: 0.1rem; }
-.drivers-table__meta { font-size: 0.8rem; color: var(--ink-soft); }
-.drivers-table__actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-
-.driver-status-pill {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  padding: 0.25rem 0.65rem; border-radius: 20px;
-  font-size: 0.76rem; font-weight: 700;
-  background: var(--neutral-soft); color: var(--neutral);
-}
-.driver-status-pill--active { background: var(--good); color: #fff; }
-
-/* =======================================================================
-   Driver & Live Tracking card (route detail view).
-======================================================================= */
+/* Driver Tracking Card */
 .driver-card {
   margin: 1.25rem 2rem 0;
-  padding: 1.1rem 1.25rem;
+  padding: 1.25rem;
   border: 1px solid var(--rule);
-  border-left: 4px solid var(--rule);
+  border-left: 4px solid var(--accent);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  transition: border-left-color 0.2s ease;
+  box-shadow: var(--shadow-sm);
 }
-/* The card's own accent tracks the driver's real live-tracking state, so
-   the color itself carries the status - not just the pill inside it. */
-.driver-card--live { border-left-color: var(--good); }
-.driver-card--delayed { border-left-color: var(--signal); }
-.driver-card--offline { border-left-color: var(--critical); }
-.driver-card--completed { border-left-color: var(--info); }
-.driver-card--not_started { border-left-color: var(--rule); }
 .driver-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
-.driver-card__head h3 {
-  display: flex; align-items: center; gap: 0.4rem; margin: 0;
-  font-family: var(--font-display); font-size: 0.95rem; font-weight: 800; color: var(--ink);
-}
-.driver-card__refresh { width: 26px; height: 26px; }
-.driver-card__loading { font-size: 0.85rem; color: var(--ink-soft); }
-.driver-card__empty { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; font-size: 0.88rem; color: var(--ink-soft); }
-.driver-card__row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.driver-card__identity { display: flex; flex-direction: column; gap: 0.15rem; }
-.driver-card__name { font-size: 1rem; font-weight: 700; color: var(--ink); }
-.driver-card__meta { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.3rem; }
-.driver-card__progress { margin-top: 0.8rem; }
-.driver-card__progress-label { font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 0.35rem; }
-.driver-card__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.driver-card__head h3 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--ink); display: flex; align-items: center; gap: 0.5rem; }
 
 .tracking-status-pill {
   display: inline-flex; align-items: center; gap: 0.3rem;
@@ -720,48 +617,45 @@ select.add-route-select:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: 0.76rem; font-weight: 700;
   background: var(--neutral-soft); color: var(--neutral);
 }
-.tracking-status-pill--live { background: var(--good); color: #fff; }
-.tracking-status-pill--delayed { background: var(--signal); color: #fff; }
-.tracking-status-pill--offline { background: var(--critical); color: #fff; }
-.tracking-status-pill--not_started { background: var(--surface-2); color: var(--ink-soft); }
-.tracking-status-pill--completed { background: var(--info); color: #fff; }
+.tracking-status-pill--live { background: var(--good-soft); color: var(--good); }
+.tracking-status-pill--offline { background: var(--critical-soft); color: var(--critical); }
+
+/* Live Map Modal */
+.live-map-modal { max-width: 720px; }
+.live-map-modal__map { height: 440px; width: 100%; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-2); }
+
+/* Workspace-specific responsive layout */
+.routes-filter-bar__search { flex: 1 1 260px; min-width: 180px; }
+/* Forcing the table to a hard 980px min-width (with overflow-x: auto to
+   match) meant the Routes table carried its own horizontal scrollbar
+   any time the page itself was narrower than that - the grid's columns
+   are already relative (fr) units and shrink to fit naturally, so
+   dropping both just lets the table behave like every other panel on
+   the page instead of becoming its own scrollable box. */
+.route-row__cell { min-width: 0; }
+.route-row__cell--route {
+  /* Name and subtitle are two sibling <span>s with no container layout,
+     so they were running together on one line ("Route 1Adambakkam...")
+     instead of stacking. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  overflow: hidden;
+}
+.route-row__name, .route-row__subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 720px) {
-  .driver-card { margin-left: 1.1rem; margin-right: 1.1rem; }
-  .drivers-table__actions { flex-direction: column; }
-}
-
-/* =======================================================================
-   Live Location map (LiveMapModal) - Google Maps JS API. The map itself
-   needs an explicit pixel height - it can't size off a percentage parent
-   the way flex children usually do.
-======================================================================= */
-.live-map-modal { max-width: 720px; }
-.live-map-modal__map-wrap { position: relative; }
-.live-map-modal__map { height: 440px; width: 100%; background: var(--surface-2); }
-.live-map-modal__empty { margin: 1.25rem 1.5rem; }
-
-/* Google Maps' own recenter-on-location affordance - appears only once
-   the admin has dragged away from following the driver (see autoFollow
-   in LiveMapModal), same bottom-right spot Google's app puts it. */
-.live-map-modal__recenter {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--accent);
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-}
-.live-map-modal__recenter:hover { background: var(--surface-2); }
-
-@media (max-width: 640px) {
-  .live-map-modal__map { height: 320px; }
+  .workspace-tabs { padding-inline: 0.85rem; overflow-x: auto; }
+  .workspace-tab { flex: 0 0 auto; padding-inline: 0.75rem; }
+  .routes-page { gap: 1rem; padding: 1rem 0.85rem 1.5rem; }
+  .routes-page__header { align-items: stretch; flex-direction: column; gap: 0.85rem; }
+  .routes-page__title, .route-detail__title { font-size: 1.35rem; }
+  .routes-filter-bar { align-items: stretch; flex-direction: column; gap: 0.55rem; }
+  .routes-filter-bar__search, .routes-filter-bar .select-compact, .routes-filter-bar__clear { width: 100%; min-width: 0; }
+  .routes-table { margin-inline: -0.85rem; border-inline: 0; border-radius: 0; }
+  .route-detail__header, .route-overview, .route-stop-list { padding-inline: 1rem; }
+  .route-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .driver-card { margin-inline: 1rem; }
+  .route-stop { gap: 0.75rem; padding-inline: 0.35rem; }
+  .route-stop__address { font-size: 0.88rem; }
 }
