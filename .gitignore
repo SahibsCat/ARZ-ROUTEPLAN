@@ -11,6 +11,8 @@ backend/rootplan.db.*
 backend/*.db
 backend/uvicorn.log
 backend/uvicorn_test*.log
+backend/*_agent.log
+backend/*_agent_error.log
 
 # Frontend
 frontend/node_modules/
@@ -18,6 +20,8 @@ frontend/dist/
 frontend/.env
 frontend/.env.local
 frontend/vite.log
+frontend/*_agent.log
+frontend/*_agent_error.log
 
 # OS/editor
 .DS_Store

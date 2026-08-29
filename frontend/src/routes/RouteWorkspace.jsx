@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { GoogleMap, Marker, Polyline, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
@@ -33,11 +33,286 @@ const DARK_MAP_STYLE = [
   { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#63636b' }] },
 ];
 
+// Same VITE_API_BASE_URL App.jsx's apiFetch reads (empty in local dev,
+// where Vite's own proxy - see vite.config.js's '/ws' entry - forwards
+// same-origin requests to the backend; the deployed backend's own origin
+// in production, since prod frontend/backend are separate Render
+// services with no proxy between them). Re-derived here rather than
+// threaded down as a prop through RouteWorkspace/FleetMap/LiveMapModal,
+// same as GOOGLE_MAPS_API_KEY above - one extra env read is cheaper than
+// plumbing one more prop through every layer for a three-line derivation.
+function trackingWebSocketUrl() {
+  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+  if (base) return `${base.replace(/^http/, 'ws')}/ws/tracking`;
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws/tracking`;
+}
+
+// Live driver locations pushed the instant a driver's phone pings (see
+// ws_manager.py) - the accelerant on top of this app's existing REST
+// polling (fetchRouteTracking, still running unchanged as a fallback for
+// a first load, a dropped socket reconnecting, or an environment that
+// blocks WebSocket upgrades entirely). `onMessage` is read through a ref
+// so the connection effect only needs to depend on `enabled` - it doesn't
+// need to reconnect just because the caller's callback identity changed
+// on a re-render (which, being a plain function defined inline in a
+// component body, happens on every render).
+function useTrackingSocket(enabled, onMessage) {
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    let socket = null;
+    let reconnectTimer = null;
+    let attempt = 0;
+
+    const connect = () => {
+      if (cancelled) return;
+      socket = new WebSocket(trackingWebSocketUrl());
+      socket.onopen = () => { attempt = 0; };
+      socket.onmessage = (event) => {
+        try {
+          onMessageRef.current(JSON.parse(event.data));
+        } catch {
+          // Not parseable JSON - ignore rather than let one bad frame
+          // take down the handler for every frame after it.
+        }
+      };
+      socket.onclose = () => {
+        if (cancelled) return;
+        // A dropped connection (phone screen off doesn't affect this -
+        // it's the *admin's* browser tab/network that would drop it: a
+        // wifi blip, the backend redeploying, Render's free tier idling
+        // back up) should reconnect on its own without hammering the
+        // server - capped backoff, not immediate retry-in-a-loop.
+        const delay = Math.min(10000, 1000 * 2 ** attempt);
+        attempt += 1;
+        reconnectTimer = window.setTimeout(connect, delay);
+      };
+      socket.onerror = () => { socket.close(); };
+    };
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (socket) { socket.onclose = null; socket.close(); }
+    };
+  }, [enabled]);
+}
+
+// Smoothly glides a set of {lat,lng} positions toward whatever their
+// latest real fix is, instead of the marker jumping instantly to each new
+// point the moment it arrives - the same trick Uber/Swiggy/Rapido-style
+// live maps use, and the actual fix for tracking "looking" laggy even
+// when the underlying data is fresh: a GPS ping lands every few seconds
+// either way (see driver-app/src/locationTask.js), so what makes motion
+// read as continuous instead of a stuck-then-teleport dot is entirely
+// this animation, not how often a new fix arrives.
+//
+// `targets` is keyed by whatever id the caller uses (route_id for
+// FleetMap's multiple dots, a fixed key for LiveMapModal's single one) ->
+// {lat, lng}. Returns the same shape, but animated. Positions for keys no
+// longer present in `targets` are dropped so a driver dot doesn't linger
+// after live tracking is switched off or a route stops being tracked.
+function useAnimatedPositions(targets) {
+  const [displayed, setDisplayed] = useState({});
+  const displayedRef = useRef({});
+  const animsRef = useRef({}); // key -> { from, to, start }
+  const rafIdRef = useRef(null);
+  const GLIDE_MS = 4200; // just past the driver's ~5s ping interval, so a glide mostly finishes before the next one rather than visibly stalling at the end
+
+  useEffect(() => {
+    Object.entries(targets).forEach(([key, pos]) => {
+      const from = displayedRef.current[key] || { lat: pos.lat, lng: pos.lng };
+      const current = animsRef.current[key];
+      // Retargeting to the exact same fix (a REST poll re-confirming what
+      // the WebSocket already delivered) shouldn't restart the glide from
+      // scratch - only start a new animation when the target actually
+      // moved.
+      if (current && current.to.lat === pos.lat && current.to.lng === pos.lng) return;
+      animsRef.current[key] = { from, to: { lat: pos.lat, lng: pos.lng }, start: performance.now() };
+    });
+    // Pruning happens *here*, in the effect body, not inside tick() below -
+    // this is the fresh `targets` for this specific effect invocation.
+    // tick() runs across many animation frames without this effect
+    // re-running (that's the whole point of the rafIdRef guard below), so
+    // a targets check inside tick() would close over whatever `targets`
+    // was at the moment tick was first scheduled and never see a later
+    // invocation's value again for as long as the same loop keeps
+    // running - which doesn't just miss *new* prunes, it actively deletes
+    // every position on every frame once the first target arrives (empty
+    // `{}` at mount is never "key in targets"). Confirmed via a real
+    // instant-snap-instead-of-glide bug caused by exactly that.
+    Object.keys(animsRef.current).forEach((key) => {
+      if (!(key in targets)) { delete animsRef.current[key]; delete displayedRef.current[key]; }
+    });
+
+    if (rafIdRef.current != null) return; // a loop is already running and will pick up the retarget above
+    const tick = () => {
+      const now = performance.now();
+      let stillAnimating = false;
+      Object.entries(animsRef.current).forEach(([key, anim]) => {
+        const noOp = anim.from.lat === anim.to.lat && anim.from.lng === anim.to.lng;
+        const t = noOp ? 1 : Math.min(1, (now - anim.start) / GLIDE_MS);
+        // A no-op animation (a brand-new key's first fix, animated "from"
+        // itself) is already at its target on frame one - counting it as
+        // still-animating just because elapsed time hasn't reached
+        // GLIDE_MS yet would keep this rAF loop spinning for a full
+        // 4.2s doing nothing on every fresh key, for no visible benefit.
+        if (t < 1) stillAnimating = true;
+        displayedRef.current[key] = {
+          lat: anim.from.lat + (anim.to.lat - anim.from.lat) * t,
+          lng: anim.from.lng + (anim.to.lng - anim.from.lng) * t,
+        };
+      });
+      setDisplayed({ ...displayedRef.current });
+      rafIdRef.current = stillAnimating ? requestAnimationFrame(tick) : null;
+    };
+    rafIdRef.current = requestAnimationFrame(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targets]);
+
+  useEffect(() => () => {
+    if (rafIdRef.current == null) return;
+    cancelAnimationFrame(rafIdRef.current);
+    // Resetting the ref back to null here is the actual point, not just
+    // the cancel call - React 18 StrictMode (dev only) runs every
+    // effect's mount -> cleanup -> mount once on initial mount to catch
+    // exactly this kind of bug, and without this reset, that first
+    // simulated cleanup cancels the just-scheduled frame but leaves
+    // rafIdRef.current non-null - so the *next* (real) run of the effect
+    // above sees "a loop is already running" and never schedules a real
+    // one. The one symptom: positions stop updating entirely, forever,
+    // with no error anywhere - confirmed by hand while building this.
+    rafIdRef.current = null;
+  }, []);
+
+  return displayed;
+}
+
+// Same 6 hex values as .route-hue-0..5 in routeWorkspace.css (which set
+// --route-color for the routes table's left-accent border) - one source
+// of truth in each language, kept in sync by hand since CSS custom
+// properties aren't readable from here without a DOM round-trip. Used
+// by FleetMap below so a route's line on the map is the same color as
+// its row in the table.
+const ROUTE_HUE_COLORS = ['#3b82f6', '#10b981', '#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b'];
+const routeColor = (routeIdx) => ROUTE_HUE_COLORS[routeIdx % ROUTE_HUE_COLORS.length];
+
+// A round badge-and-tail glyph for each order stop, not a plain dot -
+// and not a google.maps.Symbol path either: on this Maps JS release the
+// map defaults to vector (WebGL) rendering, and legacy Marker with a
+// Symbol path/label icon (or even Google's own default pin) silently
+// mounts with no visible glyph at all under it - confirmed by checking
+// Marker.getIcon()/getPosition() after onLoad: both correct, nothing
+// painted. google.maps.Map's renderingType can force classic raster
+// rendering, but only at construction, and react-google-maps/api reapplies
+// `options` via setOptions on every re-render, which throws for that
+// property post-construction - not usable through this wrapper. An
+// IMAGE-based icon (an actual <img>, not a WebGL-drawn vector path) sidesteps
+// the whole issue, so the pin - including its number - is drawn once as
+// an SVG data: URI instead of a Symbol+label pair.
+//
+// A thick white ring (not the old thin teardrop outline) plus a small
+// ground shadow is what actually keeps a pin legible now that the map is
+// locked to satellite imagery - a photo basemap has none of a vector
+// map's flat, predictable color, so a marker needs real contrast of its
+// own rather than relying on standing out against a plain background.
+function pinIconUrl(color, number, { size = 36, opacity = 1 } = {}) {
+  const h = Math.round(size * 1.32);
+  const cx = size / 2;
+  const r = size / 2 - 2;
+  const cy = r + 2;
+  const tailHalf = size * 0.15;
+  const tailTipY = h - 2;
+  const fontSize = Math.max(10, Math.round(r * 1.05));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${h}" viewBox="0 0 ${size} ${h}">`
+    + `<ellipse cx="${cx}" cy="${h - 2}" rx="${size * 0.16}" ry="${size * 0.055}" fill="#000" fill-opacity="${0.28 * opacity}"/>`
+    + `<path d="M${cx - tailHalf} ${cy + r * 0.62} L${cx} ${tailTipY} L${cx + tailHalf} ${cy + r * 0.62} Z" `
+    + `fill="${color}" fill-opacity="${opacity}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>`
+    + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" fill-opacity="${opacity}" stroke="#fff" stroke-width="3"/>`
+    + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#000" stroke-opacity="0.22" stroke-width="1"/>`
+    + `<text x="${cx}" y="${cy + 1}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="800" `
+    + `fill="#fff" text-anchor="middle" dominant-baseline="central">${number}</text>`
+    + `</svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new window.google.maps.Size(size, h),
+    // Anchored at the tail's tip (not the glyph's bottom edge) so the pin
+    // visually points at the exact coordinate, the way a dropped-pin
+    // marker should.
+    anchor: new window.google.maps.Point(size / 2, tailTipY),
+  };
+}
+
+// Same image-icon approach as pinIconUrl, for a plain filled circle - the
+// live driver dot and its translucent halo below. Always carries a white
+// ring now (previously only when a strokeColor was explicitly passed) for
+// the same satellite-contrast reason as the pins above.
+function dotIconUrl(color, { size = 16, opacity = 1, strokeColor = '#fff' } = {}) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="${color}" fill-opacity="${opacity}" stroke="${strokeColor}" stroke-width="2"/>`
+    + `</svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new window.google.maps.Size(size, size),
+    anchor: new window.google.maps.Point(size / 2, size / 2),
+  };
+}
+
+// Direction chevrons along a route's line - one at the midpoint of each
+// segment long enough to hold one legibly, rotated to point the way the
+// route actually travels. Without these, two out-and-back stretches of
+// the same line (a real shape when a route doubles back near the depot)
+// read as one ambiguous stroke; a chevron makes the direction of travel
+// obvious at a glance, the same way a real driving-directions line does.
+function directionArrows(pixels) {
+  const arrows = [];
+  for (let i = 0; i < pixels.length - 1; i++) {
+    const a = pixels[i];
+    const b = pixels[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 34) continue; // too short to place a legible arrow on
+    arrows.push({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+    });
+  }
+  return arrows;
+}
+
 function capacityText(count, capacity) {
   if (!capacity) return `${count}`;
   if (count >= capacity) return `${count} / ${capacity} — FULL`;
   if (capacity - count === 1) return `${count} / ${capacity} — 1 slot remaining`;
   return `${count} / ${capacity}`;
+}
+
+// route.areas sometimes carries the manifest's own stray formatting
+// (trailing commas, the same area repeated back-to-back) straight
+// through - joined raw, that reads as a comma-studded wall of text
+// ("Adambakkam, → Madipakkam → , Madipakkam → neelangari"). Cleaned up
+// and capped at `max` entries + a "+N" count instead of dumping every
+// area at full length.
+function formatAreaPath(areas, max = 2) {
+  if (!areas || areas.length === 0) return 'No deliveries yet';
+  const cleaned = areas
+    // Strip stray commas/whitespace off *either* end - the manifest has
+    // had both a trailing "Adambakkam," and a leading ", Madipakkam" in
+    // the wild, and only handling one side left the other showing up as
+    // a bare " → , " in the joined path.
+    .map((a) => (a || '').replace(/^[,\s]+|[,\s]+$/g, ''))
+    .filter(Boolean)
+    .filter((a, i, arr) => i === 0 || a !== arr[i - 1]);
+  if (cleaned.length === 0) return 'No deliveries yet';
+  if (cleaned.length <= max) return cleaned.join(' → ');
+  return `${cleaned.slice(0, max).join(' → ')} +${cleaned.length - max}`;
 }
 
 function CapacityBar({ count, capacity }) {
@@ -176,12 +451,6 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
             <IconDownload width={13} height={13} />
             Download sheet
           </button>
-          {route.google_maps_url && (
-            <a href={route.google_maps_url} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
-              <IconPin width={13} height={13} />
-              Open in Google Maps
-            </a>
-          )}
           <button
             type="button"
             className="row-menu__danger"
@@ -193,8 +462,8 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
               }
             }}
           >
-            <IconX width={13} height={13} />
-            Delete Route
+            {isDeletingRoute === route.route_name ? <span className="spinner" /> : <IconX width={13} height={13} />}
+            {isDeletingRoute === route.route_name ? 'Deleting…' : 'Delete Route'}
           </button>
         </div>
       )}
@@ -202,20 +471,35 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
   );
 }
 
-function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute }) {
+function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute, selected, onToggleSelect }) {
   const capacity = capacityFor(route.vehicle_type);
   const count = route.orders.length;
   const status = routeStatus(route, capacity);
-  const subtitle = route.areas && route.areas.length ? route.areas.slice(0, 3).join(' → ') : 'No deliveries yet';
+  const subtitle = formatAreaPath(route.areas, 2);
+
+  const isDeleting = isDeletingRoute === route.route_name;
 
   return (
     <div
-      className={`route-row route-hue-${routeIdx % 6}`}
+      className={`route-row route-hue-${routeIdx % 6}${selected ? ' route-row--selected' : ''}${isDeleting ? ' route-row--busy' : ''}`}
       role="button"
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}
     >
+      {isDeleting && (
+        <div className="busy-overlay">
+          <span className="spinner" />
+        </div>
+      )}
+      <div className="route-row__cell route-row__cell--select" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(route.route_name)}
+          aria-label={`Select ${route.route_name}`}
+        />
+      </div>
       <div className="route-row__cell route-row__cell--route">
         <span className="route-row__name">{route.route_name}</span>
         <span className="route-row__subtitle">{subtitle}</span>
@@ -231,7 +515,10 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
         <span className="route-row__muted"> stops</span>
       </div>
       <div className="route-row__cell route-row__cell--progress">
-        <span className="route-row__progress-text mono-num">{count} / {capacity}</span>
+        {/* "12 / 6" alone doesn't say what the numbers mean - spelling it
+            out as stops-of-capacity reads correctly at a glance instead
+            of needing the column header for context. */}
+        <span className="route-row__progress-text">{count} of {capacity} stops</span>
         <CapacityBar count={count} capacity={capacity} />
       </div>
       <div className="route-row__cell route-row__cell--distance mono-num">
@@ -253,8 +540,508 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
   );
 }
 
+// --------------------------------------------------------------------------
+// Fleet map — every visible route on one Google Map at once (Map/Split
+// view). Distinct from LiveMapModal above: that one is a single route's
+// live driver position, polled every 3s; this one is the static planned
+// shape of every route in `routes`, fetched once per route set from the
+// same real backend endpoint (GET /api/routes/{id}/route-path) LiveMapModal
+// already uses - no new endpoint, no simulated geometry.
+// --------------------------------------------------------------------------
+function FleetMap({
+  routes, fetchRoutePlannedPath, fetchRouteTracking, requestedLiveTracking, selectedRouteName, onSelectRoute, baseColorIndex = 0,
+  // The fleet-wide Map/Split view only polls tracking for routes whose
+  // *cached* route_run_status/driver_id already say "in progress with a
+  // driver" (trackableRoutes below) - deliberately, to stay cheap however
+  // many routes are on the board. But that cache is exactly the `routes`
+  // prop as it was last fetched from the backend, which never refreshes on
+  // its own - a driver starting their route from their own app updates the
+  // real backend the instant it happens, with nothing pushing that change
+  // into this already-open admin tab. RouteDetail's embedded single-route
+  // map passes this to skip that (possibly stale) gate entirely and just
+  // poll the one route it's already scoped to - which is exactly why the
+  // "Live tracking" switch could look like it does nothing there: the gate
+  // was silently blocking the poll, not the poll itself failing.
+  alwaysTrackable = false,
+}) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+  const mapRef = useRef(null);
+  const [paths, setPaths] = useState({}); // route_id -> [{lat,lng}, ...]
+  const [pathsLoading, setPathsLoading] = useState(false);
+  const [pathsRefreshNonce, setPathsRefreshNonce] = useState(0);
+  const [liveTracking, setLiveTracking] = useState(false);
+  const [driverPositions, setDriverPositions] = useState({}); // route_id -> {lat,lng,recordedAt}
+  const routeIds = routes.map((r) => r.route_id).join(',');
+  // Unlike routeIds above, this also changes when a route's *stop
+  // composition or sequence* changes - reordering within a route, or an
+  // admin moving a stop from one route to another (both routes keep the
+  // same route_id the whole time, so routeIds alone never notices). That
+  // used to mean the drawn line - fetched once per route_id and cached in
+  // `paths` - went stale the moment an admin edited a route: pins would
+  // move (they're computed fresh from route.orders every render) but the
+  // line connecting them would keep tracing the route's *old* shape.
+  const routeSequenceKey = routes
+    .map((r) => `${r.route_id}:${(r.orders || []).map((o) => o.order_id).join(',')}`)
+    .join('|');
+
+  // Pins are plain positioned <img> elements over the map, not
+  // google.maps.Marker - on this Maps JS release the map defaults to
+  // vector (WebGL) rendering, under which Marker (icon, label, even
+  // Google's own default pin) mounts with a correct position/icon
+  // (confirmed via Marker.onLoad/getIcon()) but paints nothing at all.
+  // Polyline turned out unreliable here too (rendered in some sessions,
+  // silently not in others) - route lines are drawn as plain SVG below
+  // for the same reason, not google.maps.Polyline. LiveMapModal above
+  // still uses both Marker and Polyline for a single route's live view;
+  // it hasn't shown the same symptom in testing, but it's the same
+  // underlying API and hasn't been proven immune either.
+  // Position is a straight linear map of lat/lng onto the visible
+  // viewport's current north-east/south-west corners (map.getBounds())
+  // and the container's own pixel size - not Mercator-exact at very
+  // wide (whole-country) zooms, but well within a pixel or two of exact
+  // at the city-block-to-city-wide zooms this map actually runs at.
+  // Recomputed on the map's own 'idle' (view has finished changing,
+  // including after fitBounds) and 'bounds_changed' events - a more
+  // reliable "the view is settled, read it now" signal here than
+  // OverlayView.draw() turned out to be (draw() fired, but on a
+  // stale/earlier view - the first version of this code read
+  // fromLatLngToDivPixel() through it and consistently placed most
+  // pins outside the visible canvas).
+  const [viewport, setViewport] = useState(null); // {ne:{lat,lng}, sw:{lat,lng}, w, h}
+  const projectPoint = (lat, lng) => {
+    if (!viewport) return null;
+    const { ne, sw, w, h } = viewport;
+    if (ne.lng === sw.lng || ne.lat === sw.lat) return null;
+    return {
+      x: ((lng - sw.lng) / (ne.lng - sw.lng)) * w,
+      y: ((ne.lat - lat) / (ne.lat - sw.lat)) * h,
+    };
+  };
+
+  // "Live Tracking" in the sidebar nav requests this on (see
+  // requestedView/requestedLiveTracking in RouteWorkspace) - a one-way
+  // trigger, not a controlled prop, so the toggle below still switches
+  // freely afterward.
+  useEffect(() => {
+    if (requestedLiveTracking) setLiveTracking(true);
+  }, [requestedLiveTracking]);
+
+  // Refetched whenever the route set changes OR any route's own stop
+  // composition/sequence changes (routeSequenceKey - see above), and also
+  // on demand via the toolbar's Refresh button (pathsRefreshNonce) for the
+  // rare edit this key doesn't catch (e.g. the backend's road-snapped
+  // shape between two stops shifting without the stop list itself
+  // changing) and as a plain manual "I want to be sure" control.
+  useEffect(() => {
+    let cancelled = false;
+    setPathsLoading(true);
+    Promise.all(routes.map((route) => (
+      fetchRoutePlannedPath(route.route_id)
+        .then((data) => {
+          if (cancelled) return;
+          setPaths((prev) => ({ ...prev, [route.route_id]: data.path || [] }));
+        })
+        .catch(() => {})
+    ))).finally(() => { if (!cancelled) setPathsLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeSequenceKey, pathsRefreshNonce]);
+
+  // Which routes actually have someone to track right now - a driver
+  // assigned AND the route genuinely started, not just planned. Real
+  // signal already on every route (route_run_status/driver_id), not
+  // inferred - except when alwaysTrackable overrides this (see its
+  // comment above): the single route RouteDetail already scoped this map
+  // to is trackable by definition, whatever this possibly-stale field
+  // currently says.
+  const trackableRoutes = useMemo(
+    () => (alwaysTrackable ? routes : routes.filter((r) => r.route_run_status === 'in_progress' && r.driver_id != null)),
+    [routes, alwaysTrackable]
+  );
+  const trackableIds = trackableRoutes.map((r) => r.route_id).join(',');
+
+  // A fix from either channel below only replaces what's already stored
+  // when it's actually newer - the REST poll and the WebSocket push (just
+  // below) race by design (the push is the fast path, the poll is the
+  // resilient fallback - see useTrackingSocket's comment), so without
+  // this a slightly-delayed poll response could land after a fresher push
+  // already rendered and yank the dot back to an older position.
+  const applyLocationFix = (routeId, lat, lng, recordedAt) => {
+    setDriverPositions((prev) => {
+      const existing = prev[routeId];
+      if (existing?.recordedAt && recordedAt && existing.recordedAt >= recordedAt) return prev;
+      return { ...prev, [routeId]: { lat, lng, recordedAt } };
+    });
+  };
+
+  // Polls every in-progress route's real tracking endpoint - the same
+  // GET /api/routes/{id}/tracking LiveMapModal already uses for one
+  // route at a time - while the live layer is switched on. A fan-out
+  // over however many routes are actually running right now, not every
+  // route on the board, so this stays cheap regardless of fleet size.
+  // Kept running at its original cadence even with the WebSocket push
+  // below doing most of the real work now - this is what still updates
+  // the dot on a first load (before any new ping has fired yet), and what
+  // keeps tracking working at all in an environment that blocks WebSocket
+  // upgrades outright.
+  useEffect(() => {
+    if (!liveTracking || trackableRoutes.length === 0) return undefined;
+    let cancelled = false;
+    const poll = () => {
+      trackableRoutes.forEach((route) => {
+        fetchRouteTracking(route.route_id)
+          .then((data) => {
+            if (cancelled) return;
+            const last = data?.last_location;
+            if (!last) {
+              setDriverPositions((prev) => {
+                if (!(route.route_id in prev)) return prev;
+                const next = { ...prev };
+                delete next[route.route_id];
+                return next;
+              });
+              return;
+            }
+            applyLocationFix(route.route_id, last.lat, last.lng, last.recorded_at);
+          })
+          .catch(() => {});
+      });
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTracking, trackableIds]);
+
+  // The fast path - see useTrackingSocket's own comment for the full
+  // picture. Every connected admin tab gets every location ping the
+  // instant a driver's phone sends it, without waiting out the 5s poll
+  // above.
+  useTrackingSocket(liveTracking, (msg) => {
+    if (msg?.type !== 'location' || msg.route_id == null) return;
+    if (!trackableRoutes.some((r) => r.route_id === msg.route_id)) return;
+    applyLocationFix(msg.route_id, msg.lat, msg.lng, msg.recorded_at);
+  });
+
+  // Clear stale dots the instant tracking is switched off, rather than
+  // leaving the last-known positions frozen on the map.
+  useEffect(() => { if (!liveTracking) setDriverPositions({}); }, [liveTracking]);
+
+  // Smoothed, continuously-gliding version of driverPositions for
+  // rendering - see useAnimatedPositions' own comment for why this is
+  // what actually fixes "looks laggy/jumpy" (both channels above still
+  // deliver periodic fixes, not a continuous stream; this is what turns
+  // those into visually continuous motion).
+  const animatedDriverPositions = useAnimatedPositions(driverPositions);
+
+  const allStops = useMemo(
+    () => routes.flatMap((route) => (route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o) => ({ lat: o.lat, lng: o.lng }))),
+    [routes]
+  );
+
+  const fitToRoutes = () => {
+    const map = mapRef.current;
+    if (!map || !window.google || allStops.length === 0) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    allStops.forEach((s) => bounds.extend(s));
+    map.fitBounds(bounds, 48);
+  };
+
+  // Auto-fit once the map and the first batch of stops are both ready -
+  // after that, "Fit to routes" (below) is the explicit re-trigger so a
+  // dispatcher's own zoom/pan while inspecting a route isn't fought on
+  // every unrelated re-render.
+  const fittedRef = useRef(false);
+  useEffect(() => { fittedRef.current = false; }, [routeIds]);
+  useEffect(() => {
+    if (fittedRef.current || !mapRef.current || allStops.length === 0) return;
+    fittedRef.current = true;
+    fitToRoutes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allStops.length, isLoaded]);
+
+  if (loadError) return <div className="empty-state fleet-map__empty">Could not load Google Maps.</div>;
+  if (!isLoaded) return <div className="empty-state fleet-map__empty">Loading map…</div>;
+  if (allStops.length === 0) return <div className="empty-state fleet-map__empty"><IconPin width={22} height={22} />No geocoded stops to show on the map yet.</div>;
+
+  return (
+    <div className="fleet-map">
+      <GoogleMap
+        mapContainerClassName="fleet-map__canvas"
+        center={allStops[0]}
+        zoom={12}
+        onLoad={(map) => {
+          mapRef.current = map;
+          fitToRoutes();
+          const updateViewport = () => {
+            const bounds = map.getBounds();
+            const div = map.getDiv();
+            if (!bounds || !div) return;
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+            setViewport({
+              ne: { lat: ne.lat(), lng: ne.lng() },
+              sw: { lat: sw.lat(), lng: sw.lng() },
+              w: div.offsetWidth,
+              h: div.offsetHeight,
+            });
+          };
+          map.addListener('idle', updateViewport);
+          map.addListener('bounds_changed', updateViewport);
+          // The route detail drawer this map can sit inside slides in via
+          // a CSS transform (.route-drawer-slide-in, ~200ms) - if onLoad
+          // fires while that's still running, fitBounds computes against
+          // the container's mid-transition size and lands on the wrong
+          // zoom/center. A resize nudge + re-fit once the animation has
+          // definitely settled corrects it (the 'idle' after this re-fit
+          // is what actually lands viewport on the right numbers);
+          // harmless where there's no animation (the fleet-wide Map/Split
+          // view) too.
+          window.setTimeout(() => {
+            if (mapRef.current !== map) return;
+            window.google.maps.event.trigger(map, 'resize');
+            fitToRoutes();
+          }, 350);
+        }}
+        options={{
+          zoomControl: true, streetViewControl: false,
+          // Locked to satellite, no switcher - imagery is what makes the
+          // big numbered pins and route lines actually mean something
+          // (an admin can see the real driveway/building a pin sits on,
+          // not just an abstract road diagram), and mapTypeId is a plain
+          // option react-google-maps/api can safely reapply on every
+          // re-render (unlike renderingType above), so there's no risk of
+          // it silently reverting.
+          mapTypeControl: false,
+          mapTypeId: 'satellite',
+          fullscreenControl: false, gestureHandling: 'greedy',
+          backgroundColor: '#0b0f14',
+        }}
+      >
+      </GoogleMap>
+
+      {/* Route lines - drawn as plain SVG, not google.maps.Polyline, for
+          the same reason pins are plain <img>s (see the comment above
+          projectPoint): this Maps JS release's vector rendering doesn't
+          reliably paint classic overlays. Same projectPoint pixel math as
+          the pins below, so a route's line and its stops are always
+          exactly aligned - no separate coordinate system to drift out of
+          sync. Each route draws as three passes - a white halo stroke
+          underneath, the colored line on top of it, then direction
+          chevrons - because a satellite basemap has none of a flat vector
+          map's predictable color to read a thin colored line against; the
+          halo is what actually makes the line visible over open ground,
+          water, or a busy rooftop. */}
+      <svg className="fleet-map__lines">
+        {routes.map((route, idx) => {
+          const color = routeColor(baseColorIndex + idx);
+          const selected = selectedRouteName === route.route_name;
+          const dimmed = selectedRouteName != null && !selected;
+          const path = paths[route.route_id];
+          const stops = (route.orders || []).filter((o) => o.lat != null && o.lng != null);
+          const linePoints = path && path.length > 1
+            ? path
+            : stops.length > 1 ? stops.map((o) => ({ lat: o.lat, lng: o.lng })) : null;
+          if (!linePoints) return null;
+          const pixels = linePoints.map((p) => projectPoint(p.lat, p.lng)).filter(Boolean);
+          if (pixels.length < 2) return null;
+          const pointsAttr = pixels.map((p) => `${p.x},${p.y}`).join(' ');
+          const opacity = dimmed ? 0.3 : 0.95;
+          return (
+            <g key={route.route_name}>
+              <polyline
+                points={pointsAttr}
+                fill="none"
+                stroke="#fff"
+                strokeWidth={selected ? 8 : 6.5}
+                strokeOpacity={dimmed ? 0.3 : 0.75}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pointerEvents="none"
+              />
+              <polyline
+                points={pointsAttr}
+                fill="none"
+                stroke={color}
+                strokeWidth={selected ? 4.5 : 3.25}
+                strokeOpacity={opacity}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                onClick={() => onSelectRoute(route.route_name)}
+              />
+              {directionArrows(pixels).map((arrow, arrowIdx) => (
+                <polygon
+                  key={arrowIdx}
+                  points="-5,-3.5 4.5,0 -5,3.5"
+                  fill={color}
+                  stroke="#fff"
+                  strokeWidth={1}
+                  strokeLinejoin="round"
+                  opacity={opacity}
+                  transform={`translate(${arrow.x} ${arrow.y}) rotate(${arrow.angle})`}
+                  pointerEvents="none"
+                />
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* `viewport` state (set by the idle/bounds_changed listeners in
+          onLoad above) is what makes this block recompute after every
+          pan/zoom/resize/fitBounds - projectPoint() reads it fresh on
+          every render. */}
+      <div className="fleet-map__pins">
+        {routes.flatMap((route, idx) => {
+          const color = routeColor(baseColorIndex + idx);
+          const selected = selectedRouteName === route.route_name;
+          const dimmed = selectedRouteName != null && !selected;
+          const stops = (route.orders || []).filter((o) => o.lat != null && o.lng != null);
+          const pins = stops.map((o, stopIdx) => {
+            const pos = projectPoint(o.lat, o.lng);
+            if (!pos) return null;
+            const icon = pinIconUrl(color, stopIdx + 1, { size: selected ? 44 : 36, opacity: dimmed ? 0.4 : 1 });
+            return (
+              <img
+                key={o.order_id}
+                src={icon.url}
+                width={icon.scaledSize.width}
+                height={icon.scaledSize.height}
+                alt=""
+                className="fleet-map__pin"
+                style={{ left: pos.x, top: pos.y, zIndex: selected ? 4 : 2 }}
+                onClick={() => onSelectRoute(route.route_name)}
+                title={`${route.route_name} · stop ${stopIdx + 1}: ${o.customer_name || 'Stop'}`}
+              />
+            );
+          });
+          const driverPos = liveTracking && driverPositions[route.route_id];
+          if (driverPos) {
+            // Falls back to the raw fix for the one frame or two before
+            // useAnimatedPositions' own rAF loop has run yet - never
+            // actually visible, just avoids a same-frame "fix arrived but
+            // nothing rendered" gap.
+            const animated = animatedDriverPositions[route.route_id] || driverPos;
+            const p = projectPoint(animated.lat, animated.lng);
+            if (p) {
+              const halo = dotIconUrl(color, { size: 40, opacity: 0.18 });
+              const dot = dotIconUrl(color, { size: 16, strokeColor: '#fff' });
+              pins.push(
+                <img key={`${route.route_name}-driver-halo`} src={halo.url} width={40} height={40} alt="" className="fleet-map__pin fleet-map__pin--dot" style={{ left: p.x, top: p.y, zIndex: 5, pointerEvents: 'none' }} />,
+                <img key={`${route.route_name}-driver`} src={dot.url} width={16} height={16} alt="" className="fleet-map__pin fleet-map__pin--dot" style={{ left: p.x, top: p.y, zIndex: 6 }} title={`${route.route_name} · driver`} />
+              );
+            }
+          }
+          return pins;
+        })}
+      </div>
+
+      <div className="fleet-map__toolbar">
+        <button type="button" className="fleet-map__toolbar-btn" onClick={fitToRoutes} title="Fit to routes">
+          <IconGauge width={15} height={15} />
+        </button>
+        {/* Manual re-fetch of every route's line, for the one thing
+            routeSequenceKey above can't catch on its own (the backend's
+            road-snapped shape shifting without the stop list itself
+            changing) and as a plain "make sure this is current" control
+            after any edit - reordering a stop, adding one, or moving one
+            from another route (see routeSequenceKey's comment for what
+            already updates automatically). */}
+        <button
+          type="button"
+          className="fleet-map__toolbar-btn"
+          onClick={() => setPathsRefreshNonce((n) => n + 1)}
+          disabled={pathsLoading}
+          title="Refresh route lines"
+        >
+          {pathsLoading ? <span className="spinner" /> : <IconRefresh width={15} height={15} />}
+        </button>
+      </div>
+
+      <div className="fleet-map__live-toggle">
+        <span>Live tracking</span>
+        <button
+          type="button"
+          className={`switch${liveTracking ? ' switch--on' : ''}`}
+          onClick={() => setLiveTracking((v) => !v)}
+          role="switch"
+          aria-checked={liveTracking}
+        >
+          <span className="switch__knob" />
+        </button>
+      </div>
+
+      <div className="fleet-map__legend">
+        {routes.map((route, idx) => (
+          <button
+            type="button"
+            key={route.route_name}
+            className={`fleet-map__legend-item${selectedRouteName === route.route_name ? ' fleet-map__legend-item--active' : ''}`}
+            onClick={() => onSelectRoute(route.route_name)}
+          >
+            <span className="fleet-map__legend-swatch" style={{ background: routeColor(baseColorIndex + idx) }} />
+            {route.route_name}
+          </button>
+        ))}
+      </div>
+
+      {/* alwaysTrackable makes trackableRoutes.length === 0 meaningless
+          here (it's never empty - see its definition above), so the
+          single-route embed instead checks whether a position actually
+          came back yet. */}
+      {liveTracking && (alwaysTrackable ? Object.keys(driverPositions).length === 0 : trackableRoutes.length === 0) && (
+        <div className="fleet-map__live-empty">
+          <IconLocate width={15} height={15} />
+          {alwaysTrackable
+            ? 'No live location yet for this route\'s driver — it appears as soon as their app reports a position.'
+            : 'No drivers on the road right now — a route shows up here once its driver starts it.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact left-hand list for the Split view - route id, vehicle, stop
+// count, status, and the same color swatch as its line on FleetMap.
+// Not the full RoutesTable (8 columns doesn't fit a half-width panel);
+// clicking a row highlights that route on the map instead of opening it.
+function SplitRouteList({ routes, capacityFor, selectedRouteName, onSelectRoute }) {
+  return (
+    <div className="split-route-list">
+      {routes.map((route, idx) => {
+        const capacity = capacityFor(route.vehicle_type);
+        const status = routeStatus(route, capacity);
+        const selected = selectedRouteName === route.route_name;
+        return (
+          <button
+            type="button"
+            key={route.route_name}
+            className={`split-route-row${selected ? ' split-route-row--selected' : ''}`}
+            onClick={() => onSelectRoute(selected ? null : route.route_name)}
+          >
+            <span className="split-route-row__swatch" style={{ background: routeColor(idx) }} />
+            <span className="split-route-row__body">
+              <span className="split-route-row__name">{route.route_name}</span>
+              <span className="split-route-row__meta">
+                {route.vehicle_type === 'car' ? <IconCar width={11} height={11} /> : <IconBike width={11} height={11} />}
+                {route.orders.length} of {capacity} stops
+              </span>
+            </span>
+            <StatusBadge status={status} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function RoutesTable({
   routes, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute, hasActiveFilters, onClearFilters,
+  selectedRouteNames, onToggleSelect, onToggleSelectAll,
 }) {
   if (routes.length === 0) {
     return (
@@ -268,9 +1055,19 @@ function RoutesTable({
     );
   }
 
+  const allSelected = routes.length > 0 && routes.every((r) => selectedRouteNames.includes(r.route_name));
+
   return (
     <div className="routes-table">
       <div className="routes-table__head">
+        <div className="route-row__cell route-row__cell--select">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => onToggleSelectAll(routes.map((r) => r.route_name))}
+            aria-label="Select all routes"
+          />
+        </div>
         <div className="route-row__cell route-row__cell--route">Route</div>
         <div className="route-row__cell route-row__cell--vehicle">Vehicle</div>
         <div className="route-row__cell route-row__cell--stops">Stops</div>
@@ -291,6 +1088,8 @@ function RoutesTable({
             onDownload={onDownload}
             onDeleteRoute={onDeleteRoute}
             isDeletingRoute={isDeletingRoute}
+            selected={selectedRouteNames.includes(route.route_name)}
+            onToggleSelect={onToggleSelect}
           />
         ))}
       </div>
@@ -307,7 +1106,7 @@ function RouteOverviewStrip({ route, capacity, maxCapacity }) {
   const hasFlexRoom = maxCapacity > capacity;
   const stats = [
     { label: 'Vehicle type', value: route.vehicle_type === 'car' ? 'Car' : 'Bike' },
-    { label: 'Addresses', value: `${count} / ${maxCapacity}` },
+    { label: 'Addresses', value: `${count} of ${maxCapacity}` },
     ...(hasFlexRoom ? [
       { label: 'Base capacity', value: capacity },
       { label: 'Additional addresses', value: Math.max(count - capacity, 0) },
@@ -587,12 +1386,29 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   useEffect(() => {
     let cancelled = false;
     // 3s - this view is the one you're actually watching move, so it gets
-    // the tightest poll in the app (the card behind it polls slower).
+    // the tightest poll in the app (the card behind it polls slower). Kept
+    // running unchanged alongside the WebSocket push below (see its own
+    // comment) as the resilient fallback for a first load or an
+    // environment that blocks WebSocket upgrades.
     const poll = () => fetchRouteTracking(route.route_id).then((data) => { if (!cancelled) setTracking(data); }).catch(() => {});
     poll();
     const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [route.route_id, fetchRouteTracking]);
+
+  // The fast path - this modal is the one view someone opens specifically
+  // to watch a driver move, so it's always subscribed while open (no
+  // separate on/off toggle to gate it behind, unlike FleetMap's
+  // liveTracking switch). Only the raw fix is kept here; merged against
+  // the REST poll's own last_location below, whichever is newer wins.
+  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at}
+  useTrackingSocket(true, (msg) => {
+    if (msg?.type !== 'location' || msg.route_id !== route.route_id) return;
+    setWsFix((prev) => {
+      if (prev?.recorded_at && msg.recorded_at && prev.recorded_at >= msg.recorded_at) return prev;
+      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at };
+    });
+  });
 
   // The actual road route the driver is meant to be following - depot ->
   // every stop in delivery order -> last stop - so you can see whether
@@ -611,13 +1427,26 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
     return () => { cancelled = true; };
   }, [route.route_id, fetchRoutePlannedPath]);
 
-  const last = tracking?.last_location;
+  // Whichever fix is actually newer wins - the REST poll and the
+  // WebSocket push race by design (same reasoning as FleetMap's
+  // applyLocationFix), so a slightly-delayed poll response can never
+  // regress the dot backward after a fresher push already rendered.
+  const restLast = tracking?.last_location;
+  const last = !restLast ? wsFix : !wsFix || restLast.recorded_at >= wsFix.recorded_at ? restLast : wsFix;
   const position = last ? { lat: last.lat, lng: last.lng } : null;
   const path = (tracking?.path || []).map((p) => ({ lat: p.lat, lng: p.lng }));
 
   if (position && initialCenterRef.current === null) {
     initialCenterRef.current = position;
   }
+
+  // Smoothly-glided version of `position`, for the marker's rendered
+  // position only - panTo/autoFollow below still key off the raw
+  // `position`, unchanged, so camera movement stays driven by real GPS
+  // fixes and the existing "only pan for genuine movement" threshold,
+  // not by every intermediate animation frame.
+  const animatedTargets = useMemo(() => (position ? { driver: position } : {}), [position?.lat, position?.lng]);
+  const displayedPosition = useAnimatedPositions(animatedTargets).driver || position;
 
   // panTo on every real position change is what makes this read as *live*
   // movement - but GPS noise moves the reported point a few meters even
@@ -695,9 +1524,13 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
               ))}
               {/* The translucent halo behind the solid dot is Google Maps'
                   own "your location" glyph - reads as live/GPS at a glance
-                  instead of just another plain pin. */}
+                  instead of just another plain pin. Both markers render at
+                  displayedPosition (the smoothly-animated one), not the
+                  raw target - see useAnimatedPositions' comment for why
+                  that's what actually makes this read as continuous
+                  motion rather than a stuck-then-teleport dot. */}
               <Marker
-                position={position}
+                position={displayedPosition}
                 zIndex={2}
                 clickable={false}
                 icon={{
@@ -709,7 +1542,7 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                 }}
               />
               <Marker
-                position={position}
+                position={displayedPosition}
                 zIndex={3}
                 onClick={() => setShowInfo((v) => !v)}
                 icon={{
@@ -738,11 +1571,6 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
           <div className="empty-state live-map-modal__empty">No location reported yet - the map appears as soon as the first ping lands.</div>
         )}
         <div className="modal__footer">
-          {last && (
-            <a className="btn btn--outline" href={last.maps_url} target="_blank" rel="noopener noreferrer">
-              <IconPin width={14} height={14} /> Open in Google Maps
-            </a>
-          )}
           <button type="button" className="btn btn--ghost" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -885,11 +1713,49 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   );
 }
 
+// Driver & Tracking's own page - DriverTrackingCard used to sit embedded
+// inside RouteDetail, below the Route Map card and above the stop list;
+// it's lifted out here into its own slide-in drawer (same pattern
+// RouteDetail itself already uses over the routes list - see
+// route-drawer/route-drawer-backdrop) so it reads as a real separate
+// destination reached via its own "Driver & Tracking" button, not one
+// more card competing for space on the route's main page. Everything it
+// shows/does is unchanged - just DriverTrackingCard given room of its
+// own.
+function DriverPage({ route, drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath, onBack }) {
+  return (
+    <div className="route-detail">
+      <div className="route-detail__header">
+        <button type="button" className="route-detail__back" onClick={onBack}>
+          <IconChevron width={14} height={14} className="route-detail__back-icon" />
+          {route.route_name}
+        </button>
+        <div className="route-detail__title-block">
+          <div className="route-detail__title-row">
+            <h2 className="route-detail__title">Driver & Tracking</h2>
+          </div>
+          <span className="route-detail__subtitle">
+            {route.route_name} · {route.vehicle_type === 'car' ? 'Car' : 'Bike'} · {route.orders.length} stop{route.orders.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      </div>
+      <DriverTrackingCard
+        route={route}
+        drivers={drivers}
+        onAssignDriver={onAssignDriver}
+        onUnassignDriver={onUnassignDriver}
+        fetchRouteTracking={fetchRouteTracking}
+        fetchRoutePlannedPath={fetchRoutePlannedPath}
+      />
+    </div>
+  );
+}
+
 function RouteDetail({
   route, routeIdx, routes, capacityFor, pendingOrders,
   onBack, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
   onReassignOrder, onAssignOrders, onReorderRoute,
-  drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
+  fetchRouteTracking, fetchRoutePlannedPath, onOpenDriverPage,
   selectedOrderId, onSelectOrder,
   maxCapacityFor, onMoveOrders, isMovingAddresses,
 }) {
@@ -963,7 +1829,7 @@ function RouteDetail({
             {isEdited && <span className="tag tag--edited"><IconAlert width={11} height={11} />Manually edited</span>}
           </div>
           <span className="route-detail__subtitle">
-            {route.areas && route.areas.length ? route.areas.join(' → ') : 'No deliveries yet'}
+            {formatAreaPath(route.areas, 5)}
           </span>
         </div>
 
@@ -1011,12 +1877,10 @@ function RouteDetail({
             <IconDownload width={14} height={14} />
             Download sheet
           </button>
-          {route.google_maps_url && (
-            <a className="btn btn--secondary" href={route.google_maps_url} target="_blank" rel="noopener noreferrer">
-              <IconPin width={14} height={14} />
-              Open in Maps
-            </a>
-          )}
+          <button type="button" className="btn btn--secondary" onClick={() => onOpenDriverPage(route)}>
+            <IconUsers width={14} height={14} />
+            Driver & Tracking
+          </button>
           <button
             type="button"
             className="btn btn--danger-ghost"
@@ -1027,22 +1891,13 @@ function RouteDetail({
               }
             }}
           >
-            <IconX width={14} height={14} />
-            Delete Route
+            {isDeletingRoute === route.route_name ? <span className="spinner" /> : <IconX width={14} height={14} />}
+            {isDeletingRoute === route.route_name ? 'Deleting…' : 'Delete Route'}
           </button>
         </div>
       </div>
 
       <RouteOverviewStrip route={route} capacity={capacity} maxCapacity={maxCapacity} />
-
-      <DriverTrackingCard
-        route={route}
-        drivers={drivers}
-        onAssignDriver={onAssignDriver}
-        onUnassignDriver={onUnassignDriver}
-        fetchRouteTracking={fetchRouteTracking}
-        fetchRoutePlannedPath={fetchRoutePlannedPath}
-      />
 
       <div className="route-stop-list">
         {count === 0 ? (
@@ -1145,6 +2000,33 @@ function RouteDetail({
         )}
       </div>
 
+      {/* The in-app map every route now has, not just routes with an
+          active driver - seeing this route's stops no longer requires
+          waiting on live tracking to start. Below the stop list (not
+          above it) so an admin reads the actual delivery order first,
+          then sees it laid out geographically. Reuses FleetMap scoped to
+          just this one route, so the same big pins/route line/live layer
+          as the fleet-wide Map view show up here too - alwaysTrackable
+          because this map is already scoped to one specific route, so it
+          shouldn't second-guess that against a route_run_status/driver_id
+          snapshot that can go stale the moment a driver starts their
+          route from their own app (see FleetMap's alwaysTrackable
+          comment). */}
+      <div className="driver-card route-map-card">
+        <div className="driver-card__head">
+          <h3><IconPin width={14} height={14} /> Route Map</h3>
+        </div>
+        <FleetMap
+          routes={[route]}
+          fetchRoutePlannedPath={fetchRoutePlannedPath}
+          fetchRouteTracking={fetchRouteTracking}
+          selectedRouteName={route.route_name}
+          onSelectRoute={() => {}}
+          baseColorIndex={routeIdx}
+          alwaysTrackable
+        />
+      </div>
+
       {showAddAddressModal && (
         <AddAddressModal
           destinationRoute={route}
@@ -1205,7 +2087,7 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
       {selected.length > 0 && (
         <div className="bulk-assign-bar">
           <span>{selected.length} selected</span>
-          <select value={bulkTarget} onChange={(e) => setBulkTarget(e.target.value)}>
+          <select className="select-compact" value={bulkTarget} onChange={(e) => setBulkTarget(e.target.value)}>
             <option value="">Assign selected to…</option>
             {routes.map((r) => {
               const full = isRouteFull(r);
@@ -1287,7 +2169,7 @@ export default function RouteWorkspace({
   isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses,
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders,
-  requestedTab,
+  requestedTab, requestedView, requestedLiveTracking,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
   onViewChange,
 }) {
@@ -1300,22 +2182,40 @@ export default function RouteWorkspace({
     if (requestedTab === 'routes' || requestedTab === 'unassigned') setTab(requestedTab);
   }, [requestedTab]);
   const [view, setView] = useState('list'); // 'list' | 'detail'
-  // Tells the parent (App.jsx) whenever a single route's detail page opens
-  // or closes, so it can hide the dashboard/toolbar chrome that otherwise
-  // sits above this component on pages where it's rendered inline - a
-  // route's detail is meant to be a focused page, not one more thing
-  // scrolled under the Dashboard's KPI row. `view` alone isn't enough:
-  // switching to the Unassigned Orders tab shows that board regardless of
-  // `view` (see the tab === 'unassigned' check below) without resetting
-  // `view` itself, so a stale 'detail' would otherwise still read as
-  // "showing a route" while a completely different board is on screen.
-  useEffect(() => { onViewChange?.(tab !== 'unassigned' && view === 'detail'); }, [tab, view, onViewChange]);
+  // A route's detail now opens as a slide-in drawer over this page (see
+  // the render below) rather than replacing it outright, so App.jsx's
+  // chrome above it (KPI row, Generate panel, session tabs) no longer
+  // needs to hide when one is open - the drawer's own backdrop already
+  // dims everything behind it. onViewChange is kept (App.jsx still wires
+  // it to routeDetailOpen) so nothing upstream needs to change; it just
+  // never has reason to report true anymore.
+  useEffect(() => { onViewChange?.(false); }, [onViewChange]);
   const [selectedRouteName, setSelectedRouteName] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [routeSearch, setRouteSearch] = useState('');
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
+
+  // Bulk selection on the Routes table - same shape as UnassignedPanel's
+  // `selected` above (array of ids, here route_name), just for
+  // Download/Delete instead of Assign.
+  const [selectedRouteNames, setSelectedRouteNames] = useState([]);
+  const [isBulkActing, setIsBulkActing] = useState(false);
+
+  // List | Map | Split, for the Routes tab only - independent of
+  // `selectedRouteName`/`view` above (which is specifically "a route's
+  // full detail page is open"). Highlighting a route on the map/in the
+  // split list doesn't open its detail page, so this gets its own state.
+  const [viewMode, setViewMode] = useState('list');
+  const [mapSelectedRouteName, setMapSelectedRouteName] = useState(null);
+  // Same one-way command shape as requestedTab above - "Live Tracking" in
+  // the sidebar jumps the Routes tab into Map view. requestedLiveTracking
+  // (passed straight through to FleetMap below) additionally flips its
+  // live layer on.
+  useEffect(() => {
+    if (requestedView === 'map') setViewMode('map');
+  }, [requestedView]);
 
   const allLocations = useMemo(() => {
     const seen = new Set();
@@ -1338,6 +2238,17 @@ export default function RouteWorkspace({
   const selectedRoute = routes.find((r) => r.route_name === selectedRouteName) || null;
   const selectedRouteIdx = selectedRoute ? routes.findIndex((r) => r.route_name === selectedRoute.route_name) : 0;
 
+  // Driver & Tracking as its own page (DriverPage above), reached from
+  // RouteDetail's "Driver & Tracking" button - stacks its own drawer over
+  // the route detail drawer, same shape as selectedRouteName/view above.
+  const [driverPageRouteName, setDriverPageRouteName] = useState(null);
+  useEffect(() => {
+    if (driverPageRouteName && !routes.some((r) => r.route_name === driverPageRouteName)) {
+      setDriverPageRouteName(null);
+    }
+  }, [routes, driverPageRouteName]);
+  const driverPageRoute = routes.find((r) => r.route_name === driverPageRouteName) || null;
+
   const hasActiveFilters = Boolean(routeSearch.trim()) || vehicleFilter !== 'all' || statusFilter !== 'all' || locationFilter !== 'all';
   const clearFilters = () => { setRouteSearch(''); setVehicleFilter('all'); setStatusFilter('all'); setLocationFilter('all'); };
 
@@ -1356,6 +2267,48 @@ export default function RouteWorkspace({
     }
     return result;
   }, [routes, routeSearch, vehicleFilter, statusFilter, locationFilter, capacityFor]);
+
+  // Same pattern as UnassignedPanel's selected-filter effect above: drop
+  // anything selected that's no longer in view (deleted, or filtered out).
+  useEffect(() => {
+    setSelectedRouteNames((prev) => prev.filter((name) => filteredRoutes.some((r) => r.route_name === name)));
+  }, [filteredRoutes]);
+
+  const toggleRouteSelected = (routeName) => {
+    setSelectedRouteNames((prev) => (prev.includes(routeName) ? prev.filter((n) => n !== routeName) : [...prev, routeName]));
+  };
+  const toggleSelectAllRoutes = (visibleNames) => {
+    setSelectedRouteNames((prev) => (
+      visibleNames.every((n) => prev.includes(n))
+        ? prev.filter((n) => !visibleNames.includes(n))
+        : [...new Set([...prev, ...visibleNames])]
+    ));
+  };
+  const selectedRoutesList = routes.filter((r) => selectedRouteNames.includes(r.route_name));
+
+  // Downloads are synchronous client-side workbook builds (no shared
+  // component state to race), so these can fire back-to-back. Deletes
+  // hit the API and update shared `routes`/`isDeletingRoute` state one
+  // route at a time - same as clicking each row's Delete individually,
+  // just queued instead of concurrent, and behind one confirm instead of
+  // one per route.
+  const bulkDownloadSelected = () => {
+    selectedRoutesList.forEach((route) => onDownloadRoute(route));
+  };
+  const bulkDeleteSelected = async () => {
+    const names = selectedRoutesList.map((r) => r.route_name).join(', ');
+    if (!window.confirm(`Delete ${selectedRoutesList.length} route${selectedRoutesList.length === 1 ? '' : 's'} (${names})? Their deliveries will move to Unassigned Orders - nothing is deleted.`)) return;
+    setIsBulkActing(true);
+    try {
+      for (const route of selectedRoutesList) {
+        // eslint-disable-next-line no-await-in-loop
+        await onDeleteRoute(route);
+      }
+      setSelectedRouteNames([]);
+    } finally {
+      setIsBulkActing(false);
+    }
+  };
 
   const openRoute = (routeName) => { setSelectedRouteName(routeName); setSelectedOrderId(null); setView('detail'); };
   const backToList = () => setView('list');
@@ -1406,77 +2359,182 @@ export default function RouteWorkspace({
             <option value="car">Car</option>
           </select>
         </div>
-      ) : view === 'detail' && selectedRoute ? (
-        <RouteDetail
-          route={selectedRoute}
-          routeIdx={selectedRouteIdx}
-          routes={routes}
-          capacityFor={capacityFor}
-          pendingOrders={pendingOrders}
-          onBack={backToList}
-          onToggleVehicle={onToggleVehicle}
-          isChangingVehicle={isChangingVehicle}
-          onDeleteRoute={onDeleteRoute}
-          isDeletingRoute={isDeletingRoute}
-          onDownload={onDownloadRoute}
-          onReassignOrder={onReassignOrder}
-          onAssignOrders={onAssignOrders}
-          onReorderRoute={onReorderRoute}
-          maxCapacityFor={maxCapacityFor}
-          onMoveOrders={onMoveOrders}
-          isMovingAddresses={isMovingAddresses}
-          selectedOrderId={selectedOrderId}
-          onSelectOrder={setSelectedOrderId}
-          drivers={drivers}
-          onAssignDriver={onAssignDriver}
-          onUnassignDriver={onUnassignDriver}
-          fetchRouteTracking={fetchRouteTracking}
-          fetchRoutePlannedPath={fetchRoutePlannedPath}
-        />
       ) : (
+        <>
         <div className="routes-page">
           <div className="routes-page__header">
             <div>
               <h2 className="routes-page__title">Routes</h2>
               <p className="routes-page__subtitle">Manage delivery routes, vehicles and stops</p>
             </div>
-            <select
-              className="stop-move add-route-select"
-              value=""
-              disabled={isCreatingRoute}
-              onChange={(e) => { const t = e.target.value; if (t) onCreateRoute(t); e.target.value = ''; }}
-            >
-              <option value="">{isCreatingRoute ? 'Creating…' : 'Create Route'}</option>
-              <option value="bike">Bike</option>
-              <option value="car">Car</option>
-            </select>
+            <div className="routes-page__header-actions">
+              <div className="view-toggle" role="group" aria-label="Routes view">
+                <button type="button" className={`view-toggle__btn${viewMode === 'list' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('list')}>List</button>
+                <button type="button" className={`view-toggle__btn${viewMode === 'map' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('map')}>Map</button>
+                <button type="button" className={`view-toggle__btn${viewMode === 'split' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('split')}>Split</button>
+              </div>
+              <select
+                className="stop-move add-route-select"
+                value=""
+                disabled={isCreatingRoute}
+                onChange={(e) => { const t = e.target.value; if (t) onCreateRoute(t); e.target.value = ''; }}
+              >
+                <option value="">{isCreatingRoute ? 'Creating…' : 'Create Route'}</option>
+                <option value="bike">Bike</option>
+                <option value="car">Car</option>
+              </select>
+            </div>
           </div>
 
-          <RoutesFilterBar
-            search={routeSearch}
-            onSearchChange={setRouteSearch}
-            vehicleFilter={vehicleFilter}
-            onVehicleFilterChange={setVehicleFilter}
-            statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
-            locationFilter={locationFilter}
-            onLocationFilterChange={setLocationFilter}
-            locations={allLocations}
-            onClear={clearFilters}
-            hasActiveFilters={hasActiveFilters}
-          />
+          {viewMode === 'list' && (
+            <RoutesFilterBar
+              search={routeSearch}
+              onSearchChange={setRouteSearch}
+              vehicleFilter={vehicleFilter}
+              onVehicleFilterChange={setVehicleFilter}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              locationFilter={locationFilter}
+              onLocationFilterChange={setLocationFilter}
+              locations={allLocations}
+              onClear={clearFilters}
+              hasActiveFilters={hasActiveFilters}
+            />
+          )}
 
-          <RoutesTable
-            routes={filteredRoutes}
-            capacityFor={capacityFor}
-            onOpen={openRoute}
-            onDownload={onDownloadRoute}
-            onDeleteRoute={onDeleteRoute}
-            isDeletingRoute={isDeletingRoute}
-            hasActiveFilters={hasActiveFilters}
-            onClearFilters={clearFilters}
-          />
+          {viewMode === 'list' && selectedRouteNames.length > 0 && (
+            <div className="bulk-assign-bar">
+              <span>{selectedRouteNames.length} selected</span>
+              <button type="button" className="btn btn--secondary" onClick={bulkDownloadSelected}>
+                <IconDownload width={13} height={13} />
+                Download selected
+              </button>
+              <button type="button" className="btn btn--danger" disabled={isBulkActing} onClick={bulkDeleteSelected}>
+                {isBulkActing ? <span className="spinner" /> : <IconX width={13} height={13} />}
+                {isBulkActing ? 'Deleting…' : 'Delete selected'}
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={() => setSelectedRouteNames([])}>Clear</button>
+            </div>
+          )}
+
+          {viewMode === 'map' && (
+            <FleetMap
+              routes={filteredRoutes}
+              fetchRoutePlannedPath={fetchRoutePlannedPath}
+              fetchRouteTracking={fetchRouteTracking}
+              requestedLiveTracking={requestedLiveTracking}
+              selectedRouteName={mapSelectedRouteName}
+              onSelectRoute={(name) => setMapSelectedRouteName((prev) => (prev === name ? null : name))}
+            />
+          )}
+
+          {viewMode === 'split' && (
+            <div className="routes-split">
+              <SplitRouteList
+                routes={filteredRoutes}
+                capacityFor={capacityFor}
+                selectedRouteName={mapSelectedRouteName}
+                onSelectRoute={setMapSelectedRouteName}
+              />
+              <FleetMap
+                routes={filteredRoutes}
+                fetchRoutePlannedPath={fetchRoutePlannedPath}
+                fetchRouteTracking={fetchRouteTracking}
+                requestedLiveTracking={requestedLiveTracking}
+                selectedRouteName={mapSelectedRouteName}
+                onSelectRoute={(name) => setMapSelectedRouteName((prev) => (prev === name ? null : name))}
+              />
+            </div>
+          )}
+
+          {viewMode === 'list' && (
+          <div className="routes-table-wrap">
+            <RoutesTable
+              routes={filteredRoutes}
+              capacityFor={capacityFor}
+              onOpen={openRoute}
+              onDownload={onDownloadRoute}
+              onDeleteRoute={onDeleteRoute}
+              isDeletingRoute={isDeletingRoute}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearFilters}
+              selectedRouteNames={selectedRouteNames}
+              onToggleSelect={toggleRouteSelected}
+              onToggleSelectAll={toggleSelectAllRoutes}
+            />
+            {isBulkActing && (
+              <div className="busy-overlay">
+                <span className="spinner" />
+              </div>
+            )}
+          </div>
+          )}
         </div>
+
+        {/* Route detail as a slide-in drawer over the routes list, not a
+            full-page swap - internal layout: overview strip, stop list,
+            route map (driver & tracking is its own separate page now,
+            reached via a button here - see DriverPage above). Renders
+            inside a wide panel instead of replacing this page outright,
+            so the KPI row/Generate panel above (App.jsx) and the routes
+            list behind it stay in place, dimmed by the backdrop. Wide
+            rather than a narrow ~420px drawer: RouteOverviewStrip's
+            multi-column stats and the embedded map assume real width and
+            would break cramped into one. */}
+        {view === 'detail' && selectedRoute && (
+          <>
+            <div className="route-drawer-backdrop" onClick={backToList} />
+            <div className="route-drawer">
+              <RouteDetail
+                route={selectedRoute}
+                routeIdx={selectedRouteIdx}
+                routes={routes}
+                capacityFor={capacityFor}
+                pendingOrders={pendingOrders}
+                onBack={backToList}
+                onToggleVehicle={onToggleVehicle}
+                isChangingVehicle={isChangingVehicle}
+                onDeleteRoute={onDeleteRoute}
+                isDeletingRoute={isDeletingRoute}
+                onDownload={onDownloadRoute}
+                onReassignOrder={onReassignOrder}
+                onAssignOrders={onAssignOrders}
+                onReorderRoute={onReorderRoute}
+                maxCapacityFor={maxCapacityFor}
+                onMoveOrders={onMoveOrders}
+                isMovingAddresses={isMovingAddresses}
+                selectedOrderId={selectedOrderId}
+                onSelectOrder={setSelectedOrderId}
+                fetchRouteTracking={fetchRouteTracking}
+                fetchRoutePlannedPath={fetchRoutePlannedPath}
+                onOpenDriverPage={(r) => setDriverPageRouteName(r.route_name)}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Driver & Tracking's own page - stacks over the route detail
+            drawer above (rendered after it, so it paints on top at the
+            same z-index), reached via that drawer's "Driver & Tracking"
+            button. Its own backdrop closes just this page, back to
+            whichever route detail was open underneath. */}
+        {driverPageRoute && (
+          <>
+            <div className="route-drawer-backdrop" onClick={() => setDriverPageRouteName(null)} />
+            <div className="route-drawer">
+              <DriverPage
+                route={driverPageRoute}
+                drivers={drivers}
+                onAssignDriver={onAssignDriver}
+                onUnassignDriver={onUnassignDriver}
+                fetchRouteTracking={fetchRouteTracking}
+                fetchRoutePlannedPath={fetchRoutePlannedPath}
+                onBack={() => setDriverPageRouteName(null)}
+              />
+            </div>
+          </>
+        )}
+        </>
       )}
     </div>
   );

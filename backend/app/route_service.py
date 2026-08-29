@@ -25,8 +25,18 @@ LATE_GRACE_MINUTES = 0.0
 SWAP_MIN_SAVINGS_MINUTES = 8.0
 DEFAULT_ROUTE_START_MINUTES = 480.0
 ROUTE_START_LEAD_MINUTES = 60.0
-IMPROVEMENT_SWEEPS = 2
-IMPROVEMENT_WINDOW = 4
+# 2-opt (_improve_route) can uncross one crossing per sweep and then
+# reveal another it can now see, so this gets more sweeps than
+# _relocate_across_routes's cross-route moves (RELOCATE_SWEEPS below)
+# typically need to settle.
+IMPROVEMENT_SWEEPS = 6
+RELOCATE_SWEEPS = 2
+# Minimum net distance a stop must save (its removal savings on the
+# source route, minus its insertion cost on the target route) before
+# _relocate_across_routes actually moves it - stops thrashing a stop back
+# and forth for a few hundred meters of "improvement" that isn't real
+# given how approximate road-distance estimates already are.
+RELOCATE_MIN_SAVINGS_KM = 1.5
 
 # Consolidation bias: picking a vehicle that's still sitting at the depot
 # (never assigned a stop yet) is treated as if it were this many km farther
@@ -72,6 +82,27 @@ def parse_delivery_slot_minutes(order: Dict[str, object]) -> float:
     if hours == float("inf"):
         return float("inf")
     return hours * 60.0
+
+
+def _slot_order_preserved(route_orders: List[Dict[str, object]]) -> bool:
+    """True when this route never serves a later delivery slot before an
+    earlier one - the actual business rule ("both 12:00 orders must be
+    served before the 2:00 one, even though visiting the 2:00 one first is
+    geographically tempting"), which is stricter than mere deadline
+    feasibility: a stop can still make its own deadline while jumping
+    ahead of an earlier-slot stop it has no business preceding. Stops with
+    no parseable delivery time (slot is inf) are unconstrained - they can
+    sit anywhere. Two stops that share the same slot can be reordered
+    freely relative to each other (that's the whole point of letting 2-opt
+    resequence within a time window for distance)."""
+    finite_slots_in_order = [
+        slot for slot in (parse_delivery_slot_minutes(order) for order in route_orders)
+        if slot != float("inf")
+    ]
+    return all(
+        finite_slots_in_order[i] <= finite_slots_in_order[i + 1]
+        for i in range(len(finite_slots_in_order) - 1)
+    )
 
 
 def format_minutes_as_clock(minutes: Optional[float]) -> Optional[str]:
@@ -191,6 +222,21 @@ def _simulate_route(
 
 
 def _improve_route(vehicle: Dict[str, object], depot: Dict[str, float], route_start_minutes: float) -> None:
+    """2-opt local search: the standard fix for a route whose path
+    crosses itself - a stop near the end that's actually much closer to
+    the *start* of the route than to its neighbors, which reads as the
+    line zig-zagging back across ground it already covered. A plain
+    position swap (this function's previous approach) can't fix that in
+    general - swapping two stops leaves everything *between* them in its
+    original order, so a crossing spanning more than one stop apart
+    often can't be undone by any single swap. 2-opt instead reverses the
+    whole segment between two edges, which is exactly the move that
+    untangles a crossing: reverse the segment between wherever the path
+    crosses, and the crossing edges become two non-crossing ones.
+    Checks every pair of edges in the route (cheap for the route sizes
+    here - a handful to ~20 stops - and cache-backed distance lookups
+    after the first pass), not just nearby ones, since a crossing can
+    span the whole route."""
     route_orders = vehicle["orders"]
     if len(route_orders) < 2:
         return
@@ -204,15 +250,30 @@ def _improve_route(vehicle: Dict[str, object], depot: Dict[str, float], route_st
 
     for _ in range(IMPROVEMENT_SWEEPS):
         improved = False
-        for i in range(len(best_orders) - 1):
-            for j in range(i + 1, min(i + IMPROVEMENT_WINDOW, len(best_orders))):
-                # Distance optimization only happens *inside* a delivery
-                # slot - never reorder a later-slot stop ahead of an
-                # earlier-slot one just to save travel time.
-                if parse_delivery_slot_minutes(best_orders[i]) != parse_delivery_slot_minutes(best_orders[j]):
+        n = len(best_orders)
+        for i in range(n - 1):
+            for j in range(i + 1, n):
+                segment = best_orders[i:j + 1]
+                candidate = best_orders[:i] + list(reversed(segment)) + best_orders[j + 1:]
+                # Reversing this segment reorders every stop inside it
+                # relative to every other stop inside it, and that can
+                # violate the delivery-slot precedence rule (serve earlier
+                # slots before later ones - see _slot_order_preserved)
+                # even when every stop still individually makes its own
+                # deadline, so deadline feasibility (checked via
+                # _simulate_route below) alone isn't enough to guard this.
+                # An earlier version instead required every stop in the
+                # segment to share one identical delivery slot before even
+                # trying the reversal - simple, but far too blunt: it
+                # blocked a reversal the instant the segment touched *any*
+                # two different slots, even ones the reversal wouldn't
+                # actually invert the order of, which in practice blocked
+                # almost every reversal on real data (orders almost never
+                # share one exact delivery time). Checking the real
+                # invariant directly, on the whole candidate route, allows
+                # every reversal that doesn't actually break slot order.
+                if not _slot_order_preserved(candidate):
                     continue
-                candidate = list(best_orders)
-                candidate[i], candidate[j] = candidate[j], candidate[i]
                 _, candidate_distance, candidate_time, feasible_all = _simulate_route(candidate, depot, route_start_minutes)
                 if candidate_time is None or not feasible_all:
                     continue
@@ -225,6 +286,73 @@ def _improve_route(vehicle: Dict[str, object], depot: Dict[str, float], route_st
             break
 
     vehicle["orders"] = best_orders
+
+
+def _relocate_across_routes(vehicles: List[Dict[str, object]], depot: Dict[str, float], route_start_minutes: float) -> None:
+    """Fixes the class of mistake build_routes' bucket-by-time,
+    nearest-available-vehicle greedy pass can make under capacity
+    pressure: by the time it reaches a given stop, every vehicle that's
+    actually near it may already be full, so the stop lands on whichever
+    vehicle still had a free slot - however far away that vehicle's
+    route actually is. _improve_route (above) can't catch this - it only
+    reorders stops *within* one route, it never moves a stop to a
+    *different* one. This does: for every stop on every route, it checks
+    whether removing it and re-inserting it (at its best position) on
+    some other route with spare capacity would reduce total distance
+    across both routes, and if a real improvement is found, moves it.
+    Classic VRP "relocate"/or-opt local search - runs after the initial
+    build and after _improve_route's within-route pass."""
+    routable = [v for v in vehicles if v["orders"] and all(has_coordinates(o) for o in v["orders"])]
+    if len(routable) < 2:
+        return
+
+    for _ in range(RELOCATE_SWEEPS):
+        moved_any = False
+        for source in routable:
+            i = 0
+            while i < len(source["orders"]):
+                order = source["orders"][i]
+                without = source["orders"][:i] + source["orders"][i + 1:]
+
+                _, dist_with, _, _ = _simulate_route(source["orders"], depot, route_start_minutes)
+                _, dist_without, _, source_feasible_without = _simulate_route(without, depot, route_start_minutes)
+                if dist_with is None or dist_without is None or not source_feasible_without:
+                    i += 1
+                    continue
+                removal_savings = dist_with - dist_without
+
+                best_target = None
+                best_insert_at = None
+                best_insertion_cost = None
+
+                for target in routable:
+                    if target is source or len(target["orders"]) >= target["capacity"]:
+                        continue
+                    _, target_dist_before, _, _ = _simulate_route(target["orders"], depot, route_start_minutes)
+                    if target_dist_before is None:
+                        continue
+                    for insert_at in range(len(target["orders"]) + 1):
+                        candidate = target["orders"][:insert_at] + [order] + target["orders"][insert_at:]
+                        if not _slot_order_preserved(candidate):
+                            continue
+                        _, cand_dist, _, cand_feasible = _simulate_route(candidate, depot, route_start_minutes)
+                        if cand_dist is None or not cand_feasible:
+                            continue
+                        insertion_cost = cand_dist - target_dist_before
+                        if best_insertion_cost is None or insertion_cost < best_insertion_cost:
+                            best_insertion_cost = insertion_cost
+                            best_target = target
+                            best_insert_at = insert_at
+
+                if best_target is not None and (removal_savings - best_insertion_cost) >= RELOCATE_MIN_SAVINGS_KM:
+                    source["orders"] = without
+                    best_target["orders"] = best_target["orders"][:best_insert_at] + [order] + best_target["orders"][best_insert_at:]
+                    moved_any = True
+                    continue  # re-check this same index - a different stop has shifted into it
+
+                i += 1
+        if not moved_any:
+            break
 
 
 def build_routes(
@@ -375,6 +503,8 @@ def build_routes(
 
             bucket.remove(best_order)
             remaining.remove(best_order)
+
+    _relocate_across_routes(vehicles, depot, route_start_minutes)
 
     for vehicle in vehicles:
         _improve_route(vehicle, depot, route_start_minutes)

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
 import httpx
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, UploadFile, File
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -32,6 +33,7 @@ from app.driver_excel_service import build_route_workbook
 from app.excel_service import validate_excel_file
 from app.geocode_service import geocode_orders
 from app.route_service import generate_routes
+from app.ws_manager import manager as tracking_manager
 from app.schemas import (
     AddOrdersRequest,
     AssignDriverRequest,
@@ -60,6 +62,11 @@ from app.schemas import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    # Captured so driver_location_ping_endpoint (a plain sync `def`,
+    # running in FastAPI's threadpool) can hand a broadcast back to *this*
+    # loop - see broadcast_threadsafe's own comment for why that indirection
+    # is necessary.
+    tracking_manager.bind_loop(asyncio.get_running_loop())
     yield
 
 
@@ -888,6 +895,28 @@ def unassign_driver_endpoint(route_id: int, db: Session = Depends(get_db)):
 
 # --- Admin live tracking -----------------------------------------------------
 
+# Push channel for live driver locations - every connected admin tab gets
+# every location ping the instant a driver's phone sends it (see
+# ws_manager.py for the full design rationale and its single-worker
+# caveat). The REST /tracking endpoint above/below is unchanged and still
+# polled as a resilient fallback (first load, a dropped socket
+# reconnecting, an environment that blocks WebSocket upgrades) - this is
+# purely an accelerant on top of it, not a replacement.
+@app.websocket("/ws/tracking")
+async def tracking_websocket_endpoint(websocket: WebSocket):
+    await tracking_manager.connect(websocket)
+    try:
+        while True:
+            # Admin clients never send anything meaningful over this
+            # socket - this just blocks until the browser closes it
+            # (tab closed, live tracking switched off, network drop).
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        tracking_manager.disconnect(websocket)
+
+
 @app.get("/api/routes/{route_id}/tracking")
 def get_route_tracking_endpoint(route_id: int, db: Session = Depends(get_db)):
     try:
@@ -975,6 +1004,22 @@ def driver_location_ping_endpoint(payload: DriverLocationRequest = Body(...), dr
         )
     except crud.RootplanError as e:
         _raise_for_driver_error(e)
+    # Push this fix out to every connected admin tab immediately, on top of
+    # persisting it - see tracking_websocket_endpoint/ws_manager.py. Never
+    # let a broadcast problem fail the ping itself (the driver's phone
+    # doesn't care whether any admin is watching); broadcast_threadsafe
+    # already swallows its own failures for exactly this reason.
+    tracking_manager.broadcast_threadsafe({
+        "type": "location",
+        "route_id": ping.route_id,
+        "lat": ping.lat,
+        "lng": ping.lng,
+        "speed": ping.speed,
+        "heading": ping.heading,
+        "accuracy": ping.accuracy,
+        "recorded_at": ping.recorded_at.isoformat(),
+        "maps_url": f"https://www.google.com/maps/search/?api=1&query={ping.lat}%2C{ping.lng}",
+    })
     return {"recorded_at": ping.recorded_at.isoformat()}
 
 

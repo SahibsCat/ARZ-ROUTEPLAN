@@ -326,6 +326,178 @@ def test_generate_routes_gives_isolated_far_order_its_own_vehicle(monkeypatch):
     assert far_route["number_of_stops"] == 1
 
 
+def test_improve_route_uncrosses_a_self_crossing_route(monkeypatch):
+    # Reproduces a real dispatcher-reported bug: a route whose stops were
+    # sequenced so the path zig-zags - goes out one direction, then
+    # doubles back across ground it already covered, then out again -
+    # instead of sweeping through them without backtracking. The old
+    # _improve_route only tried swapping two stops within a narrow
+    # window, leaving everything between them in its original order -
+    # that can't undo a crossing that isn't reducible to a single
+    # adjacent swap. 2-opt (reversing a whole segment between two edges)
+    # can. Uses real Euclidean distance (not a lookup table) so the
+    # geometry - and the brute-force ground truth below - are honest.
+    import itertools
+    from app.route_service import _improve_route, _simulate_route
+
+    depot = {"lat": 0.0, "lng": 0.0}
+    coords = {
+        "p1": (10.0, 50.0), "p2": (12.0, 40.0), "p3": (15.0, 38.0), "p4": (20.0, 35.0),
+        "p5": (-30.0, 10.0),  # far to one side, like the screenshot's stop 5
+        "p6": (40.0, 10.0),   # far to the other side, like the screenshot's stop 6
+    }
+    orders = {
+        oid: {"order_id": oid, "customer_name": oid, "address": oid, "delivery_time": "12:00", "lat": lat, "lng": lng}
+        for oid, (lat, lng) in coords.items()
+    }
+
+    def euclid(a, b):
+        return ((a["lat"] - b["lat"]) ** 2 + (a["lng"] - b["lng"]) ** 2) ** 0.5
+
+    def fake_road_distance_time(source, destination):
+        d = euclid(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+    # The crossing order: sweep through the p1-p4 cluster, then jump far
+    # to one side (p5), then all the way back past the cluster to the
+    # far other side (p6) - exactly the reported shape.
+    bad_order = [orders["p1"], orders["p2"], orders["p3"], orders["p4"], orders["p5"], orders["p6"]]
+    vehicle = {"vehicle_type": "car", "capacity": 6, "orders": list(bad_order), "current_time": 480.0, "current_location": dict(depot), "is_auto_created": False}
+
+    _, bad_distance, _, _ = _simulate_route(bad_order, depot, 480.0)
+
+    _improve_route(vehicle, depot, 480.0)
+
+    _, improved_distance, _, _ = _simulate_route(vehicle["orders"], depot, 480.0)
+    improved_ids = [o["order_id"] for o in vehicle["orders"]]
+
+    # Ground truth: the actual best possible order for these 6 points,
+    # found by brute force (720 permutations - cheap).
+    best_possible = min(
+        _simulate_route(list(perm), depot, 480.0)[1]
+        for perm in itertools.permutations(bad_order)
+    )
+
+    assert set(improved_ids) == {"p1", "p2", "p3", "p4", "p5", "p6"}  # nothing lost or duplicated
+    assert improved_distance < bad_distance
+    # Within 10% of true optimal - 2-opt is a local search, not guaranteed
+    # to hit the global optimum, but should land close for 6 points.
+    assert improved_distance <= best_possible * 1.10
+
+
+def test_improve_route_uncrosses_a_self_crossing_route_with_mixed_delivery_times(monkeypatch):
+    # Same crossing geometry as test_improve_route_uncrosses_a_self_crossing_route,
+    # but with the delivery times realistically mixed instead of every stop
+    # sharing one identical "12:00" slot. Reproduces a real regression: an
+    # earlier version of _improve_route only allowed a 2-opt reversal when
+    # every stop in the reversed segment shared one *identical* delivery
+    # slot - which sounds cautious, but in practice blocks almost every
+    # reversal on real data, since real routes are a mix of stops with
+    # different explicit times and stops with no time set at all (an
+    # unset time and any explicit time already count as two different
+    # slot values under that rule). The actual invariant that matters is
+    # _slot_order_preserved - never serve a later slot before an earlier
+    # one - which is far less restrictive and should still let 2-opt
+    # uncross this route.
+    import itertools
+    from app.route_service import _improve_route, _simulate_route
+
+    depot = {"lat": 0.0, "lng": 0.0}
+    coords = {
+        "p1": (10.0, 50.0), "p2": (12.0, 40.0), "p3": (15.0, 38.0), "p4": (20.0, 35.0),
+        "p5": (-30.0, 10.0), "p6": (40.0, 10.0),
+    }
+    # p1-p4 share one delivery window; p5 and p6 have no delivery time set
+    # at all (the common real-world case) - a mix an old identical-slot
+    # check would treat as "different slots everywhere" and refuse to
+    # touch.
+    delivery_times = {"p1": "12:00", "p2": "12:00", "p3": "12:00", "p4": "12:00", "p5": None, "p6": None}
+    orders = {
+        oid: {"order_id": oid, "customer_name": oid, "address": oid, "delivery_time": delivery_times[oid], "lat": lat, "lng": lng}
+        for oid, (lat, lng) in coords.items()
+    }
+
+    def euclid(a, b):
+        return ((a["lat"] - b["lat"]) ** 2 + (a["lng"] - b["lng"]) ** 2) ** 0.5
+
+    def fake_road_distance_time(source, destination):
+        d = euclid(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+    bad_order = [orders["p1"], orders["p2"], orders["p3"], orders["p4"], orders["p5"], orders["p6"]]
+    vehicle = {"vehicle_type": "car", "capacity": 6, "orders": list(bad_order), "current_time": 480.0, "current_location": dict(depot), "is_auto_created": False}
+
+    _, bad_distance, _, _ = _simulate_route(bad_order, depot, 480.0)
+
+    _improve_route(vehicle, depot, 480.0)
+
+    _, improved_distance, _, _ = _simulate_route(vehicle["orders"], depot, 480.0)
+    improved_ids = [o["order_id"] for o in vehicle["orders"]]
+
+    best_possible = min(
+        _simulate_route(list(perm), depot, 480.0)[1]
+        for perm in itertools.permutations(bad_order)
+    )
+
+    assert set(improved_ids) == {"p1", "p2", "p3", "p4", "p5", "p6"}
+    assert improved_distance < bad_distance
+    assert improved_distance <= best_possible * 1.10
+    # p1-p4 (the "12:00" stops) must still all precede any stop that has
+    # no time set is fine either way, but they must never be reordered
+    # relative to each other's slot value - trivially true here since
+    # they're all equal, so this really checks the mixed inf/finite case
+    # didn't block the move that fixes the crossing.
+    assert bad_distance - improved_distance > 10  # a real, substantial fix, not a rounding artifact
+
+
+def test_relocate_across_routes_moves_stray_stop_to_closer_route_with_capacity(monkeypatch):
+    # Reproduces a real dispatcher-reported bug: a route with 5
+    # tightly-clustered stops that also picked up one stop from a totally
+    # different part of the city, because that's the route the initial
+    # bucket-by-time/nearest-available-vehicle greedy build happened to
+    # still have a free slot on when it reached that order - not because
+    # it was actually a good fit. _improve_route can't fix this (it only
+    # reorders stops *within* one route); _relocate_across_routes is the
+    # cross-route pass that should.
+    from app.route_service import _relocate_across_routes
+
+    depot = {"lat": 13.0, "lng": 80.0}
+    stray = {"order_id": "stray", "customer_name": "Stray", "address": "Stray", "delivery_time": "12:00", "lat": 13.50, "lng": 80.50}
+    a1 = {"order_id": "a1", "customer_name": "A1", "address": "A1", "delivery_time": "12:00", "lat": 13.001, "lng": 80.001}
+    a2 = {"order_id": "a2", "customer_name": "A2", "address": "A2", "delivery_time": "12:00", "lat": 13.002, "lng": 80.002}
+    # Right next to `stray`, on a different route that still has a free
+    # capacity slot (bike capacity 3, only 2 stops used).
+    b1 = {"order_id": "b1", "customer_name": "B1", "address": "B1", "delivery_time": "12:00", "lat": 13.501, "lng": 80.501}
+    b2 = {"order_id": "b2", "customer_name": "B2", "address": "B2", "delivery_time": "12:00", "lat": 13.502, "lng": 80.502}
+
+    def bucket(point):
+        lat = round(point["lat"], 1)
+        return "far" if lat == 13.5 else "near_depot"
+
+    def distance_between(source, destination):
+        same_bucket = bucket(source) == bucket(destination)
+        return 0.3 if same_bucket else 60.0
+
+    def fake_road_distance_time(source, destination):
+        d = distance_between(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+    route_a = {"vehicle_type": "bike", "capacity": 3, "orders": [a1, a2, stray], "current_time": 480.0, "current_location": dict(depot), "is_auto_created": False}
+    route_b = {"vehicle_type": "bike", "capacity": 3, "orders": [b1, b2], "current_time": 480.0, "current_location": dict(depot), "is_auto_created": False}
+    vehicles = [route_a, route_b]
+
+    _relocate_across_routes(vehicles, depot, 480.0)
+
+    assert [o["order_id"] for o in route_a["orders"]] == ["a1", "a2"]
+    assert "stray" in [o["order_id"] for o in route_b["orders"]]
+
+
 def test_google_maps_url_strips_embedded_line_breaks_from_address():
     # Regression test: many uploaded addresses keep literal newlines
     # (readable multi-line cells in Excel), e.g.

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
-import ExcelJS from 'exceljs';
 import RouteWorkspace from './routes/RouteWorkspace';
 import './App.css';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
@@ -66,7 +65,7 @@ const NAV_GROUPS = [
       { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
       { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
       { key: 'history', label: 'Route History', icon: IconHistory },
-      { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, soon: true },
+      { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, anchor: 'unassigned-board' },
     ],
   },
   {
@@ -98,7 +97,6 @@ const NAV_ITEMS_SOON = NAV_ITEMS.filter((item) => item.soon);
 const findNavItem = (key) => NAV_ITEMS.find((item) => item.key === key);
 const SOON_BLURBS = {
   vehicles: 'Individual vehicle records - plate number, type, and which driver each one belongs to - not just the car/bike counts on the Routes page. Needs its own backend table.',
-  'live-tracking': 'A single map showing every driver on the road at once. Today, live tracking is per-route (open a route, click Track Driver) - this would be the fleet-wide view.',
   notifications: 'A persistent inbox for alerts like route-started - today those are toasts that vanish once you dismiss them or leave the page.',
   reports: 'Delivery performance over time - on-time rate, distance, driver totals - once there is enough saved route history to report on honestly.',
   analytics: 'Trend and pattern analysis across saved route plans.',
@@ -166,16 +164,174 @@ function ComingSoonPage({ label, icon: Icon, blurb, onClose }) {
   );
 }
 
-function KpiTile({ variant, icon: Icon, value, label, suffix }) {
+// A plain div when there's nowhere useful to send a click, a real button
+// (keyboard-reachable, no default day-over-day trend claimed since the
+// backend doesn't track yesterday's numbers) when there is.
+function KpiTile({ variant, icon: Icon, value, label, suffix, onClick }) {
   const display = useCountUp(value);
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className={`kpi-tile kpi-tile--${variant}`}>
+    <Tag
+      type={onClick ? 'button' : undefined}
+      className={`kpi-tile kpi-tile--${variant}${onClick ? ' kpi-tile--clickable' : ''}`}
+      onClick={onClick}
+    >
       <span className="kpi-tile__icon"><Icon width={16} height={16} /></span>
       <div>
         <span className="kpi-tile__value mono-num">
           {display}{suffix && <span className="kpi-tile__suffix">{suffix}</span>}
         </span>
         <span className="kpi-tile__label">{label}</span>
+      </div>
+    </Tag>
+  );
+}
+
+// Only ever mounted when there's something in it (App.jsx checks total
+// === 0 before rendering) - three real, already-tracked signals rolled
+// into one glanceable list instead of three separate boards/alerts the
+// dispatcher has to notice on their own. Deliberately doesn't invent a
+// "missing data" bucket (no phone/delivery-window field exists on Order
+// yet) - only surfaces what the app actually knows about.
+function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, onRetry, onJump, describeErrorDetail }) {
+  const total = failedOrders.length + warnings.length + pendingOrders.length;
+  if (total === 0) return null;
+  const parts = [];
+  if (failedOrders.length) parts.push(`${failedOrders.length} failed address${failedOrders.length === 1 ? '' : 'es'}`);
+  if (warnings.length) parts.push(`${warnings.length} fleet warning${warnings.length === 1 ? '' : 's'}`);
+  if (pendingOrders.length) parts.push(`${pendingOrders.length} unassigned order${pendingOrders.length === 1 ? '' : 's'}`);
+
+  return (
+    <div className="issues-panel">
+      <button type="button" className="issues-panel__header" onClick={onToggle} aria-expanded={isOpen}>
+        <span className="issues-panel__icon"><IconAlert width={15} height={15} /></span>
+        <span className="issues-panel__title-group">
+          <span className="issues-panel__title">Issues requiring attention · {total}</span>
+          <span className="issues-panel__sub">{parts.join(' · ')}</span>
+        </span>
+        <IconChevron
+          width={15}
+          height={15}
+          className={`issues-panel__chevron${isOpen ? ' issues-panel__chevron--open' : ''}`}
+        />
+      </button>
+      {isOpen && (
+        <div className="issues-panel__body">
+          {failedOrders.length > 0 && (
+            <div className="issue-group">
+              <div className="issue-group__label">Failed addresses</div>
+              {failedOrders.slice(0, 5).map((o) => (
+                <div className="issue-row" key={`issue-fa-${o.order_id}`}>
+                  <span className="issue-row__dot" />
+                  <span className="issue-row__text">
+                    Order #{o.order_id} — {describeErrorDetail(o.geocode_error, 'address could not be geocoded')}
+                  </span>
+                  <div className="issue-row__actions">
+                    <button type="button" className="btn btn--outline btn--compact" onClick={() => onRetry(o.order_id)}>Retry</button>
+                    <button type="button" className="btn btn--ghost btn--compact" onClick={() => onJump('failed', o.order_id)}>View</button>
+                  </div>
+                </div>
+              ))}
+              {failedOrders.length > 5 && (
+                <button type="button" className="issue-group__more" onClick={() => onJump('failed')}>
+                  +{failedOrders.length - 5} more — see Failed Addresses
+                </button>
+              )}
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="issue-group">
+              <div className="issue-group__label">Capacity &amp; fleet warnings</div>
+              {warnings.map((w, idx) => (
+                <div className="issue-row" key={`issue-wn-${idx}`}>
+                  <span className="issue-row__dot" />
+                  <span className="issue-row__text">{describeErrorDetail(w, 'Needs attention.')}</span>
+                  <div className="issue-row__actions">
+                    <button type="button" className="btn btn--ghost btn--compact" onClick={() => onJump('generate')}>View</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {pendingOrders.length > 0 && (
+            <div className="issue-group">
+              <div className="issue-group__label">Unassigned orders</div>
+              {pendingOrders.slice(0, 5).map((o) => (
+                <div className="issue-row" key={`issue-pd-${o.order_id}`}>
+                  <span className="issue-row__dot" />
+                  <span className="issue-row__text">Order #{o.order_id} — {o.address || 'no route has capacity'}</span>
+                  <div className="issue-row__actions">
+                    <button type="button" className="btn btn--outline btn--compact" onClick={() => onJump('unassigned')}>Assign</button>
+                  </div>
+                </div>
+              ))}
+              {pendingOrders.length > 5 && (
+                <button type="button" className="issue-group__more" onClick={() => onJump('unassigned')}>
+                  +{pendingOrders.length - 5} more — see Unassigned Orders
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ⌘K / Ctrl+K overlay. Deliberately doesn't replace the topbar's existing
+// live-filter search (searchTerm/matchesSearch, wired into three boards
+// already) - this is a separate, additive entry point for jumping
+// somewhere or running an action, not another way to filter the same
+// list. Every item here calls a handler App() already had for the same
+// action elsewhere (dash-links, quick actions, sidebar nav) - the
+// palette is a faster way to reach them, not new behavior.
+function CommandPalette({ open, query, onQueryChange, onClose, groups }) {
+  if (!open) return null;
+  const hasResults = groups.some((g) => g.items.length > 0);
+  return (
+    <div className="modal-backdrop command-palette__backdrop" onClick={onClose}>
+      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+        <div className="command-palette__input-wrap">
+          <IconSearch width={16} height={16} />
+          <input
+            autoFocus
+            className="command-palette__input"
+            placeholder="Search orders, routes, drivers, actions…"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+          />
+          <button type="button" className="command-palette__close" onClick={onClose} aria-label="Close">
+            <IconX width={14} height={14} />
+          </button>
+        </div>
+        <div className="command-palette__list">
+          {hasResults ? groups.map((g) => (g.items.length === 0 ? null : (
+            <div key={g.label}>
+              <div className="command-palette__group">{g.label}</div>
+              {g.items.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className="command-palette__item"
+                  disabled={item.disabled}
+                  onClick={() => { onClose(); item.onRun(); }}
+                >
+                  <span className="command-palette__item-icon"><item.icon width={14} height={14} /></span>
+                  <span>
+                    <span className="command-palette__item-label">{item.label}</span>
+                    {item.sub && <span className="command-palette__item-sub">{item.sub}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))) : (
+            <div className="command-palette__empty">No matches for "{query}"</div>
+          )}
+        </div>
+        <div className="command-palette__foot">
+          <span className="command-palette__hint"><kbd>↵</kbd> select</span>
+          <span className="command-palette__hint"><kbd>esc</kbd> close</span>
+        </div>
       </div>
     </div>
   );
@@ -643,6 +799,45 @@ function App() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [quickActionsOpen]);
+
+  // Generate Routes panel's own overflow menu (Download all/Save/Delete -
+  // Regenerate stays the one always-visible primary action) - same
+  // open/outside-click-close shape as quickActionsOpen above.
+  const [toolbarOverflowOpen, setToolbarOverflowOpen] = useState(false);
+  const toolbarOverflowRef = useRef(null);
+  useEffect(() => {
+    if (!toolbarOverflowOpen) return undefined;
+    const handler = (e) => {
+      if (toolbarOverflowRef.current && !toolbarOverflowRef.current.contains(e.target)) setToolbarOverflowOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [toolbarOverflowOpen]);
+  const [isDraggingManifest, setIsDraggingManifest] = useState(false);
+
+  // Command palette (⌘K/Ctrl+K) - separate from topbar__search above,
+  // which stays a live filter over the boards already on screen. This is
+  // a jump-to/run-this overlay instead.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        setPaletteQuery('');
+      } else if (e.key === 'Escape') {
+        setPaletteOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  // Issues panel's own collapse state - a UI toggle like quickActionsOpen
+  // above, not part of the session-tab snapshot/restore system.
+  const [issuesOpen, setIssuesOpen] = useState(true);
+
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
   const showToast = (message) => {
@@ -1236,8 +1431,10 @@ function App() {
     }
   };
 
-  const handleUpload = async (event) => {
-    const file = event.target.files?.[0];
+  // Takes the File directly rather than an input change event, so both
+  // the file input's onChange and the dropzone's onDrop can feed it the
+  // same way instead of duplicating everything below.
+  const handleUpload = async (file) => {
     if (!file) return;
 
     setFileName(file.name);
@@ -1977,6 +2174,15 @@ function App() {
   };
 
   const handleDownloadRoute = async (route) => {
+    // exceljs is a genuinely large dependency (it bundles JSZip and more)
+    // that's only ever needed at the moment someone actually clicks a
+    // download button - loading it eagerly at module scope put its full
+    // weight in every visitor's very first page load, whether or not they
+    // ever download anything. A dynamic import here defers fetching and
+    // parsing it until it's actually about to be used, and the browser
+    // caches the chunk after the first download so every one after it is
+    // instant.
+    const { default: ExcelJS } = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     addRouteWorksheet(workbook, route, new Set());
     const buffer = await workbook.xlsx.writeBuffer();
@@ -2114,6 +2320,7 @@ function App() {
       isLate: !!order.is_late,
     });
 
+    const { default: ExcelJS } = await import('exceljs'); // see handleDownloadRoute's comment
     const workbook = new ExcelJS.Workbook();
     const usedSheetNames = new Set();
     const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -2192,7 +2399,7 @@ function App() {
     failed: { title: 'Failed Addresses', subtitle: `${failedOrders.length} address${failedOrders.length === 1 ? '' : 'es'} needing attention` },
     drivers: { title: 'Drivers', subtitle: `${drivers.length} driver${drivers.length === 1 ? '' : 's'} on the roster` },
     vehicles: { title: 'Vehicles', subtitle: 'Fleet records - coming soon' },
-    'live-tracking': { title: 'Live Tracking', subtitle: 'Fleet-wide live map - coming soon' },
+    'live-tracking': { title: 'Live Tracking', subtitle: 'Every active driver, live, on one map' },
     notifications: { title: 'Notifications', subtitle: 'Alert inbox - coming soon' },
     reports: { title: 'Reports', subtitle: 'Coming soon' },
     analytics: { title: 'Analytics', subtitle: 'Coming soon' },
@@ -2219,6 +2426,93 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [failedOrders, searchQuery]);
+
+  // ⌘K palette content - every entry reuses a handler App() already had
+  // (dash-links/quick actions/sidebar nav) for the same action; the
+  // palette is a faster way to reach it, not new behavior.
+  const paletteQueryNorm = paletteQuery.trim().toLowerCase();
+  const paletteMatch = (label, sub) => (
+    !paletteQueryNorm
+    || label.toLowerCase().includes(paletteQueryNorm)
+    || (sub || '').toLowerCase().includes(paletteQueryNorm)
+  );
+
+  const paletteActionItems = [
+    {
+      id: 'act-generate',
+      label: successfulOrders.length > 0 ? 'Regenerate routes' : 'Generate routes',
+      sub: 'Run route optimization with the current fleet',
+      icon: IconRoute,
+      disabled: isProcessing || isRegenerating || successfulOrders.length === 0,
+      onRun: handleRegenerateRoutes,
+    },
+    {
+      id: 'act-upload',
+      label: 'Upload manifest',
+      sub: '.xlsx import',
+      icon: IconUpload,
+      disabled: isProcessing,
+      onRun: () => document.getElementById('manifest-input')?.click(),
+    },
+    ...(routes.length > 0 ? [{
+      id: 'act-download',
+      label: 'Download all routes',
+      sub: 'Export one workbook, every route',
+      icon: IconDownload,
+      disabled: isDownloadingAll,
+      onRun: handleDownloadAllClick,
+    }] : []),
+    ...(planId != null && !isPlanSaved ? [{
+      id: 'act-save',
+      label: 'Save to Route History',
+      sub: 'Keep this plan',
+      icon: IconCheck,
+      disabled: isSavingPlan,
+      onRun: handleSaveToHistory,
+    }] : []),
+  ].filter((item) => paletteMatch(item.label, item.sub));
+
+  const paletteNavItems = NAV_ITEMS
+    .filter((item) => !item.soon)
+    .map((item) => ({ id: `nav-${item.key}`, label: item.label, sub: 'Go to section', icon: item.icon, onRun: () => handleNavClick(item) }))
+    .filter((item) => paletteMatch(item.label, item.sub));
+
+  const paletteRouteItems = (paletteQueryNorm
+    ? routes.filter((r) => r.route_name.toLowerCase().includes(paletteQueryNorm))
+    : routes.slice(0, 6)
+  ).slice(0, 8).map((r) => ({
+    id: `route-${r.route_name}`,
+    label: r.route_name,
+    sub: `${r.orders.length} stop${r.orders.length === 1 ? '' : 's'} · ${r.vehicle_type === 'car' ? 'Car' : 'Bike'}`,
+    icon: IconRoute,
+    onRun: () => handleNavClick(findNavItem('generate')),
+  }));
+
+  const paletteDriverItems = (paletteQueryNorm
+    ? drivers.filter((d) => (d.name || '').toLowerCase().includes(paletteQueryNorm))
+    : []
+  ).slice(0, 6).map((d) => ({
+    id: `driver-${d.id}`,
+    label: d.name,
+    sub: d.status === 'active' ? 'Active' : 'Inactive',
+    icon: IconUsers,
+    onRun: () => handleNavClick(findNavItem('drivers')),
+  }));
+
+  const paletteGroups = [
+    { label: 'Actions', items: paletteActionItems },
+    { label: 'Go to', items: paletteNavItems },
+    { label: 'Routes', items: paletteRouteItems },
+    { label: 'Drivers', items: paletteDriverItems },
+  ];
+
+  // Issues panel's "View"/"Assign"/etc jump - the same nav handler the
+  // dash-links already use, optionally also selecting one failed order so
+  // the Returns board's master/detail split opens on it.
+  const handleIssueJump = (navKey, focusOrderId) => {
+    if (focusOrderId != null) setSelectedFailedId(focusOrderId);
+    handleNavClick(findNavItem(navKey));
+  };
 
   return (
     <div className="app-shell">
@@ -2321,6 +2615,15 @@ function App() {
                 </button>
               )}
             </div>
+
+            <button
+              type="button"
+              className="topbar__palette-btn"
+              onClick={() => { setPaletteOpen(true); setPaletteQuery(''); }}
+              title="Command palette"
+            >
+              <kbd>⌘K</kbd>
+            </button>
 
             <div className="topbar__spacer" />
             <span className="topbar__date">{todayLabel}</span>
@@ -2429,13 +2732,24 @@ function App() {
         <>
           {/* One flat row of compact stat cards */}
           <div className="stat-row">
-            <KpiTile variant="orders" icon={IconInbox} value={totalOrders} label="Orders today" />
-            <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" />
-            <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" />
-            <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" />
-            <KpiTile variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance" />
-            <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" />
+            <KpiTile variant="orders" icon={IconInbox} value={totalOrders} label="Orders today" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" onClick={() => handleNavClick(findNavItem('generate'))} />
           </div>
+
+          <IssuesPanel
+            failedOrders={failedOrders}
+            warnings={warnings}
+            pendingOrders={pendingOrders}
+            isOpen={issuesOpen}
+            onToggle={() => setIssuesOpen((v) => !v)}
+            onRetry={handleRetrySingleOrder}
+            onJump={handleIssueJump}
+            describeErrorDetail={describeErrorDetail}
+          />
 
           <div className="dash-links">
             <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('generate'))}>
@@ -2471,29 +2785,37 @@ function App() {
 
           <div className="toolbar__row">
             <div className="toolbar__group toolbar__group--fleet">
-              <div className={`fleet-dial${!hasVehicles ? ' fleet-dial--alarm' : ''}`}>
-                <label className="fleet-dial__label" htmlFor="cars-input">Cars</label>
-                <input
-                  id="cars-input"
-                  className="fleet-dial__input mono-num"
-                  type="number"
-                  min="0"
-                  value={cars}
-                  disabled={isProcessing}
-                  onChange={(e) => setCars(Math.max(0, Number(e.target.value) || 0))}
-                />
+              <div className={`stepper${!hasVehicles ? ' stepper--alarm' : ''}`}>
+                <span className="stepper__label">Cars</span>
+                <div className="stepper__control">
+                  <button type="button" className="stepper__btn" disabled={isProcessing || cars <= 0} onClick={() => setCars((c) => Math.max(0, c - 1))} aria-label="Decrease cars">−</button>
+                  <input
+                    id="cars-input"
+                    className="stepper__input mono-num"
+                    type="number"
+                    min="0"
+                    value={cars}
+                    disabled={isProcessing}
+                    onChange={(e) => setCars(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                  <button type="button" className="stepper__btn" disabled={isProcessing} onClick={() => setCars((c) => c + 1)} aria-label="Increase cars">+</button>
+                </div>
               </div>
-              <div className={`fleet-dial${!hasVehicles ? ' fleet-dial--alarm' : ''}`}>
-                <label className="fleet-dial__label" htmlFor="bikes-input">Bikes</label>
-                <input
-                  id="bikes-input"
-                  className="fleet-dial__input mono-num"
-                  type="number"
-                  min="0"
-                  value={bikes}
-                  disabled={isProcessing}
-                  onChange={(e) => setBikes(Math.max(0, Number(e.target.value) || 0))}
-                />
+              <div className={`stepper${!hasVehicles ? ' stepper--alarm' : ''}`}>
+                <span className="stepper__label">Bikes</span>
+                <div className="stepper__control">
+                  <button type="button" className="stepper__btn" disabled={isProcessing || bikes <= 0} onClick={() => setBikes((b) => Math.max(0, b - 1))} aria-label="Decrease bikes">−</button>
+                  <input
+                    id="bikes-input"
+                    className="stepper__input mono-num"
+                    type="number"
+                    min="0"
+                    value={bikes}
+                    disabled={isProcessing}
+                    onChange={(e) => setBikes(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                  <button type="button" className="stepper__btn" disabled={isProcessing} onClick={() => setBikes((b) => b + 1)} aria-label="Increase bikes">+</button>
+                </div>
               </div>
               {!hasVehicles && (
                 <span className="fleet-warning">
@@ -2507,7 +2829,7 @@ function App() {
 
             <div className="toolbar__group toolbar__group--actions">
               <button
-                className="toolbar-btn"
+                className="toolbar-btn toolbar-btn--primary"
                 onClick={handleRegenerateRoutes}
                 disabled={isProcessing || isRegenerating || successfulOrders.length === 0}
                 title="Recompute routes with the current car/bike counts - no re-upload needed"
@@ -2516,58 +2838,105 @@ function App() {
                 {isRegenerating ? 'Regenerating…' : 'Regenerate'}
               </button>
 
-              {routes.length > 0 && (
-                <button
-                  className="toolbar-btn toolbar-btn--ghost"
-                  onClick={handleDownloadAllClick}
-                  disabled={isDownloadingAll}
-                  title="Download every route as one Excel workbook - an Overview sheet plus one sheet per route"
-                >
-                  <IconDownload width={14} height={14} />
-                  {isDownloadingAll ? 'Preparing…' : 'Download all'}
-                </button>
-              )}
-
-              {planId != null && (
-                <button
-                  className="toolbar-btn toolbar-btn--save"
-                  onClick={handleSaveToHistory}
-                  disabled={isSavingPlan || isPlanSaved}
-                  title={isPlanSaved ? 'Already in Route History' : 'Save this route plan to Route History'}
-                >
-                  <IconCheck width={14} height={14} />
-                  {isPlanSaved ? 'Saved' : isSavingPlan ? 'Saving…' : 'Save'}
-                </button>
-              )}
-
-              {planId != null && (
-                <button
-                  className="toolbar-btn toolbar-btn--danger"
-                  onClick={handleDeleteCurrentPlan}
-                  disabled={isDeletingPlan}
-                  title="Delete this route plan"
-                >
-                  <IconX width={14} height={14} />
-                  {isDeletingPlan ? 'Deleting…' : 'Delete'}
-                </button>
+              {/* Everything besides Regenerate - the one thing you come to
+                  this panel to actually do - grouped behind one overflow
+                  trigger instead of competing with it in a row of
+                  equal-weight buttons. */}
+              {(routes.length > 0 || planId != null) && (
+                <div className="overflow-wrap" ref={toolbarOverflowRef}>
+                  <button
+                    type="button"
+                    className="toolbar-btn toolbar-btn--ghost"
+                    onClick={() => setToolbarOverflowOpen((v) => !v)}
+                    aria-expanded={toolbarOverflowOpen}
+                    title="More actions"
+                  >
+                    More
+                    <IconChevron width={12} height={12} style={{ transform: toolbarOverflowOpen ? 'rotate(-90deg)' : 'rotate(90deg)' }} />
+                  </button>
+                  {toolbarOverflowOpen && (
+                    <div className="overflow-menu">
+                      {routes.length > 0 && (
+                        <button
+                          type="button"
+                          className="overflow-menu__item"
+                          disabled={isDownloadingAll}
+                          onClick={() => { setToolbarOverflowOpen(false); handleDownloadAllClick(); }}
+                        >
+                          {isDownloadingAll ? <span className="spinner" /> : <IconDownload width={14} height={14} />}
+                          {isDownloadingAll ? 'Preparing…' : 'Download all routes'}
+                        </button>
+                      )}
+                      {planId != null && (
+                        <button
+                          type="button"
+                          className="overflow-menu__item"
+                          disabled={isSavingPlan || isPlanSaved}
+                          onClick={() => { setToolbarOverflowOpen(false); handleSaveToHistory(); }}
+                        >
+                          {isSavingPlan ? <span className="spinner" /> : <IconCheck width={14} height={14} />}
+                          {isPlanSaved ? 'Saved to history' : isSavingPlan ? 'Saving…' : 'Save to history'}
+                        </button>
+                      )}
+                      {planId != null && (
+                        <button
+                          type="button"
+                          className="overflow-menu__item overflow-menu__item--danger"
+                          disabled={isDeletingPlan}
+                          onClick={() => { setToolbarOverflowOpen(false); handleDeleteCurrentPlan(); }}
+                        >
+                          {isDeletingPlan ? <span className="spinner" /> : <IconX width={14} height={14} />}
+                          {isDeletingPlan ? 'Deleting…' : 'Delete this plan'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
+          </div>
 
-            <div className="toolbar__divider" aria-hidden="true" />
-
-            <div className="toolbar__group toolbar__group--upload">
-              <div className="intake">
-                <label className="intake__label" htmlFor="manifest-input">Load order manifest (.xlsx)</label>
-                <input
-                  id="manifest-input"
-                  className="intake__input"
-                  type="file"
-                  accept=".xlsx"
-                  onChange={handleUpload}
-                  disabled={isProcessing}
-                />
-              </div>
+          {/* Real drag-and-drop, not decorative - onDrop feeds the same
+              handleUpload the hidden file input's onChange does. */}
+          <div
+            className={`dropzone${isDraggingManifest ? ' dropzone--active' : ''}${isProcessing ? ' dropzone--disabled' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Load order manifest, .xlsx"
+            onClick={() => { if (!isProcessing) document.getElementById('manifest-input')?.click(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !isProcessing) document.getElementById('manifest-input')?.click(); }}
+            onDragOver={(e) => { e.preventDefault(); if (!isProcessing) setIsDraggingManifest(true); }}
+            onDragLeave={() => setIsDraggingManifest(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingManifest(false);
+              if (isProcessing) return;
+              const file = e.dataTransfer.files?.[0];
+              if (file) handleUpload(file);
+            }}
+          >
+            <div className="dropzone__icon">
+              {isProcessing ? <span className="spinner" /> : <IconUpload width={18} height={18} />}
             </div>
+            <div className="dropzone__text">
+              <span className="dropzone__title">
+                {isProcessing
+                  ? `Processing ${fileName || 'manifest'}…`
+                  : fileName ? `Loaded: ${fileName}` : 'Drag & drop today\'s manifest, or click to browse'}
+              </span>
+              <span className="dropzone__sub">
+                {isProcessing ? 'Uploading, geocoding and building routes - this can take a moment' : '.xlsx · columns validated on drop'}
+              </span>
+            </div>
+            <input
+              id="manifest-input"
+              className="dropzone__input"
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => handleUpload(e.target.files?.[0])}
+              disabled={isProcessing}
+              tabIndex={-1}
+            />
           </div>
 
           <div className="toolbar__status-row">
@@ -2604,6 +2973,16 @@ function App() {
             <div className="alert alert--warn">
               <IconAlert />
               <div>{warnings.map((warning, idx) => <p key={idx}>{describeErrorDetail(warning, 'Something needs your attention.')}</p>)}</div>
+            </div>
+          )}
+
+          {/* The overflow menu these three actions live in closes itself
+              the instant one is clicked, so its own spinner (above) is
+              never actually seen - this is the visible "still working"
+              feedback for all three. */}
+          {(isDownloadingAll || isSavingPlan || isDeletingPlan) && (
+            <div className="busy-overlay">
+              <span className="spinner" />
             </div>
           )}
         </div>
@@ -2667,6 +3046,8 @@ function App() {
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
             requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
+            requestedView={activeNav === 'live-tracking' ? 'map' : undefined}
+            requestedLiveTracking={activeNav === 'live-tracking'}
             drivers={drivers}
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}
@@ -2742,7 +3123,8 @@ function App() {
                                 disabled={isTogglingDriverStatus === driver.id}
                                 onClick={() => handleToggleDriverStatus(driver)}
                               >
-                                {isTogglingDriverStatus === driver.id ? '…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
+                                {isTogglingDriverStatus === driver.id && <span className="spinner" />}
+                                {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
                               </button>
                               <button
                                 type="button"
@@ -2750,7 +3132,8 @@ function App() {
                                 disabled={isDeletingDriver === driver.id}
                                 onClick={() => handleDeleteDriver(driver)}
                               >
-                                {isDeletingDriver === driver.id ? '…' : 'Delete'}
+                                {isDeletingDriver === driver.id && <span className="spinner" />}
+                                {isDeletingDriver === driver.id ? 'Deleting…' : 'Delete'}
                               </button>
                             </div>
                           </td>
@@ -2766,7 +3149,7 @@ function App() {
           {/* RETURNS BOARD */}
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
-              <h2 className="board__title">Returns</h2>
+              <h2 className="board__title"><IconAlert width={18} height={18} /> Returns</h2>
               <span className="board__count mono-num">{failedOrders.length}</span>
             </div>
             <div className="board__body">
@@ -2987,6 +3370,14 @@ function App() {
           {toast}
         </div>
       )}
+
+      <CommandPalette
+        open={paletteOpen}
+        query={paletteQuery}
+        onQueryChange={setPaletteQuery}
+        onClose={() => setPaletteOpen(false)}
+        groups={paletteGroups}
+      />
     </div>
   );
 }

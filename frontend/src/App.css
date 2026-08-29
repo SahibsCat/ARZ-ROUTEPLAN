@@ -248,7 +248,16 @@
 
 /* Base Resets & Global Button Stability */
 * { box-sizing: border-box; }
-html { font-size: 16px; scroll-behavior: smooth; }
+/* Every spacing/radius/font-size value in this app is in rem, so
+   dialing the root size down scales the whole site proportionally in
+   one place - text, padding, gaps, icons via em-sized containers, all
+   slightly more compact - instead of hand-tuning every component. */
+/* Text and container padding were both riding the same rem-based root
+   size, so shrinking one to make cards more compact shrunk the other
+   too far to read comfortably. Nudged back up slightly for text; the
+   container/card padding reductions below are now a separate, explicit
+   lever instead of also being tied to this value. */
+html { font-size: 14.5px; scroll-behavior: smooth; }
 html, body, #root { margin: 0; padding: 0; min-height: 100vh; }
 body {
   background: var(--paper);
@@ -749,6 +758,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
   white-space: nowrap;
   box-sizing: border-box;
 }
+
+/* Every control that receives the delegated click ripple owns and clips it.
+   Without this, the ripple from toolbar/quick-action buttons can paint
+   outside the rounded button and make the control look like it grows. */
+.toolbar-btn,
+.quick-action {
+  position: relative;
+  overflow: hidden;
+}
 /* Click ripple (App.jsx's delegated mousedown listener on every .btn/
    .toolbar-btn/.quick-action) - the element it inserts sets its own
    width/height/left/top inline, sized to the button itself, and relies
@@ -916,10 +934,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
-  padding: 1.1rem 1.25rem;
+  padding: 0.85rem 1rem;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   box-shadow: var(--shadow-sm);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   position: relative;
@@ -929,9 +947,31 @@ textarea:focus-visible, [tabindex]:focus-visible {
   box-shadow: var(--shadow-md);
   border-color: var(--accent-soft);
 }
+/* Rendered as a real <button> only when KpiTile is given an onClick (see
+   App.jsx) - reset the button chrome back to plain-tile look. The
+   existing global rule (`button { transform: none !important }`, see
+   "Ensure ZERO button scaling/jumping across the application" above)
+   rules out a translateY hover-lift here, so the clickable affordance is
+   cursor + the same shadow/border-color lift .kpi-tile:hover already
+   gives every tile - no separate hover rule needed. */
+.kpi-tile--clickable {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+/* Soft, desaturated per-metric tint on the card itself (not just the
+   icon chip) - low enough alpha that it reads correctly over both the
+   light and dark surface tokens without a separate dark-mode override. */
+.kpi-tile--orders { background: rgba(59, 130, 246, 0.06); }
+.kpi-tile--bikes { background: rgba(16, 185, 129, 0.06); }
+.kpi-tile--cars { background: rgba(99, 102, 241, 0.06); }
+.kpi-tile--routes { background: rgba(139, 92, 246, 0.06); }
+.kpi-tile--distance { background: rgba(6, 182, 212, 0.06); }
+.kpi-tile--eta { background: rgba(245, 158, 11, 0.06); }
 .kpi-tile__icon {
-  width: 42px;
-  height: 42px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -940,15 +980,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--primary-soft);
   color: var(--primary);
 }
-.kpi-tile--orders .kpi-tile__icon { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
-.kpi-tile--bikes .kpi-tile__icon { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-.kpi-tile--cars .kpi-tile__icon { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
-.kpi-tile--routes .kpi-tile__icon { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
-.kpi-tile--distance .kpi-tile__icon { background: rgba(14, 165, 233, 0.12); color: #0ea5e9; }
-.kpi-tile--eta .kpi-tile__icon { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+.kpi-tile--orders .kpi-tile__icon { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.kpi-tile--bikes .kpi-tile__icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.kpi-tile--cars .kpi-tile__icon { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.kpi-tile--routes .kpi-tile__icon { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.kpi-tile--distance .kpi-tile__icon { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.kpi-tile--eta .kpi-tile__icon { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 
 .kpi-tile__value {
-  font-size: 1.6rem;
+  font-size: 23px;
   font-weight: 800;
   color: var(--ink);
   line-height: 1.1;
@@ -966,6 +1006,12 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--ink-soft);
   margin-top: 0.15rem;
   display: block;
+  /* "Average ETA"/"Bikes available" mid-word wrapping at narrower tile
+     widths read as broken layout rather than a label that just needed
+     more room - clip to one line instead. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Shortcuts */
@@ -979,10 +1025,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
-  padding: 1.1rem 1.25rem;
+  padding: 0.85rem 1rem;
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.75rem;
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
@@ -998,6 +1044,14 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--accent);
   flex: none;
 }
+/* Each shortcut gets the same accent as its own destination page, and
+   Routes (the primary "go do something" card, not just a status check)
+   gets a subtle indigo border to read as first among equals. */
+.dash-link:nth-child(1) { border-color: rgba(99, 102, 241, 0.5); }
+.dash-link:nth-child(1) svg { color: #6366f1; }
+.dash-link:nth-child(2) svg { color: #3b82f6; }
+.dash-link:nth-child(3) svg { color: #f59e0b; }
+.dash-link:nth-child(4) svg { color: #64748b; }
 .dash-link div strong {
   display: block;
   font-size: 0.95rem;
@@ -1013,11 +1067,12 @@ textarea:focus-visible, [tabindex]:focus-visible {
 
 /* Toolbar */
 .toolbar {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 1.5rem;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1.15rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
@@ -1038,6 +1093,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
   align-items: center;
   gap: 0.5rem;
 }
+/* Same tinted icon-box language as the KPI row/board headers. */
+.toolbar__summary-title svg {
+  padding: 0.35rem;
+  border-radius: var(--radius-sm);
+  box-sizing: content-box;
+  flex: none;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
 .toolbar__summary-meta {
   font-size: 0.82rem;
   color: var(--ink-soft);
@@ -1054,31 +1118,67 @@ textarea:focus-visible, [tabindex]:focus-visible {
   align-items: center;
   gap: 0.75rem;
 }
-.fleet-dial {
+/* Cars/Bikes steppers - a labeled −/input/+ cluster instead of the bare
+   number input .fleet-dial used to be. The input stays directly
+   editable (typing "20" beats twenty clicks), the flanking buttons are
+   the quick +/-1 path. */
+.stepper {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
   background: var(--surface-2);
-  padding: 0.35rem 0.75rem;
+  padding: 0.35rem 0.6rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--rule);
 }
-.fleet-dial__label {
-  font-size: 0.78rem;
+.stepper__label {
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--ink-soft);
   text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
-.fleet-dial__input {
-  width: 48px;
-  padding: 0.25rem 0.4rem;
+.stepper__control {
+  display: flex;
+  align-items: center;
   border: 1px solid var(--rule);
   border-radius: var(--radius-xs);
+  overflow: hidden;
   background: var(--surface);
+}
+.stepper__btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stepper__btn:hover:not(:disabled) { background: var(--surface-3); }
+.stepper__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.stepper__input {
+  width: 36px;
+  padding: 0.2rem 0;
+  border: none;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  background: transparent;
   color: var(--ink);
   font-weight: 700;
   text-align: center;
+  /* Hide the native number spinner - the stepper buttons are the
+     increment/decrement control now, a second one crowds a 36px box. */
+  -moz-appearance: textfield;
 }
+.stepper__input::-webkit-outer-spin-button,
+.stepper__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper--alarm { border-color: var(--critical); }
 .toolbar-btn {
   position: relative;
   overflow: hidden;
@@ -1099,29 +1199,105 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--surface-2);
   border-color: var(--accent);
 }
-.toolbar-btn--save {
-  background: var(--good);
-  color: #fff;
-  border-color: var(--good);
+/* The one dominant action in the Generate Routes panel - Regenerate,
+   the thing you actually come to this panel to do. */
+.toolbar-btn--primary {
+  background: var(--btn-fill);
+  color: var(--btn-text);
+  border-color: var(--btn-fill);
+  font-weight: var(--btn-font-weight, 700);
+  padding: 0.65rem 1.35rem;
+  box-shadow: var(--shadow-sm);
 }
-.toolbar-btn--danger {
-  background: var(--critical-soft);
-  color: var(--critical);
-  border-color: var(--critical-soft);
+.toolbar-btn--primary:hover:not(:disabled) {
+  background: var(--btn-fill-hover);
+  border-color: var(--btn-fill-hover);
+  box-shadow: var(--shadow-md);
 }
-.intake {
+/* Generate Routes panel's overflow menu (Download all/Save/Delete) -
+   same floating-panel shape as .quick-actions__menu and .row-menu__panel
+   elsewhere in the app. */
+.overflow-wrap { position: relative; }
+.overflow-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 20;
+  min-width: 210px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.35rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
 }
-.intake__label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--ink-soft);
-  text-transform: uppercase;
+.overflow-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
 }
-.intake__input {
-  font-size: 0.82rem;
+.overflow-menu__item:hover:not(:disabled) { background: var(--surface-2); }
+.overflow-menu__item:disabled { opacity: 0.5; cursor: not-allowed; }
+.overflow-menu__item svg { flex: none; color: var(--ink-faint); }
+.overflow-menu__item--danger { color: var(--critical); }
+.overflow-menu__item--danger svg { color: var(--critical); }
+.overflow-menu__item--danger:hover:not(:disabled) { background: var(--critical-soft); }
+
+/* Manifest dropzone - replaces the plain <input type=file> row. Real
+   drag-and-drop (see the onDrop handler in App.jsx), not decorative. */
+.dropzone {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  border: 1.5px dashed var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone--active { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone--disabled { cursor: not-allowed; opacity: 0.6; }
+.dropzone__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.dropzone__text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.dropzone__title { font-size: 0.88rem; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropzone__sub { font-size: 0.76rem; color: var(--ink-faint); }
+/* The real control - kept in the DOM (not display:none) so it stays
+   part of the form/focus semantics, just visually hidden behind the
+   dropzone's own styled surface. */
+.dropzone__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .toolbar__status-row {
   border-top: 1px solid var(--rule-soft);
@@ -1150,21 +1326,21 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
-  padding: 1.5rem;
+  padding: 1.1rem 1.25rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 .board--drivers {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
-  padding: 1.5rem;
+  padding: 1.1rem 1.25rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .board__header {
@@ -1189,6 +1365,17 @@ textarea:focus-visible, [tabindex]:focus-visible {
   align-items: center;
   gap: 0.6rem;
 }
+/* Same tinted icon-box language as the KPI row above - a board's own
+   icon was plain, uncolored SVG next to its title where every other
+   icon on the page now sits in its own soft-color chip. */
+.board__title svg {
+  padding: 0.4rem;
+  border-radius: var(--radius-sm);
+  box-sizing: content-box;
+  flex: none;
+}
+.board--drivers .board__title svg { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.board--returns .board__title svg { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 .board__count {
   font-size: 0.82rem;
   font-weight: 800;
@@ -1213,12 +1400,22 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .drivers-table {
   width: 100%;
+  /* Fixed layout + explicit column widths below - auto layout let a
+     long email or driver name reflow every other column's width as
+     rows came in, so nothing lined up between one row and the next. */
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.88rem;
   text-align: left;
 }
+.drivers-table th:nth-child(1) { width: 17%; }
+.drivers-table th:nth-child(2) { width: 19%; }
+.drivers-table th:nth-child(3) { width: 10%; }
+.drivers-table th:nth-child(4) { width: 10%; }
+.drivers-table th:nth-child(5) { width: 12%; }
+.drivers-table th:nth-child(6) { width: 32%; }
 .drivers-table th {
-  padding: 0.9rem 1.25rem;
+  padding: 0.7rem 1rem;
   font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -1226,9 +1423,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--ink-soft);
   border-bottom: 1px solid var(--rule);
   background: var(--surface-2);
+  white-space: nowrap;
 }
 .drivers-table td {
-  padding: 0.95rem 1.25rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--rule-soft);
   vertical-align: middle;
   color: var(--ink);
@@ -1256,6 +1454,11 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .drivers-table__actions {
   display: flex;
+  /* Without wrap, 4 text buttons ("Edit"/"Reset Password"/"Deactivate"/
+     "Delete") in the now fixed-width Actions column had nowhere to go
+     but overflow into the next cell, overlapping its text instead of
+     dropping to a second line. */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 0.45rem;
@@ -1432,6 +1635,122 @@ textarea:focus-visible, [tabindex]:focus-visible {
   overflow: hidden;
 }
 .history-panel--wide { max-width: 680px; }
+
+/* Command palette (⌘K) - shares .modal-backdrop's dimmed/blurred scrim
+   but overrides the centered flex alignment to sit near the top, the
+   way an omnibox does rather than a centered dialog. */
+.command-palette__backdrop { align-items: flex-start; padding-top: 12vh; }
+.command-palette {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 560px;
+  max-height: 70vh;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.command-palette__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-faint);
+  flex: none;
+}
+.command-palette__input {
+  flex: 1 1 auto;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+.command-palette__close {
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  display: flex;
+  padding: 0.25rem;
+  border-radius: var(--radius-xs);
+  flex: none;
+}
+.command-palette__close:hover { background: var(--surface-2); color: var(--ink); }
+.command-palette__list { overflow-y: auto; padding: 0.5rem; }
+.command-palette__group {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+  padding: 0.5rem 0.6rem 0.25rem;
+}
+.command-palette__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.command-palette__item:hover:not(:disabled) { background: var(--surface-2); }
+.command-palette__item:disabled { opacity: 0.5; cursor: not-allowed; }
+.command-palette__item-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.command-palette__item-label { display: block; font-size: 0.85rem; font-weight: 700; color: var(--ink); }
+.command-palette__item-sub { display: block; font-size: 0.74rem; color: var(--ink-faint); }
+.command-palette__empty { padding: 1.75rem; text-align: center; font-size: 0.85rem; color: var(--ink-faint); }
+.command-palette__foot {
+  border-top: 1px solid var(--rule);
+  padding: 0.6rem 1.1rem;
+  display: flex;
+  gap: 1rem;
+  flex: none;
+}
+.command-palette__hint { font-size: 0.74rem; color: var(--ink-faint); display: flex; align-items: center; gap: 0.35rem; }
+.command-palette__hint kbd, .topbar__palette-btn kbd {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+  color: var(--ink-faint);
+}
+.topbar__palette-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  color: var(--ink-faint);
+}
+.topbar__palette-btn:hover { background: var(--surface-3); color: var(--ink); }
 
 .modal__header, .history-panel__head {
   padding: 1.25rem 1.5rem;
@@ -1615,6 +1934,45 @@ textarea:focus-visible, [tabindex]:focus-visible {
 @keyframes rp-car-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @keyframes rp-wheel-spin { to { transform: rotate(360deg); } }
 
+/* A small inline spinner - drops in wherever a button/icon needs to show
+   "this is running" (delete, save, download, upload...), not just the
+   .loading-console car scene above, which is specifically for the
+   upload-then-generate flow. currentColor so it always matches whatever
+   text/icon color it replaces, no per-context color rule needed. */
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.75;
+  animation: spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Row/panel-level "this is busy" overlay - dims whatever it's placed
+   over and centers a larger spinner, for an action that affects a whole
+   row or table rather than one button (a route being deleted, a bulk
+   action running across several routes). The element it's placed in
+   needs position:relative for the inset:0 to line up. */
+.busy-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: inherit;
+}
+:root[data-theme="dark"] .busy-overlay { background: rgba(9, 13, 22, 0.6); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .busy-overlay { background: rgba(9, 13, 22, 0.6); }
+}
+.busy-overlay .spinner { width: 22px; height: 22px; border-width: 3px; color: var(--accent); }
+
 /* Toast Notifications */
 .toast {
   position: fixed;
@@ -1660,6 +2018,85 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .alert p + p { margin-top: 0.3rem; }
 .alert--warn { border-left-color: var(--signal); }
 .alert--warn svg { color: var(--signal); }
+
+/* Issues requiring attention - only mounted when there's something in
+   it (see IssuesPanel in App.jsx). Same signal-soft language as
+   .alert--warn, never the critical/red tone - nothing in here blocks
+   dispatch outright, it's things to notice, not an emergency. */
+.issues-panel {
+  border: 1px solid var(--signal-soft);
+  background: var(--signal-soft);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.15rem;
+  overflow: hidden;
+}
+.issues-panel__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1.1rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.issues-panel__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.22);
+  color: var(--signal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.issues-panel__title-group { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.issues-panel__title { font-size: 0.9rem; font-weight: 800; color: var(--ink); }
+.issues-panel__sub { font-size: 0.78rem; color: var(--ink-soft); font-weight: 500; }
+.issues-panel__chevron { margin-left: auto; flex: none; color: var(--ink-faint); transition: transform 0.15s ease; }
+.issues-panel__chevron--open { transform: rotate(180deg); }
+.issues-panel__body {
+  background: var(--surface);
+  border-top: 1px solid var(--signal-soft);
+  padding: 0.4rem 1.1rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+}
+.issue-group { padding-top: 0.65rem; }
+.issue-group__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+  padding: 0.1rem 0 0.4rem;
+}
+.issue-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+}
+.issue-row:hover { background: var(--surface-2); }
+.issue-row__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); flex: none; }
+.issue-row__text { font-size: 0.83rem; color: var(--ink); font-weight: 600; flex: 1 1 auto; }
+.issue-row__actions { display: flex; gap: 0.4rem; flex: none; }
+.issue-group__more {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.issue-group__more:hover { text-decoration: underline; }
 
 .empty-state {
   padding: 3rem 1.5rem;
