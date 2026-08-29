@@ -1808,6 +1808,28 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
           {tracking.last_location && (
             <div className="driver-card__meta">
               Last seen {new Date(tracking.last_location.recorded_at).toLocaleTimeString()}
+              {/* Built from the driver's own recorded GPS trail, not the
+                  planned route distance route_service estimated at
+                  generation time - a real, live odometer, and the actual
+                  answer to "how much km has he travelled" rather than
+                  just "how much was planned". */}
+              {tracking.distance_travelled_km != null && ` · ${tracking.distance_travelled_km} km travelled`}
+            </div>
+          )}
+          {tracking.delivery_legs?.some((leg) => leg.delivered) && (
+            <div className="driver-card__legs">
+              <span className="driver-card__legs-label">Delivery times</span>
+              {tracking.delivery_legs.filter((leg) => leg.delivered).map((leg) => {
+                const order = route.orders.find((o) => String(o.order_id) === String(leg.order_id));
+                return (
+                  <div key={leg.order_id} className="driver-card__leg-row">
+                    <span className="driver-card__leg-name">{order?.customer_name || `Order #${leg.order_id}`}</span>
+                    <span className="driver-card__leg-stats mono-num">
+                      {leg.time_minutes != null ? `${leg.time_minutes} min` : '—'} · {leg.distance_km != null ? `${leg.distance_km} km` : '—'}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
           {route.orders.length > 0 && (

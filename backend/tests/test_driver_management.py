@@ -508,3 +508,148 @@ def test_route_tracking_excludes_pings_from_a_previous_run(db_session):
     crud_driver.record_location(db_session, driver, route.id, lat=14.00, lng=81.00)
     tracking = crud_driver.get_route_tracking(db_session, route.id)
     assert [p["lat"] for p in tracking["path"]] == [14.00]
+
+
+# --------------------------------------------------------------------------
+# Distance travelled / per-stop legs (get_route_progress) - built from the
+# driver's own GPS trail, not the planned OSRM estimate.
+# --------------------------------------------------------------------------
+
+def _set_recorded_at(ping, when):
+    ping.recorded_at = when
+
+
+def test_haversine_km_matches_a_known_distance():
+    # One degree of latitude is ~111.19km, everywhere on Earth - a clean,
+    # well-known sanity check for the formula itself before trusting it
+    # to sum a real GPS trail.
+    km = crud_driver._haversine_km(0.0, 0.0, 1.0, 0.0)
+    assert km == pytest.approx(111.19, abs=0.5)
+
+
+def test_route_progress_sums_distance_from_the_pings_actually_recorded(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+
+    # A short straight "drive" - three points, ~1.11km apart each (0.01
+    # degrees of latitude), so a manual sum is easy to check against.
+    crud_driver.record_location(db_session, driver, route.id, lat=13.00, lng=80.20)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.01, lng=80.20)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.02, lng=80.20)
+
+    progress = crud_driver.get_route_progress(db_session, route)
+    expected = crud_driver._haversine_km(13.00, 80.20, 13.01, 80.20) + crud_driver._haversine_km(13.01, 80.20, 13.02, 80.20)
+    assert progress["distance_travelled_km"] == pytest.approx(round(expected, 2), abs=0.01)
+
+
+def test_route_progress_computes_time_and_distance_per_delivered_leg(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)  # stops "1" and "2", in that sequence
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    route.started_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+
+    # Leg 1 (route start -> stop 1): two pings, ~1.11km apart.
+    p1 = crud_driver.record_location(db_session, driver, route.id, lat=13.00, lng=80.20)
+    _set_recorded_at(p1, route.started_at + timedelta(minutes=5))
+    p2 = crud_driver.record_location(db_session, driver, route.id, lat=13.01, lng=80.20)
+    _set_recorded_at(p2, route.started_at + timedelta(minutes=10))
+    db_session.commit()
+    stop1 = next(s for s in route.stops if s.order_id == "1")
+    stop1.delivered_at = route.started_at + timedelta(minutes=10)
+    stop1.delivery_status = "delivered"
+    db_session.commit()
+
+    # Leg 2 (stop 1 -> stop 2): one more ping, ~2.22km further.
+    p3 = crud_driver.record_location(db_session, driver, route.id, lat=13.03, lng=80.20)
+    _set_recorded_at(p3, route.started_at + timedelta(minutes=20))
+    db_session.commit()
+    stop2 = next(s for s in route.stops if s.order_id == "2")
+    stop2.delivered_at = route.started_at + timedelta(minutes=20)
+    stop2.delivery_status = "delivered"
+    db_session.commit()
+
+    progress = crud_driver.get_route_progress(db_session, route)
+    legs = {leg["order_id"]: leg for leg in progress["delivery_legs"]}
+
+    assert legs["1"]["delivered"] is True
+    assert legs["1"]["time_minutes"] == pytest.approx(10.0, abs=0.1)
+    assert legs["1"]["distance_km"] == pytest.approx(1.11, abs=0.05)
+
+    assert legs["2"]["delivered"] is True
+    assert legs["2"]["time_minutes"] == pytest.approx(10.0, abs=0.1)
+    assert legs["2"]["distance_km"] == pytest.approx(2.22, abs=0.05)
+
+    # Reported in stop-sequence order, not chronological order.
+    assert [leg["order_id"] for leg in progress["delivery_legs"]] == ["1", "2"]
+
+
+def test_route_progress_leg_boundaries_follow_actual_delivery_order_not_sequence(db_session):
+    # A driver can physically reach stop 2 before stop 1 (reordering,
+    # or just visiting out of plan order) - the *leg* boundaries must
+    # follow when each stop was actually marked delivered, not the
+    # route's planned sequence, or one leg would silently absorb both
+    # stops' real time/distance and the other would show zero.
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    route.started_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    db_session.commit()
+
+    # Stop 2 delivered first.
+    stop2 = next(s for s in route.stops if s.order_id == "2")
+    stop2.delivered_at = route.started_at + timedelta(minutes=8)
+    stop2.delivery_status = "delivered"
+    # Stop 1 delivered second.
+    stop1 = next(s for s in route.stops if s.order_id == "1")
+    stop1.delivered_at = route.started_at + timedelta(minutes=15)
+    stop1.delivery_status = "delivered"
+    db_session.commit()
+
+    progress = crud_driver.get_route_progress(db_session, route)
+    legs = {leg["order_id"]: leg for leg in progress["delivery_legs"]}
+
+    assert legs["2"]["time_minutes"] == pytest.approx(8.0, abs=0.1)  # route start -> stop 2 (delivered first)
+    assert legs["1"]["time_minutes"] == pytest.approx(7.0, abs=0.1)  # stop 2 -> stop 1 (delivered second)
+
+
+def test_route_progress_leaves_undelivered_stops_without_leg_data(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+
+    progress = crud_driver.get_route_progress(db_session, route)
+    for leg in progress["delivery_legs"]:
+        assert leg["delivered"] is False
+        assert leg["time_minutes"] is None
+        assert leg["distance_km"] is None
+
+
+def test_route_tracking_includes_distance_travelled(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.00, lng=80.20)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.01, lng=80.20)
+
+    tracking = crud_driver.get_route_tracking(db_session, route.id)
+    assert tracking["distance_travelled_km"] == pytest.approx(1.11, abs=0.05)
+    assert len(tracking["delivery_legs"]) == 2
+
+
+def test_driver_active_route_includes_distance_travelled(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.00, lng=80.20)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.01, lng=80.20)
+
+    driver_view = crud_driver.get_driver_active_route(db_session, driver)
+    assert driver_view["distance_travelled_km"] == pytest.approx(1.11, abs=0.05)
+    assert len(driver_view["delivery_legs"]) == 2

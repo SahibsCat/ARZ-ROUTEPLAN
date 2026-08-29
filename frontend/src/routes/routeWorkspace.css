@@ -982,6 +982,11 @@ select.add-route-select:hover:not(:disabled) {
 .driver-card__identity { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 .driver-card__name { font-size: 1rem; font-weight: 700; color: var(--ink); }
 .driver-card__meta { font-size: 0.8rem; color: var(--ink-soft); margin-bottom: 0.5rem; }
+.driver-card__legs { margin-bottom: 0.75rem; padding: 0.6rem 0.7rem; background: var(--surface-2); border-radius: var(--radius-sm); }
+.driver-card__legs-label { display: block; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); margin-bottom: 0.4rem; }
+.driver-card__leg-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.25rem 0; font-size: 0.78rem; }
+.driver-card__leg-name { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.driver-card__leg-stats { color: var(--ink-soft); flex: none; }
 .driver-card__progress { margin: 0.75rem 0; }
 .driver-card__progress-label { font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 0.4rem; }
 .driver-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-top: 0.75rem; }

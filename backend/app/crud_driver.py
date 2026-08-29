@@ -6,6 +6,7 @@ exception hierarchy (RootplanError/RouteNotFoundError) and route helpers
 the admin's route view are always built from the exact same data."""
 
 from datetime import datetime, timedelta, timezone
+from math import asin, cos, radians, sin, sqrt
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session, joinedload
@@ -406,60 +407,138 @@ def _tracking_status(last_ping: Optional[DriverLocationPing]) -> str:
     return "offline"
 
 
-def get_route_tracking(db: Session, route_id: int, path_limit: int = 200) -> Dict[str, object]:
-    route = db.query(Route).options(joinedload(Route.driver_ref)).filter(Route.id == route_id).first()
-    if route is None:
-        raise RouteNotFoundError("Route not found")
+def _run_pings(db: Session, route: Route) -> List[DriverLocationPing]:
+    """Every location ping belonging to this route's *current* run
+    (started_at..completed_at), newest first - not every ping ever
+    recorded against this route_id. record_location now refuses to store
+    a ping outside route_run_status == "in_progress" at all, which closes
+    most of this off going forward - but a route can be started, ended,
+    unassigned and reassigned (possibly to a different driver entirely)
+    more than once over its lifetime, and old pings from an earlier run
+    don't get deleted just because a new one started. Without this
+    filter, a fresh run's tracking - or its travelled-distance figure -
+    could still include a *previous* driver's old data under the same
+    route_id.
 
-    # Scoped to this route's *current* run (started_at..completed_at), not
-    # every ping ever recorded against this route_id. record_location now
-    # refuses to store a ping outside route_run_status == "in_progress" at
-    # all, which closes most of this off going forward - but a route can
-    # be started, ended, unassigned and reassigned (possibly to a
-    # different driver entirely) more than once over its lifetime, and
-    # old pings from an earlier run don't get deleted just because a new
-    # one started. Without this filter, a fresh run's tracking view could
-    # still show a *previous* driver's old breadcrumb trail under the
-    # same route_id.
-    #
-    # Filtered in Python, not as a SQL WHERE clause - Postgres (production)
-    # returns tz-aware datetimes it compares correctly at the SQL level,
-    # but SQLite (local dev/tests) doesn't have a real datetime type at
-    # all (everything is TEXT under the hood), so a server-default
-    # CURRENT_TIMESTAMP column compared against a Python tz-aware
-    # datetime in a WHERE clause doesn't reliably do the right thing - the
-    # exact reason _as_aware_utc exists below already, just now applying
-    # to a filter instead of _tracking_status's age math. Every route's
-    # ping volume is small (one day's deliveries) and path_limit already
-    # bounds this, so fetching by route_id alone and filtering here costs
-    # nothing real.
+    Filtered in Python, not as a SQL WHERE clause - Postgres (production)
+    returns tz-aware datetimes it compares correctly at the SQL level,
+    but SQLite (local dev/tests) doesn't have a real datetime type at all
+    (everything is TEXT under the hood), so a server-default
+    CURRENT_TIMESTAMP column compared against a Python tz-aware datetime
+    in a WHERE clause doesn't reliably do the right thing - the exact
+    reason _as_aware_utc exists for. Every route's ping volume is small
+    (one day's deliveries), so fetching by route_id alone and filtering
+    here costs nothing real. Shared by get_route_tracking (the live dot/
+    path) and get_route_progress (distance travelled / per-stop legs) so
+    both are guaranteed to agree on exactly which pings count.
+    """
     all_pings = (
         db.query(DriverLocationPing)
-        .filter(DriverLocationPing.route_id == route_id)
+        .filter(DriverLocationPing.route_id == route.id)
         .order_by(DriverLocationPing.recorded_at.desc())
         .all()
     )
     if route.started_at is None:
         # Never started (or reset back to "planned") - no ping can
-        # legitimately belong to this run, whatever stray rows might
-        # exist.
-        run_pings = []
-    else:
-        # Strict boundary, no tolerance window - record_location now sets
-        # recorded_at from the same Python clock start_route/end_route use
-        # for started_at/completed_at (see its own comment), so these are
-        # directly comparable without the precision mismatch a tolerance
-        # window would otherwise need to paper over - and a tolerance
-        # window has its own real cost: it can let an *earlier* run's
-        # pings leak into a run that started again soon after (verified by
-        # a test doing exactly that).
-        run_start = _as_aware_utc(route.started_at)
-        run_end = _as_aware_utc(route.completed_at) if route.completed_at is not None else None
-        run_pings = [
-            p for p in all_pings
-            if _as_aware_utc(p.recorded_at) >= run_start and (run_end is None or _as_aware_utc(p.recorded_at) <= run_end)
-        ]
+        # legitimately belong to this run, whatever stray rows might exist.
+        return []
+    # Strict boundary, no tolerance window - record_location now sets
+    # recorded_at from the same Python clock start_route/end_route use for
+    # started_at/completed_at (see its own comment), so these are
+    # directly comparable without the precision mismatch a tolerance
+    # window would otherwise need to paper over - and a tolerance window
+    # has its own real cost: it can let an *earlier* run's pings leak
+    # into a run that started again soon after (verified by a test doing
+    # exactly that).
+    run_start = _as_aware_utc(route.started_at)
+    run_end = _as_aware_utc(route.completed_at) if route.completed_at is not None else None
+    return [
+        p for p in all_pings
+        if _as_aware_utc(p.recorded_at) >= run_start and (run_end is None or _as_aware_utc(p.recorded_at) <= run_end)
+    ]
 
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Straight-line distance between two GPS fixes - not an OSRM road-
+    distance lookup (that's route_distance_time in distance_service.py,
+    used for the *planned* route). Consecutive pings on a real drive are
+    close enough together (seconds apart) that straight-line and
+    road-following distance converge - this is what actually turns a raw
+    GPS trail into an odometer reading, the standard technique for
+    exactly this ("distance travelled" from a breadcrumb trail), without
+    needing hundreds of OSRM calls to sum a real route."""
+    r_km = 6371.0
+    lat1_r, lat2_r = radians(lat1), radians(lat2)
+    dlat = radians(lat2 - lat1)
+    dlng = radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(lat1_r) * cos(lat2_r) * sin(dlng / 2) ** 2
+    return 2 * r_km * asin(sqrt(a))
+
+
+def _sum_haversine_km(pings: List[DriverLocationPing]) -> float:
+    """pings must already be in chronological order (oldest first) -
+    callers pass a reversed slice of the newest-first lists _run_pings
+    returns."""
+    total = 0.0
+    for a, b in zip(pings, pings[1:]):
+        total += _haversine_km(a.lat, a.lng, b.lat, b.lng)
+    return total
+
+
+def get_route_progress(db: Session, route: Route, pings: Optional[List[DriverLocationPing]] = None) -> Dict[str, object]:
+    """The actual distance driven so far (built from the driver's own GPS
+    trail, not route_service's planned OSRM estimate) plus, for every
+    stop that's actually been marked delivered, the real time and
+    distance for that one leg - what the admin's "how much time he takes
+    and how much km" ask is, and the driver's own live odometer. Legs are
+    bounded chronologically by delivered_at (a driver can deliver stops
+    out of route-plan order - a leg's "previous boundary" is whichever
+    stop was *actually* delivered right before it, not whichever comes
+    before it in the planned sequence), then reported back in the
+    route's normal stop-sequence order for display.
+    """
+    if pings is None:
+        pings = _run_pings(db, route)
+    chronological = list(reversed(pings))  # _run_pings is newest-first
+    total_km = _sum_haversine_km(chronological)
+
+    stops = sorted(route.stops, key=lambda s: s.sequence)
+    delivered_in_order = sorted(
+        (s for s in stops if s.delivery_status == "delivered" and s.delivered_at is not None),
+        key=lambda s: s.delivered_at,
+    )
+    leg_by_stop_id: Dict[int, Dict[str, float]] = {}
+    prev_boundary = route.started_at
+    for stop in delivered_in_order:
+        if prev_boundary is not None:
+            start = _as_aware_utc(prev_boundary)
+            end = _as_aware_utc(stop.delivered_at)
+            leg_pings = [p for p in chronological if start <= _as_aware_utc(p.recorded_at) <= end]
+            leg_by_stop_id[stop.id] = {
+                "time_minutes": round((end - start).total_seconds() / 60, 1),
+                "distance_km": round(_sum_haversine_km(leg_pings), 2),
+            }
+        prev_boundary = stop.delivered_at
+
+    legs = [
+        {
+            "order_id": stop.order_id,
+            "delivered": stop.delivery_status == "delivered",
+            "delivered_at": stop.delivered_at.isoformat() if stop.delivered_at else None,
+            "time_minutes": leg_by_stop_id.get(stop.id, {}).get("time_minutes"),
+            "distance_km": leg_by_stop_id.get(stop.id, {}).get("distance_km"),
+        }
+        for stop in stops
+    ]
+    return {"distance_travelled_km": round(total_km, 2), "delivery_legs": legs}
+
+
+def get_route_tracking(db: Session, route_id: int, path_limit: int = 200) -> Dict[str, object]:
+    route = db.query(Route).options(joinedload(Route.driver_ref)).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+
+    run_pings = _run_pings(db, route)
     last_ping = run_pings[0] if run_pings else None
     status = _tracking_status(last_ping) if route.route_run_status == "in_progress" else (
         "completed" if route.route_run_status == "completed" else "not_started"
@@ -472,6 +551,8 @@ def get_route_tracking(db: Session, route_id: int, path_limit: int = 200) -> Dic
             {"lat": p.lat, "lng": p.lng, "recorded_at": p.recorded_at.isoformat()}
             for p in reversed(recent)
         ]
+
+    progress = get_route_progress(db, route, pings=run_pings)
 
     return {
         "route_id": route.id,
@@ -489,6 +570,8 @@ def get_route_tracking(db: Session, route_id: int, path_limit: int = 200) -> Dic
             if last_ping else None
         ),
         "path": path,
+        "distance_travelled_km": progress["distance_travelled_km"],
+        "delivery_legs": progress["delivery_legs"],
     }
 
 
@@ -529,4 +612,12 @@ def get_driver_active_route(db: Session, driver: Driver) -> Optional[Dict[str, o
     # patch them in ad hoc here, which the /start and /end endpoints never
     # did, so the driver app's UI would only show "in progress" after a
     # manual refresh that happened to come through this function).
-    return crud.route_summary(route)
+    summary = crud.route_summary(route)
+    # Same distance_travelled_km/delivery_legs the admin panel's live
+    # tracking view gets (get_route_tracking), merged in here so the
+    # driver sees their own live odometer without a second endpoint - see
+    # get_route_progress's own comment.
+    progress = get_route_progress(db, route)
+    summary["distance_travelled_km"] = progress["distance_travelled_km"]
+    summary["delivery_legs"] = progress["delivery_legs"]
+    return summary
