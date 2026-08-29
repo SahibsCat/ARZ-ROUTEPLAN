@@ -808,6 +808,36 @@ def list_drivers_endpoint(db: Session = Depends(get_db)):
     return {"drivers": crud_driver.list_drivers_with_assignment(db)}
 
 
+# --- Driver Data (work-run history: start/end time, km travelled, per
+#     driver) -----------------------------------------------------------------
+# Declared here, before /api/drivers/{driver_id} below, on purpose - FastAPI/
+# Starlette matches routes in declaration order, not by specificity, so a
+# GET /api/drivers/history registered *after* GET /api/drivers/{driver_id}
+# would have "history" swallowed as driver_id (failing its int validation
+# with a 422) and this endpoint would never be reached at all. Learned the
+# hard way: that's exactly what the frontend's "Could not load Driver Data"
+# was - not a backend-connection problem, a shadowed route.
+
+@app.get("/api/drivers/history")
+def get_driver_history_endpoint(
+    db: Session = Depends(get_db),
+    driver_id: Optional[int] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows, total = crud_driver.list_driver_history(db, driver_id=driver_id, limit=limit, offset=offset)
+    return {"runs": rows, "total": total, "limit": limit, "offset": offset}
+
+
+@app.delete("/api/drivers/history/{route_id}")
+def delete_driver_history_endpoint(route_id: int, db: Session = Depends(get_db)):
+    try:
+        crud_driver.delete_driver_history_record(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"deleted": True, "route_id": route_id}
+
+
 @app.get("/api/drivers/{driver_id}")
 def get_driver_endpoint(driver_id: int, db: Session = Depends(get_db)):
     driver = crud_driver.get_driver(db, driver_id)
@@ -854,29 +884,6 @@ def reset_driver_password_endpoint(driver_id: int, payload: ResetDriverPasswordR
     except crud.RootplanError as e:
         _raise_for_driver_error(e)
     return {"driver": crud_driver.driver_summary(driver)}
-
-
-# --- Driver Data (work-run history: start/end time, km travelled, per
-#     driver) -----------------------------------------------------------------
-
-@app.get("/api/drivers/history")
-def get_driver_history_endpoint(
-    db: Session = Depends(get_db),
-    driver_id: Optional[int] = Query(None),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-):
-    rows, total = crud_driver.list_driver_history(db, driver_id=driver_id, limit=limit, offset=offset)
-    return {"runs": rows, "total": total, "limit": limit, "offset": offset}
-
-
-@app.delete("/api/drivers/history/{route_id}")
-def delete_driver_history_endpoint(route_id: int, db: Session = Depends(get_db)):
-    try:
-        crud_driver.delete_driver_history_record(db, route_id)
-    except crud.RootplanError as e:
-        _raise_for_driver_error(e)
-    return {"deleted": True, "route_id": route_id}
 
 
 # --- Assignment (admin) -----------------------------------------------------

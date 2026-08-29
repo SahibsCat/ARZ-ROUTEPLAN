@@ -470,3 +470,27 @@ def test_deleting_route_plan_keeps_batch_alive_if_another_plan_still_uses_it():
     # The upload survives because the saved plan still references it.
     assert client.get(f"/api/history/{batch_id}").status_code == 200
     assert client.get(f"/api/routes/history/{first_plan_id}").status_code == 200
+
+
+def test_driver_history_endpoint_is_not_shadowed_by_the_driver_id_route():
+    # Regression: GET /api/drivers/{driver_id} was registered before GET
+    # /api/drivers/history - FastAPI/Starlette match routes in declaration
+    # order, not by specificity, so a request to /api/drivers/history was
+    # swallowed by /api/drivers/{driver_id} with driver_id="history",
+    # 422ing on its int validation before this endpoint was ever reached.
+    # The frontend saw that as "Could not load Driver Data - check the
+    # backend connection", which had nothing to do with the backend
+    # connection at all.
+    response = client.get("/api/drivers/history")
+    assert response.status_code == 200
+    body = response.json()
+    assert "runs" in body
+    assert "total" in body
+
+
+def test_delete_driver_history_endpoint_404s_for_an_unknown_route():
+    # Same shadowing risk on the DELETE side, guarded here too even though
+    # the extra /{route_id} segment already made it a different path shape
+    # from DELETE /api/drivers/{driver_id}.
+    response = client.delete("/api/drivers/history/999999")
+    assert response.status_code == 404
