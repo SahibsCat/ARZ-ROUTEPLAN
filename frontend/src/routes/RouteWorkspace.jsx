@@ -13,16 +13,20 @@ import './routeWorkspace.css';
 // codebase. VITE_GOOGLE_MAPS_API_KEY can still override it without a
 // code change.
 //
-// Deliberately a DIFFERENT key from backend/.env's GOOGLE_MAPS_API_KEY
-// (server-side geocoding) - confirmed directly (curl against each API):
-// this one has Maps JS + Directions enabled but not Geocoding, the
-// backend one has Geocoding but not Directions. That's the right split,
-// not a mistake to reconcile: the client (this file, and the driver
-// app's RouteMapModal.js, which shares this same key) only ever calls
-// Maps JS + DirectionsService, never Geocoding directly - that stays a
-// backend-only concern on its own key, which can carry tighter
-// restrictions (e.g. server IP) that would break a client-embedded key.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBi7VJIiAQ05YjdSZ4nBCUdkvoRjP3Yidk';
+// Reverted back to the original key after two follow-up keys each broke
+// the map outright - confirmed with a real headless-browser load (not
+// just an HTTP status check, which can't see this): both newer keys threw
+// ApiTargetBlockedMapError on Maps JavaScript API itself (the map never
+// initializes at all), because each one had only ONE of {Maps JavaScript
+// API, Directions API} allowed in its own API restrictions, never both at
+// once. This key is the one of the three that actually loads the map
+// (mapOk, no gm_authFailure) - it just doesn't have Directions authorized
+// yet (REQUEST_DENIED), which this app already degrades gracefully for
+// (falls back to the overview map / "Route unavailable" text) rather than
+// breaking. The real fix is enabling BOTH Maps JavaScript API and
+// Directions API on THIS SAME key's API restrictions in Google Cloud
+// Console - not creating another key with just one of them checked.
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDodjkyPxxK0C_5m6pX0u-hAj2kHeeI-Zo';
 const GOOGLE_MAPS_LIBRARIES = [];
 
 // A stationary phone's GPS still drifts a few meters between fixes - real
