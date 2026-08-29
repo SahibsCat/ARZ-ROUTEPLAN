@@ -11,13 +11,18 @@ import './routeWorkspace.css';
 // HTTP referrer/app in Google Cloud Console, not a secret like a backend
 // auth token) - same treatment as the Sentry DSN elsewhere in this
 // codebase. VITE_GOOGLE_MAPS_API_KEY can still override it without a
-// code change. Same key as backend/.env's GOOGLE_MAPS_API_KEY (server-side
-// geocoding) and driver-app's RouteMapModal.js fallback now - one key
-// covers Maps JS, Geocoding, and Directions across all three, rather than
-// three separately-managed keys with inconsistent API restrictions
-// (which is exactly what caused the driver app's Directions calls to
-// fail while everything else worked).
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBtYc3NgAPFTiMWVu79hhyfI8LUr4MhEb4';
+// code change.
+//
+// Deliberately a DIFFERENT key from backend/.env's GOOGLE_MAPS_API_KEY
+// (server-side geocoding) - confirmed directly (curl against each API):
+// this one has Maps JS + Directions enabled but not Geocoding, the
+// backend one has Geocoding but not Directions. That's the right split,
+// not a mistake to reconcile: the client (this file, and the driver
+// app's RouteMapModal.js, which shares this same key) only ever calls
+// Maps JS + DirectionsService, never Geocoding directly - that stays a
+// backend-only concern on its own key, which can carry tighter
+// restrictions (e.g. server IP) that would break a client-embedded key.
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBi7VJIiAQ05YjdSZ4nBCUdkvoRjP3Yidk';
 const GOOGLE_MAPS_LIBRARIES = [];
 
 // A stationary phone's GPS still drifts a few meters between fixes - real
