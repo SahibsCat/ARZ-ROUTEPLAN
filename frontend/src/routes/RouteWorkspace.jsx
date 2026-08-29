@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { GoogleMap, Marker, Polyline, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, Marker, Polyline, Circle, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
@@ -1455,12 +1455,26 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   // separate on/off toggle to gate it behind, unlike FleetMap's
   // liveTracking switch). Only the raw fix is kept here; merged against
   // the REST poll's own last_location below, whichever is newer wins.
-  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at, heading}
+  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at, heading, accuracy}
+  // The breadcrumb line (`path` below) used to come *only* from the REST
+  // poll's tracking.path - a real bug, not just a rough edge: the arrow
+  // moves the instant a WebSocket push lands, but the line connecting to
+  // it only caught up on the next 3s poll, so the line visibly lagged
+  // behind the already-moved arrow instead of the two updating together.
+  // This mirrors every new WS fix into the line immediately; pruned back
+  // down once the REST poll's own path has genuinely caught up to it (see
+  // the effect below), so the REST poll stays the eventual source of
+  // truth and nothing gets double-drawn.
+  const [wsPathPoints, setWsPathPoints] = useState([]); // [{lat, lng, recorded_at}]
   useTrackingSocket(true, (msg) => {
     if (msg?.type !== 'location' || msg.route_id !== route.route_id) return;
     setWsFix((prev) => {
       if (prev?.recorded_at && msg.recorded_at && prev.recorded_at >= msg.recorded_at) return prev;
-      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at, heading: msg.heading };
+      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at, heading: msg.heading, accuracy: msg.accuracy };
+    });
+    setWsPathPoints((prev) => {
+      if (prev.length && prev[prev.length - 1].recorded_at >= msg.recorded_at) return prev;
+      return [...prev, { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at }].slice(-200);
     });
   });
   // GPS heading is only meaningful while actually moving - most phones
@@ -1498,7 +1512,26 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   const restLast = tracking?.last_location;
   const last = !restLast ? wsFix : !wsFix || restLast.recorded_at >= wsFix.recorded_at ? restLast : wsFix;
   const position = last ? { lat: last.lat, lng: last.lng } : null;
-  const path = (tracking?.path || []).map((p) => ({ lat: p.lat, lng: p.lng }));
+  const restPath = tracking?.path || [];
+  // The REST path plus any WS-pushed points newer than it - see
+  // wsPathPoints' own comment for why the line needs this to keep pace
+  // with the arrow instead of lagging a poll cycle behind it.
+  const restPathLastRecordedAt = restPath.length ? restPath[restPath.length - 1].recorded_at : null;
+  const path = [
+    ...restPath,
+    ...wsPathPoints.filter((p) => !restPathLastRecordedAt || p.recorded_at > restPathLastRecordedAt),
+  ].map((p) => ({ lat: p.lat, lng: p.lng }));
+
+  // Once the REST poll's own path has caught up past a WS point, drop it
+  // from wsPathPoints - keeps the array from growing unbounded and keeps
+  // the REST poll as the eventual single source of truth for the line.
+  useEffect(() => {
+    if (!restPathLastRecordedAt) return;
+    setWsPathPoints((prev) => {
+      const next = prev.filter((p) => p.recorded_at > restPathLastRecordedAt);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [restPathLastRecordedAt]);
   // Below the GPS noise floor, the vehicle isn't really moving, so the
   // heading shouldn't drift either (same reasoning as FleetMap's
   // applyLocationFix) - otherwise a parked driver's arrow could still
@@ -1509,6 +1542,15 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   if (position && !isHeadingNoise) lastHeadingSourcePositionRef.current = position;
   if (!isHeadingNoise && last?.heading != null && !Number.isNaN(last.heading)) lastHeadingRef.current = last.heading;
   const heading = lastHeadingRef.current;
+  // Real GPS accuracy (meters, from the phone's own location provider) -
+  // rendered as a circle around the arrow below rather than pretending
+  // the dot marks an exact point. A phone's GPS is commonly 5-20m off
+  // (worse near/inside a building, which is exactly what a warehouse
+  // stop looks like) - showing that honestly is the fix for "the arrow
+  // looks slightly off from where I actually am": it isn't a rendering
+  // bug, it's real sensor uncertainty, and a plain dot with no accuracy
+  // indicator hides that instead of explaining it.
+  const accuracy = last?.accuracy != null && !Number.isNaN(last.accuracy) ? last.accuracy : null;
 
   if (position && initialCenterRef.current === null) {
     initialCenterRef.current = position;
@@ -1622,6 +1664,25 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                   the last real reading while stationary (see its own
                   computation above), so the arrow doesn't snap to
                   "north" every time the driver pauses. */}
+              {/* The real GPS accuracy radius, drawn to true map scale
+                  (unlike the fixed-pixel halo below) - see `accuracy`'s
+                  own comment for why this is the honest answer to "the
+                  arrow looks slightly off from my real position": that's
+                  real sensor uncertainty, not a bug, and this shows
+                  exactly how much. Skipped entirely when the phone hasn't
+                  reported an accuracy figure at all, rather than drawing
+                  a fabricated circle. */}
+              {accuracy != null && (
+                <Circle
+                  center={displayedPosition}
+                  radius={accuracy}
+                  options={{
+                    fillColor: '#2457d6', fillOpacity: 0.12,
+                    strokeColor: '#2457d6', strokeOpacity: 0.4, strokeWeight: 1,
+                    clickable: false, zIndex: 1,
+                  }}
+                />
+              )}
               <Marker
                 position={displayedPosition}
                 zIndex={2}
