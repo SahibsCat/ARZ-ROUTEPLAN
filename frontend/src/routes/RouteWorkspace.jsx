@@ -11,8 +11,13 @@ import './routeWorkspace.css';
 // HTTP referrer/app in Google Cloud Console, not a secret like a backend
 // auth token) - same treatment as the Sentry DSN elsewhere in this
 // codebase. VITE_GOOGLE_MAPS_API_KEY can still override it without a
-// code change.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDodjkyPxxK0C_5m6pX0u-hAj2kHeeI-Zo';
+// code change. Same key as backend/.env's GOOGLE_MAPS_API_KEY (server-side
+// geocoding) and driver-app's RouteMapModal.js fallback now - one key
+// covers Maps JS, Geocoding, and Directions across all three, rather than
+// three separately-managed keys with inconsistent API restrictions
+// (which is exactly what caused the driver app's Directions calls to
+// fail while everything else worked).
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBtYc3NgAPFTiMWVu79hhyfI8LUr4MhEb4';
 const GOOGLE_MAPS_LIBRARIES = [];
 
 // A stationary phone's GPS still drifts a few meters between fixes - real
