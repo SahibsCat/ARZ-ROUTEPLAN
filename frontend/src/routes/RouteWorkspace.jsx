@@ -15,23 +15,22 @@ import './routeWorkspace.css';
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDodjkyPxxK0C_5m6pX0u-hAj2kHeeI-Zo';
 const GOOGLE_MAPS_LIBRARIES = [];
 
-// A dark map style matching this app's own dark theme (--paper/--surface/
-// --rule/--ink-soft) instead of Google's default light basemap fighting
-// the rest of the UI around it.
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#141414' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#141414' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#9a9aa4' }] },
-  { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#262626' }] },
-  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#1c2a1f' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1c1c1c' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#262626' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#262626' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#1c1c1c' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a0a0a' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#63636b' }] },
-];
+// A stationary phone's GPS still drifts a few meters between fixes - real
+// sensor noise, not movement (confirmed against a genuinely parked phone:
+// the reported point never lands on the exact same coordinate twice).
+// Shared by every place that decides "did the driver actually move"
+// (useAnimatedPositions' glide, FleetMap's heading, LiveMapModal's panTo
+// and heading) so that answer is consistent everywhere live tracking
+// shows up, not a different threshold hand-picked per call site.
+const GPS_NOISE_METERS = 8;
+
+// Was: a custom dark vector style for LiveMapModal (its own map, distinct
+// from FleetMap below). Replaced with satellite - see LiveMapModal's own
+// options for why (same reasoning as FleetMap's satellite lock: seeing
+// the real ground under a live driver is the whole point of a live-
+// tracking view, and a custom `styles` array is silently ignored on
+// satellite/hybrid map types anyway, so keeping this around no longer
+// did anything).
 
 // Same VITE_API_BASE_URL App.jsx's apiFetch reads (empty in local dev,
 // where Vite's own proxy - see vite.config.js's '/ws' entry - forwards
@@ -126,6 +125,7 @@ function useAnimatedPositions(targets) {
 
   useEffect(() => {
     Object.entries(targets).forEach(([key, pos]) => {
+      const hasDisplayedPosition = key in displayedRef.current;
       const from = displayedRef.current[key] || { lat: pos.lat, lng: pos.lng };
       const current = animsRef.current[key];
       // Retargeting to the exact same fix (a REST poll re-confirming what
@@ -133,6 +133,13 @@ function useAnimatedPositions(targets) {
       // scratch - only start a new animation when the target actually
       // moved.
       if (current && current.to.lat === pos.lat && current.to.lng === pos.lng) return;
+      // Below the noise floor - hold perfectly still instead of gliding
+      // to a point that isn't a real movement. Only applies once this key
+      // already has a real displayed position; the very first fix for a
+      // key must always go through (its "from" is trivially its own
+      // position either way, so the distance check would otherwise always
+      // read as 0 and silently never render the dot at all).
+      if (hasDisplayedPosition && haversineMeters(from, pos) < GPS_NOISE_METERS) return;
       animsRef.current[key] = { from, to: { lat: pos.lat, lng: pos.lng }, start: performance.now() };
     });
     // Pruning happens *here*, in the effect body, not inside tick() below -
@@ -255,6 +262,23 @@ function pinIconUrl(color, number, { size = 36, opacity = 1 } = {}) {
 function dotIconUrl(color, { size = 16, opacity = 1, strokeColor = '#fff' } = {}) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
     + `<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="${color}" fill-opacity="${opacity}" stroke="${strokeColor}" stroke-width="2"/>`
+    + `</svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new window.google.maps.Size(size, size),
+    anchor: new window.google.maps.Point(size / 2, size / 2),
+  };
+}
+
+// A plain dot says "the driver is here" but not which way they're
+// actually moving - a real navigation-style arrow (drawn pointing due
+// north/up by default) does. Rotated per-instance via a CSS `rotate()`
+// transform on the rendered <img> (see FleetMap's pin rendering below),
+// not baked into the SVG itself - one static icon shape reused for every
+// heading, rather than generating a fresh data URI per rotation.
+function arrowIconUrl(color, { size = 26, opacity = 1 } = {}) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24">`
+    + `<path d="M12 1.5 L21 20.5 L12 16 L3 20.5 Z" fill="${color}" fill-opacity="${opacity}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>`
     + `</svg>`;
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
@@ -669,11 +693,23 @@ function FleetMap({
   // resilient fallback - see useTrackingSocket's comment), so without
   // this a slightly-delayed poll response could land after a fresher push
   // already rendered and yank the dot back to an older position.
-  const applyLocationFix = (routeId, lat, lng, recordedAt) => {
+  const applyLocationFix = (routeId, lat, lng, recordedAt, heading) => {
     setDriverPositions((prev) => {
       const existing = prev[routeId];
       if (existing?.recordedAt && recordedAt && existing.recordedAt >= recordedAt) return prev;
-      return { ...prev, [routeId]: { lat, lng, recordedAt } };
+      // Below the GPS noise floor (see GPS_NOISE_METERS), the vehicle
+      // isn't really moving - so the heading shouldn't drift either, the
+      // same reasoning useAnimatedPositions applies to position. Without
+      // this, a parked driver's arrow could still wobble a degree or two
+      // between noisy-but-technically-different headings on each fix.
+      const isNoise = existing && haversineMeters(existing, { lat, lng }) < GPS_NOISE_METERS;
+      // GPS heading is only meaningful while actually moving - most phones
+      // report null/undefined for it the instant the vehicle stops, which
+      // would otherwise snap the arrow back to "pointing north" every time
+      // a driver pauses at a light or a stop. Keep showing the last real
+      // heading instead of a fabricated one.
+      const resolvedHeading = !isNoise && heading != null && !Number.isNaN(heading) ? heading : (existing?.heading ?? 0);
+      return { ...prev, [routeId]: { lat, lng, recordedAt, heading: resolvedHeading } };
     });
   };
 
@@ -705,7 +741,7 @@ function FleetMap({
               });
               return;
             }
-            applyLocationFix(route.route_id, last.lat, last.lng, last.recorded_at);
+            applyLocationFix(route.route_id, last.lat, last.lng, last.recorded_at, last.heading);
           })
           .catch(() => {});
       });
@@ -723,7 +759,7 @@ function FleetMap({
   useTrackingSocket(liveTracking, (msg) => {
     if (msg?.type !== 'location' || msg.route_id == null) return;
     if (!trackableRoutes.some((r) => r.route_id === msg.route_id)) return;
-    applyLocationFix(msg.route_id, msg.lat, msg.lng, msg.recorded_at);
+    applyLocationFix(msg.route_id, msg.lat, msg.lng, msg.recorded_at, msg.heading);
   });
 
   // Clear stale dots the instant tracking is switched off, rather than
@@ -929,10 +965,28 @@ function FleetMap({
             const p = projectPoint(animated.lat, animated.lng);
             if (p) {
               const halo = dotIconUrl(color, { size: 40, opacity: 0.18 });
-              const dot = dotIconUrl(color, { size: 16, strokeColor: '#fff' });
+              const arrow = arrowIconUrl(color, { size: 26 });
               pins.push(
                 <img key={`${route.route_name}-driver-halo`} src={halo.url} width={40} height={40} alt="" className="fleet-map__pin fleet-map__pin--dot" style={{ left: p.x, top: p.y, zIndex: 5, pointerEvents: 'none' }} />,
-                <img key={`${route.route_name}-driver`} src={dot.url} width={16} height={16} alt="" className="fleet-map__pin fleet-map__pin--dot" style={{ left: p.x, top: p.y, zIndex: 6 }} title={`${route.route_name} · driver`} />
+                // Rotated per the driver's real GPS heading (see
+                // applyLocationFix - not animated the way position is,
+                // just snaps to each new reading) so this actually shows
+                // which way they're moving, not just where they are. The
+                // rotation has to be set inline, alongside the same
+                // translate(-50%,-50%) centering .fleet-map__pin--dot
+                // normally supplies via CSS - an inline `transform`
+                // replaces the class's entirely rather than combining
+                // with it.
+                <img
+                  key={`${route.route_name}-driver`}
+                  src={arrow.url}
+                  width={26}
+                  height={26}
+                  alt=""
+                  className="fleet-map__pin fleet-map__pin--dot"
+                  style={{ left: p.x, top: p.y, zIndex: 6, transform: `translate(-50%, -50%) rotate(${driverPos.heading || 0}deg)` }}
+                  title={`${route.route_name} · driver`}
+                />
               );
             }
           }
@@ -1401,14 +1455,24 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   // separate on/off toggle to gate it behind, unlike FleetMap's
   // liveTracking switch). Only the raw fix is kept here; merged against
   // the REST poll's own last_location below, whichever is newer wins.
-  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at}
+  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at, heading}
   useTrackingSocket(true, (msg) => {
     if (msg?.type !== 'location' || msg.route_id !== route.route_id) return;
     setWsFix((prev) => {
       if (prev?.recorded_at && msg.recorded_at && prev.recorded_at >= msg.recorded_at) return prev;
-      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at };
+      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at, heading: msg.heading };
     });
   });
+  // GPS heading is only meaningful while actually moving - most phones
+  // report null/undefined the instant the vehicle stops, which would
+  // otherwise snap the arrow back to "pointing north" every time the
+  // driver pauses. Remembers the last real heading instead. Separate from
+  // lastPannedRef below (which only updates while autoFollow is on) -
+  // this needs to track the last real position regardless of whether the
+  // admin has dragged the map away, or the noise comparison below would
+  // silently break the moment autoFollow turns off.
+  const lastHeadingRef = useRef(0);
+  const lastHeadingSourcePositionRef = useRef(null);
 
   // The actual road route the driver is meant to be following - depot ->
   // every stop in delivery order -> last stop - so you can see whether
@@ -1435,6 +1499,16 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   const last = !restLast ? wsFix : !wsFix || restLast.recorded_at >= wsFix.recorded_at ? restLast : wsFix;
   const position = last ? { lat: last.lat, lng: last.lng } : null;
   const path = (tracking?.path || []).map((p) => ({ lat: p.lat, lng: p.lng }));
+  // Below the GPS noise floor, the vehicle isn't really moving, so the
+  // heading shouldn't drift either (same reasoning as FleetMap's
+  // applyLocationFix) - otherwise a parked driver's arrow could still
+  // wobble a degree or two between noisy-but-technically-different
+  // headings on each fix.
+  const isHeadingNoise = position && lastHeadingSourcePositionRef.current
+    && haversineMeters(lastHeadingSourcePositionRef.current, position) < GPS_NOISE_METERS;
+  if (position && !isHeadingNoise) lastHeadingSourcePositionRef.current = position;
+  if (!isHeadingNoise && last?.heading != null && !Number.isNaN(last.heading)) lastHeadingRef.current = last.heading;
+  const heading = lastHeadingRef.current;
 
   if (position && initialCenterRef.current === null) {
     initialCenterRef.current = position;
@@ -1496,8 +1570,14 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
               onLoad={(map) => { mapRef.current = map; }}
               onDragStart={() => setAutoFollow(false)}
               options={{
-                styles: DARK_MAP_STYLE, disableDefaultUI: true, zoomControl: true,
-                gestureHandling: 'greedy', backgroundColor: '#0a0a0a',
+                // Satellite, locked (no switcher) - same reasoning as
+                // FleetMap's own map: seeing the real ground under a live
+                // driver is the actual point of a live-tracking view, and
+                // a custom `styles` array (the old DARK_MAP_STYLE) is
+                // silently ignored on satellite/hybrid map types anyway.
+                mapTypeId: 'satellite',
+                disableDefaultUI: true, zoomControl: true,
+                gestureHandling: 'greedy', backgroundColor: '#0b0f14',
               }}
             >
               {plannedPath.length > 1 && (
@@ -1513,22 +1593,35 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                   zIndex={1}
                   icon={{
                     path: window.google.maps.SymbolPath.CIRCLE,
-                    scale: 5,
+                    scale: 6,
                     fillColor: o.is_delivered ? '#4fc98a' : '#63636b',
                     fillOpacity: 1,
-                    strokeColor: '#0a0a0a',
-                    strokeWeight: 1,
+                    // White, not near-black - a satellite basemap has no
+                    // predictable color to read a dark outline against;
+                    // white is what actually keeps this visible over
+                    // rooftops, roads, and open ground alike (same
+                    // reasoning as FleetMap's own pins/lines).
+                    strokeColor: '#fff',
+                    strokeWeight: 1.5,
                   }}
                   title={`${idx + 1}. ${o.customer_name || 'Stop'}`}
                 />
               ))}
-              {/* The translucent halo behind the solid dot is Google Maps'
+              {/* The translucent halo behind the arrow is Google Maps'
                   own "your location" glyph - reads as live/GPS at a glance
                   instead of just another plain pin. Both markers render at
                   displayedPosition (the smoothly-animated one), not the
                   raw target - see useAnimatedPositions' comment for why
                   that's what actually makes this read as continuous
-                  motion rather than a stuck-then-teleport dot. */}
+                  motion rather than a stuck-then-teleport dot. The
+                  foreground marker is a directional arrow (`rotation` -
+                  degrees clockwise from north, exactly what the driver
+                  app's GPS heading already reports), not a plain dot, so
+                  this shows which way the driver is actually moving, not
+                  just where they are - `heading` already falls back to
+                  the last real reading while stationary (see its own
+                  computation above), so the arrow doesn't snap to
+                  "north" every time the driver pauses. */}
               <Marker
                 position={displayedPosition}
                 zIndex={2}
@@ -1546,8 +1639,9 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                 zIndex={3}
                 onClick={() => setShowInfo((v) => !v)}
                 icon={{
-                  path: window.google.maps.SymbolPath.CIRCLE,
-                  scale: 8,
+                  path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                  rotation: heading,
+                  scale: 5.5,
                   fillColor: '#2457d6',
                   fillOpacity: 1,
                   strokeColor: '#fff',

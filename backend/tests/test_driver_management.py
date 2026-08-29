@@ -399,7 +399,13 @@ def test_tracking_status_delayed_between_the_live_and_offline_windows(db_session
     crud_driver.start_route(db_session, driver, route.id)
     ping = crud_driver.record_location(db_session, driver, route.id, lat=13.05, lng=80.25)
 
-    ping.recorded_at = datetime.now(timezone.utc) - timedelta(seconds=300)  # past "live", within "delayed"
+    # Rewinds the ping to simulate time having passed since a real ping -
+    # route.started_at has to move back with it (get_route_tracking now
+    # scopes pings to route.started_at..completed_at), or this old ping
+    # reads as predating the route's own start and gets filtered out.
+    aged_recorded_at = datetime.now(timezone.utc) - timedelta(seconds=300)  # past "live", within "delayed"
+    ping.recorded_at = aged_recorded_at
+    route.started_at = aged_recorded_at - timedelta(seconds=10)
     db_session.commit()
 
     tracking = crud_driver.get_route_tracking(db_session, route.id)
@@ -439,3 +445,66 @@ def test_tracking_path_returns_pings_oldest_first(db_session):
 
     tracking = crud_driver.get_route_tracking(db_session, route.id)
     assert [p["lat"] for p in tracking["path"]] == [13.00, 13.01, 13.02]
+
+
+# --------------------------------------------------------------------------
+# Location recording is scoped to "while the driver is actually on the
+# clock" - reproduces a real privacy/accuracy bug: route_id alone doesn't
+# say whether a ping happened before Start Route, after End Route, or
+# during an entirely different (earlier) run of the same route_id under a
+# different driver.
+# --------------------------------------------------------------------------
+
+def test_record_location_rejected_before_route_is_started(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    # Deliberately no start_route() call - this is the "phone pings before
+    # Start Route is tapped" case.
+
+    with pytest.raises(crud_driver.RouteNotActiveError):
+        crud_driver.record_location(db_session, driver, route.id, lat=13.0, lng=80.2)
+
+
+def test_record_location_rejected_after_route_ends(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.end_route(db_session, driver, route.id)
+    # The "background task outlives End Route" case - a stray ping arrives
+    # after the route is already marked completed.
+
+    with pytest.raises(crud_driver.RouteNotActiveError):
+        crud_driver.record_location(db_session, driver, route.id, lat=13.0, lng=80.2)
+
+
+def test_route_tracking_excludes_pings_from_a_previous_run(db_session):
+    # Reassigning a route (even to the same driver, e.g. recovering from a
+    # crashed app) resets route_run_status/started_at/completed_at to a
+    # clean slate (see assign_driver_to_route's own comment) but never
+    # deletes the previous run's DriverLocationPing rows - they're still
+    # sitting there under the same route_id. A fresh run's tracking view
+    # must not show that old breadcrumb trail.
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.00, lng=80.20)
+    crud_driver.end_route(db_session, driver, route.id)
+
+    # Reassign (same driver, simulating "admin resets a stuck route") -
+    # this is what actually clears started_at/completed_at back to None.
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id, force=True)
+
+    tracking = crud_driver.get_route_tracking(db_session, route.id)
+    assert tracking["tracking_status"] == "not_started"
+    assert tracking["last_location"] is None
+    assert tracking["path"] == []
+
+    # And once the new run actually starts and pings, only *its* pings
+    # show up - not the old run's.
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.record_location(db_session, driver, route.id, lat=14.00, lng=81.00)
+    tracking = crud_driver.get_route_tracking(db_session, route.id)
+    assert [p["lat"] for p in tracking["path"]] == [14.00]

@@ -55,6 +55,18 @@ class RouteAlreadyStartedError(RootplanError):
     pass
 
 
+class RouteNotActiveError(RootplanError):
+    """Raised by record_location when the route isn't currently
+    in_progress - see record_location's own comment for why this matters:
+    without it, any ping the phone happens to send outside the driver's
+    own Start Route/End Route tap (a background task that outlives the
+    app being closed, a route ended from elsewhere, a stray ping before
+    Start Route is even tapped) gets stored and shown to the admin as if
+    it were part of the route - which can mean showing where the driver
+    personally went before or after work."""
+    pass
+
+
 # --------------------------------------------------------------------------
 # Driver roster (admin side)
 # --------------------------------------------------------------------------
@@ -336,9 +348,37 @@ def record_location(
     heading: Optional[float] = None, accuracy: Optional[float] = None,
 ) -> DriverLocationPing:
     route = get_route_for_driver(db, driver, route_id)
+    # The one gate that actually keeps tracking scoped to "while the
+    # driver is on the clock": route_id alone isn't enough (see
+    # DriverLocationPing's own docstring) - a route sits at the same
+    # route_id from the moment it's created until it's deleted, long
+    # before Start Route and (if the driver forgets, the app crashes, or
+    # the background task simply outlives the app being closed) long
+    # after End Route too. Rejecting outright, not just silently
+    # dropping, so a ping that lands here after the phone should have
+    # stopped is visible in the driver app's own diagnostic
+    # (recordDiagnostic in locationTask.js) rather than a silent gap that
+    # looks identical to network loss.
+    if route.route_run_status != "in_progress":
+        raise RouteNotActiveError("This route isn't currently active - location isn't being recorded.")
     ping = DriverLocationPing(
         driver_id=driver.id, route_id=route.id,
         lat=lat, lng=lng, speed=speed, heading=heading, accuracy=accuracy,
+        # Set here (Python), not left to the column's server_default -
+        # route.started_at/completed_at are also Python-computed
+        # (datetime.now() in start_route/end_route), and get_route_tracking
+        # compares this against those directly to scope a route's tracking
+        # to its current run. Two independently-generated timestamps for
+        # events that can be milliseconds apart is exactly the kind of gap
+        # precision mismatches hide in - SQLite's server-side
+        # CURRENT_TIMESTAMP in particular only has whole-second resolution,
+        # which was enough to make a ping recorded a few hundred ms after
+        # start_route() read as "before" it. Sourcing both from the same
+        # clock at the same precision removes the mismatch instead of
+        # papering over it with a tolerance window (which was tried first -
+        # it just traded that bug for old pings leaking into a
+        # fast-restarted new run's window instead).
+        recorded_at=datetime.now(timezone.utc),
     )
     db.add(ping)
     db.commit()
@@ -371,25 +411,63 @@ def get_route_tracking(db: Session, route_id: int, path_limit: int = 200) -> Dic
     if route is None:
         raise RouteNotFoundError("Route not found")
 
-    last_ping = (
+    # Scoped to this route's *current* run (started_at..completed_at), not
+    # every ping ever recorded against this route_id. record_location now
+    # refuses to store a ping outside route_run_status == "in_progress" at
+    # all, which closes most of this off going forward - but a route can
+    # be started, ended, unassigned and reassigned (possibly to a
+    # different driver entirely) more than once over its lifetime, and
+    # old pings from an earlier run don't get deleted just because a new
+    # one started. Without this filter, a fresh run's tracking view could
+    # still show a *previous* driver's old breadcrumb trail under the
+    # same route_id.
+    #
+    # Filtered in Python, not as a SQL WHERE clause - Postgres (production)
+    # returns tz-aware datetimes it compares correctly at the SQL level,
+    # but SQLite (local dev/tests) doesn't have a real datetime type at
+    # all (everything is TEXT under the hood), so a server-default
+    # CURRENT_TIMESTAMP column compared against a Python tz-aware
+    # datetime in a WHERE clause doesn't reliably do the right thing - the
+    # exact reason _as_aware_utc exists below already, just now applying
+    # to a filter instead of _tracking_status's age math. Every route's
+    # ping volume is small (one day's deliveries) and path_limit already
+    # bounds this, so fetching by route_id alone and filtering here costs
+    # nothing real.
+    all_pings = (
         db.query(DriverLocationPing)
         .filter(DriverLocationPing.route_id == route_id)
         .order_by(DriverLocationPing.recorded_at.desc())
-        .first()
+        .all()
     )
+    if route.started_at is None:
+        # Never started (or reset back to "planned") - no ping can
+        # legitimately belong to this run, whatever stray rows might
+        # exist.
+        run_pings = []
+    else:
+        # Strict boundary, no tolerance window - record_location now sets
+        # recorded_at from the same Python clock start_route/end_route use
+        # for started_at/completed_at (see its own comment), so these are
+        # directly comparable without the precision mismatch a tolerance
+        # window would otherwise need to paper over - and a tolerance
+        # window has its own real cost: it can let an *earlier* run's
+        # pings leak into a run that started again soon after (verified by
+        # a test doing exactly that).
+        run_start = _as_aware_utc(route.started_at)
+        run_end = _as_aware_utc(route.completed_at) if route.completed_at is not None else None
+        run_pings = [
+            p for p in all_pings
+            if _as_aware_utc(p.recorded_at) >= run_start and (run_end is None or _as_aware_utc(p.recorded_at) <= run_end)
+        ]
+
+    last_ping = run_pings[0] if run_pings else None
     status = _tracking_status(last_ping) if route.route_run_status == "in_progress" else (
         "completed" if route.route_run_status == "completed" else "not_started"
     )
 
     path = []
     if path_limit:
-        recent = (
-            db.query(DriverLocationPing)
-            .filter(DriverLocationPing.route_id == route_id)
-            .order_by(DriverLocationPing.recorded_at.desc())
-            .limit(path_limit)
-            .all()
-        )
+        recent = run_pings[:path_limit]
         path = [
             {"lat": p.lat, "lng": p.lng, "recorded_at": p.recorded_at.isoformat()}
             for p in reversed(recent)
