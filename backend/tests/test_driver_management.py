@@ -653,3 +653,120 @@ def test_driver_active_route_includes_distance_travelled(db_session):
     driver_view = crud_driver.get_driver_active_route(db_session, driver)
     assert driver_view["distance_travelled_km"] == pytest.approx(1.11, abs=0.05)
     assert len(driver_view["delivery_legs"]) == 2
+
+
+# --------------------------------------------------------------------------
+# Driver Data (work-run history)
+# --------------------------------------------------------------------------
+
+def test_driver_history_lists_only_runs_that_were_actually_started(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    started = _route(db_session)
+    never_started = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, started.id, driver.id)
+    crud_driver.start_route(db_session, driver, started.id)
+    crud_driver.assign_driver_to_route(db_session, never_started.id, driver.id, force=True)
+
+    rows, total = crud_driver.list_driver_history(db_session)
+    assert total == 1
+    assert rows[0]["route_id"] == started.id
+    assert rows[0]["route_run_status"] == "in_progress"
+
+
+def test_driver_history_reports_distance_duration_and_delivered_count(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.00, lng=80.20)
+    crud_driver.record_location(db_session, driver, route.id, lat=13.01, lng=80.20)
+    stop1 = next(s for s in route.stops if s.order_id == "1")
+    stop1.delivery_status = "delivered"
+    stop1.delivered_at = datetime.now(timezone.utc)
+    db_session.commit()
+    route.started_at = datetime.now(timezone.utc) - timedelta(minutes=40)
+    crud_driver.end_route(db_session, driver, route.id)
+
+    rows, _ = crud_driver.list_driver_history(db_session)
+    row = rows[0]
+    assert row["driver_name"] == "Kumar"
+    assert row["driver_code"] == driver.driver_code
+    assert row["route_run_status"] == "completed"
+    assert row["distance_travelled_km"] == pytest.approx(1.11, abs=0.05)
+    assert row["delivered_count"] == 1
+    assert row["total_stops"] == 2
+    assert row["duration_minutes"] == pytest.approx(40.0, abs=0.5)
+
+
+def test_driver_history_can_be_scoped_to_one_driver(db_session):
+    kumar = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    suresh = crud_driver.create_driver(db_session, "Suresh", "suresh", "pass123")
+    r1 = _route(db_session)
+    r2 = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, r1.id, kumar.id)
+    crud_driver.start_route(db_session, kumar, r1.id)
+    crud_driver.assign_driver_to_route(db_session, r2.id, suresh.id)
+    crud_driver.start_route(db_session, suresh, r2.id)
+
+    rows, total = crud_driver.list_driver_history(db_session, driver_id=suresh.id)
+    assert total == 1
+    assert rows[0]["driver_name"] == "Suresh"
+
+
+def test_driver_history_keeps_the_driver_name_after_unassignment(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.end_route(db_session, driver, route.id)
+    crud_driver.unassign_driver_from_route(db_session, route.id)
+
+    rows, _ = crud_driver.list_driver_history(db_session)
+    assert rows[0]["driver_name"] == "Kumar"
+
+
+def test_delete_driver_history_record_removes_the_route(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    route_id = route.id
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.end_route(db_session, driver, route.id)
+
+    crud_driver.delete_driver_history_record(db_session, route_id)
+
+    rows, total = crud_driver.list_driver_history(db_session)
+    assert total == 0
+    assert rows == []
+
+
+def test_delete_driver_history_record_leaves_orders_alone(db_session):
+    """Unlike crud.delete_route (for pulling a live route out of dispatch),
+    deleting a finished run's history record must not touch the orders -
+    they were already delivered, there's nothing to free back to
+    Unassigned."""
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    batch_id = route.route_plan.batch_id
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    crud_driver.end_route(db_session, driver, route.id)
+
+    crud_driver.delete_driver_history_record(db_session, route.id)
+
+    assert crud.count_unassigned_orders(db_session, batch_id) == 0
+
+
+def test_delete_driver_history_record_refuses_an_in_progress_route(db_session):
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+
+    with pytest.raises(crud_driver.RouteStillActiveError):
+        crud_driver.delete_driver_history_record(db_session, route.id)
+
+
+def test_delete_driver_history_record_rejects_an_unknown_route(db_session):
+    with pytest.raises(crud.RouteNotFoundError):
+        crud_driver.delete_driver_history_record(db_session, 999999)

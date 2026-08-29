@@ -68,6 +68,14 @@ class RouteNotActiveError(RootplanError):
     pass
 
 
+class RouteStillActiveError(RootplanError):
+    """Raised by delete_driver_history_record for a route that's still
+    in_progress - a live, currently-tracked run isn't something to prune
+    from a history log. End it (driver app, or unassign from the Routes
+    board) first; only a finished run's record can be deleted from here."""
+    pass
+
+
 # --------------------------------------------------------------------------
 # Driver roster (admin side)
 # --------------------------------------------------------------------------
@@ -258,7 +266,10 @@ def assign_driver_to_route(db: Session, route_id: int, driver_id: int, force: bo
 
     if previous_route is not None and previous_route.id != route.id:
         previous_route.driver_id = None
-        previous_route.driver = None
+        # `driver` (free-text) is deliberately left as-is here, not nulled -
+        # see unassign_driver_from_route's comment for why: it's the only
+        # trace of who drove a run once driver_id is cleared, and Driver
+        # Data (list_driver_history) falls back to it for exactly that.
 
     route.driver_id = driver.id
     route.driver = driver.name
@@ -279,11 +290,20 @@ def assign_driver_to_route(db: Session, route_id: int, driver_id: int, force: bo
 
 
 def unassign_driver_from_route(db: Session, route_id: int) -> Route:
+    """Clears driver_id (the real assignment pointer - every "who's
+    currently assigned" check in the app reads this, never the free-text
+    field below) but deliberately leaves the legacy free-text `driver`
+    name in place rather than nulling it too. It was otherwise unused
+    (nothing in the frontend reads it - driver_summary/assigned_route_name
+    always go through driver_id), so repurposing it as a "last known
+    driver" breadcrumb costs nothing and is what lets Driver Data
+    (list_driver_history) still name who drove a run after they've been
+    unassigned or the driver record itself deleted (driver_id SET NULLs
+    then too)."""
     route = db.query(Route).filter(Route.id == route_id).first()
     if route is None:
         raise RouteNotFoundError("Route not found")
     route.driver_id = None
-    route.driver = None
     db.commit()
     db.refresh(route)
     return route
@@ -621,3 +641,83 @@ def get_driver_active_route(db: Session, driver: Driver) -> Optional[Dict[str, o
     summary["distance_travelled_km"] = progress["distance_travelled_km"]
     summary["delivery_legs"] = progress["delivery_legs"]
     return summary
+
+
+# --------------------------------------------------------------------------
+# Driver Data - the admin's page of every driver's past work runs (start
+# time, end time, distance travelled, deliveries), with a way to prune old
+# records. Deliberately not a separate table: each route generation already
+# creates its own Route row, and started_at/completed_at are set exactly
+# once per run (start_route/end_route above) - so the routes table already
+# *is* the append-only run log, the same way Route History reads the
+# route_plans table rather than a separate log of what was ever generated.
+# --------------------------------------------------------------------------
+
+def list_driver_history(
+    db: Session, driver_id: Optional[int] = None, limit: int = 50, offset: int = 0,
+) -> Tuple[List[Dict[str, object]], int]:
+    """Every route run that's actually been started, most recent first -
+    optionally scoped to one driver. distance_travelled_km comes from the
+    exact same get_route_progress() the live tracking card and the driver
+    app both read, so this page can never disagree with either of them."""
+    query = (
+        db.query(Route)
+        .options(joinedload(Route.driver_ref))
+        .filter(Route.started_at.isnot(None))
+    )
+    if driver_id is not None:
+        query = query.filter(Route.driver_id == driver_id)
+    total = query.count()
+    routes = (
+        query.order_by(Route.started_at.desc())
+        .offset(offset).limit(limit)
+        .all()
+    )
+
+    rows = []
+    for route in routes:
+        progress = get_route_progress(db, route)
+        driver = route.driver_ref
+        duration_minutes = None
+        if route.started_at and route.completed_at:
+            duration_minutes = round((route.completed_at - route.started_at).total_seconds() / 60, 1)
+        delivered_count = sum(1 for s in route.stops if s.delivery_status == "delivered")
+        rows.append({
+            "route_id": route.id,
+            "route_name": route.route_name,
+            "driver_id": route.driver_id,
+            # Kept even if the driver was later unassigned/deleted (driver_id
+            # SET NULLs, driver_ref goes with it) - the run still happened,
+            # so the log line still names who drove it rather than going blank.
+            "driver_name": driver.name if driver else (route.driver or "Unknown driver"),
+            "driver_code": driver.driver_code if driver else None,
+            "vehicle_type": route.vehicle_type,
+            "route_run_status": route.route_run_status,
+            "started_at": route.started_at.isoformat() if route.started_at else None,
+            "completed_at": route.completed_at.isoformat() if route.completed_at else None,
+            "duration_minutes": duration_minutes,
+            "distance_travelled_km": progress["distance_travelled_km"],
+            "delivered_count": delivered_count,
+            "total_stops": len(route.stops),
+        })
+    return rows, total
+
+
+def delete_driver_history_record(db: Session, route_id: int) -> None:
+    """Deletes one run's row from the Driver Data log. Deliberately not
+    crud.delete_route: that one frees the route's orders back to
+    Unassigned, which is correct for pulling a *live* route out of
+    dispatch but wrong here - a finished run's orders were already
+    delivered, there's nothing to free, this just removes the log entry
+    (and its RouteStop/DriverLocationPing rows, both ON DELETE CASCADE)
+    and leaves live dispatch untouched. Refuses an in_progress route -
+    see RouteStillActiveError."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    if route.route_run_status == "in_progress":
+        raise RouteStillActiveError(
+            "This route is still in progress - end it before deleting its history record."
+        )
+    db.delete(route)
+    db.commit()

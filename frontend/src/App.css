@@ -1490,6 +1490,58 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border-radius: var(--radius-xs);
 }
 
+/* Driver Data panel (every driver's past work runs) - same table
+   treatment as .drivers-table above, but its own class rather than a
+   shared one: that table's th:nth-child widths are tuned for its own 6
+   columns and would misapply to this table's 9. */
+.driver-runs-table-wrap {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.driver-runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.driver-runs-table th {
+  padding: 0.65rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.driver-runs-table td {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: middle;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.driver-runs-table tbody tr:hover { background: var(--surface-2); }
+.driver-runs-table__name { font-weight: 700; color: var(--ink); }
+.driver-runs-table__code { font-size: 0.74rem; color: var(--ink-soft); font-family: var(--font-mono); margin-top: 0.1rem; }
+
+.run-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.run-status-pill--in_progress { background: var(--info-soft); color: var(--info); }
+.run-status-pill--completed { background: var(--good-soft); color: var(--good); }
+
 /* =======================================================================
    Failed Addresses Split View
 ======================================================================= */
@@ -1635,6 +1687,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   overflow: hidden;
 }
 .history-panel--wide { max-width: 680px; }
+.history-panel--xwide { max-width: 1080px; }
 
 /* Command palette (⌘K) - shares .modal-backdrop's dimmed/blurred scrim
    but overrides the centered flex alignment to sit near the top, the
@@ -2187,6 +2240,8 @@ select { max-width: 100%; }
   .board__header-group { width: 100%; justify-content: space-between; }
   .drivers-table-wrap { overflow-x: auto; }
   .drivers-table { min-width: 700px; }
+  .driver-runs-table-wrap { overflow-x: auto; }
+  .driver-runs-table { min-width: 860px; }
   .failed-split { flex-direction: column; min-height: 0; }
   .failed-split__list { width: 100%; max-height: 260px; border-right: 0; border-bottom: 1px solid var(--rule); padding: 0 0 1rem; }
   .failed-split__detail { padding: 1rem; }

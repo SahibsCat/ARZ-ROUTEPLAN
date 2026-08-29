@@ -856,6 +856,29 @@ def reset_driver_password_endpoint(driver_id: int, payload: ResetDriverPasswordR
     return {"driver": crud_driver.driver_summary(driver)}
 
 
+# --- Driver Data (work-run history: start/end time, km travelled, per
+#     driver) -----------------------------------------------------------------
+
+@app.get("/api/drivers/history")
+def get_driver_history_endpoint(
+    db: Session = Depends(get_db),
+    driver_id: Optional[int] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows, total = crud_driver.list_driver_history(db, driver_id=driver_id, limit=limit, offset=offset)
+    return {"runs": rows, "total": total, "limit": limit, "offset": offset}
+
+
+@app.delete("/api/drivers/history/{route_id}")
+def delete_driver_history_endpoint(route_id: int, db: Session = Depends(get_db)):
+    try:
+        crud_driver.delete_driver_history_record(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"deleted": True, "route_id": route_id}
+
+
 # --- Assignment (admin) -----------------------------------------------------
 
 @app.post("/api/routes/{route_id}/driver")

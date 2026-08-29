@@ -46,11 +46,13 @@ const ROUTE_HUES = 6;
 // Drivers used to be a right-side overlay panel; it's a full board in the
 // page flow now, same as Failed Addresses, so both creating a driver and
 // seeing every driver's status live on a real board instead of a drawer
-// you dip into and dismiss. 'history' (Route History, a long append-only
-// record list rather than something you work in) is the one nav item that
-// still opens as an overlay. Items marked soon:true have no real content
-// to scroll to, so clicking one opens ComingSoonPage as its own small
-// overlay instead (see soonOverlay).
+// you dip into and dismiss. 'history' (Route History) and 'driver-data'
+// (every driver's past work runs - start/end time, km travelled, with a
+// delete option) are both long append-only record lists rather than
+// something you work in, so they're the nav items that open as an overlay
+// instead. Items marked soon:true have no real content to scroll to, so
+// clicking one opens ComingSoonPage as its own small overlay instead (see
+// soonOverlay).
 const NAV_GROUPS = [
   {
     label: 'Overview',
@@ -72,6 +74,7 @@ const NAV_GROUPS = [
     label: 'Fleet',
     items: [
       { key: 'drivers', label: 'Drivers', icon: IconUsers, anchor: 'drivers-board' },
+      { key: 'driver-data', label: 'Driver Data', icon: IconClock },
       { key: 'vehicles', label: 'Vehicles', icon: IconCar, soon: true },
     ],
   },
@@ -610,6 +613,17 @@ function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState(null);
 
+  // Driver Data panel (opened from the sidebar) - every driver's past work
+  // runs (crud_driver.list_driver_history), each backed by a real Route row
+  // rather than a separate log table - see that function's own comment for
+  // why. Independent of Route History above (that's saved route *plans*;
+  // this is who actually drove, when, and how far).
+  const [driverDataOpen, setDriverDataOpen] = useState(false);
+  const [driverRuns, setDriverRuns] = useState([]);
+  const [isLoadingDriverData, setIsLoadingDriverData] = useState(false);
+  const [driverDataError, setDriverDataError] = useState(null);
+  const [deletingRunId, setDeletingRunId] = useState(null); // route_id currently being deleted, or null
+
   // Drivers board (roster CRUD) - the assignment picker on a route's detail
   // view (RouteWorkspace) reads from this same `drivers` list, so it stays
   // fresh even before the Drivers board has scrolled into view this session.
@@ -898,6 +912,8 @@ function App() {
     setSoonOverlay(null);
     if (item.key === 'history') {
       openHistory();
+    } else if (item.key === 'driver-data') {
+      openDriverData();
     } else if (item.anchor === 'top') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
@@ -1138,6 +1154,46 @@ function App() {
       setHistoryError('Could not load Route History - check the backend connection.');
     } finally {
       setIsLoadingHistory(false);
+    }
+  };
+
+  // Opens Driver Data and loads every driver's past work runs.
+  const openDriverData = async () => {
+    setDriverDataOpen(true);
+    setIsLoadingDriverData(true);
+    setDriverDataError(null);
+    try {
+      const response = await apiFetch('/api/drivers/history?limit=100');
+      if (!response.ok) throw new Error(`Failed to load driver history (${response.status})`);
+      const data = await response.json();
+      setDriverRuns(data.runs || []);
+    } catch (err) {
+      console.error('Could not load driver history:', err);
+      setDriverDataError('Could not load Driver Data - check the backend connection.');
+    } finally {
+      setIsLoadingDriverData(false);
+    }
+  };
+
+  // Deletes one run's record. Only finished runs can be deleted from here
+  // (the backend refuses an in_progress one - see RouteStillActiveError) -
+  // an active, currently-tracked run belongs to Live Tracking, not this log.
+  const handleDeleteDriverRun = async (run) => {
+    if (!window.confirm(`Delete this run record for ${run.driver_name} (${run.route_name})? This cannot be undone.`)) return;
+    setDeletingRunId(run.route_id);
+    try {
+      const response = await apiFetch(`/api/drivers/history/${run.route_id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || `Failed to delete (${response.status})`);
+      }
+      setDriverRuns((prev) => prev.filter((r) => r.route_id !== run.route_id));
+      showToast('Run record deleted.');
+    } catch (err) {
+      console.error('Could not delete run record:', err);
+      showToast(err.message || 'Could not delete this record.');
+    } finally {
+      setDeletingRunId(null);
     }
   };
 
@@ -3327,6 +3383,88 @@ function App() {
                     </li>
                   ))}
                 </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {driverDataOpen && (
+        <div className="history-overlay" role="dialog" aria-modal="true" aria-label="Driver Data">
+          <div className="history-overlay__scrim" onClick={() => setDriverDataOpen(false)} />
+          <div className="history-panel history-panel--xwide">
+            <div className="history-panel__head">
+              <h2><IconClock width={18} height={18} /> Driver Data</h2>
+              <button className="topbar__icon-btn" onClick={() => setDriverDataOpen(false)} aria-label="Close Driver Data">
+                <IconX width={18} height={18} />
+              </button>
+            </div>
+            <p className="history-panel__sub">
+              Every driver's past work runs - start time, end time, and distance travelled (from their own GPS
+              trail, same figure the driver app and Live Tracking show). Only a finished run can be deleted here;
+              an in-progress one belongs to Live Tracking until it's ended.
+            </p>
+            <div className="history-panel__body">
+              {isLoadingDriverData ? (
+                <div className="history-panel__skeletons">
+                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
+                </div>
+              ) : driverDataError ? (
+                <div className="empty-state">{driverDataError}</div>
+              ) : driverRuns.length === 0 ? (
+                <div className="empty-state">
+                  No driver runs recorded yet. Once a driver taps <strong>Start Route</strong> in the Driver App, that run shows up here.
+                </div>
+              ) : (
+                <div className="driver-runs-table-wrap">
+                  <table className="driver-runs-table">
+                    <thead>
+                      <tr>
+                        <th>Driver</th>
+                        <th>Route</th>
+                        <th>Started</th>
+                        <th>Ended</th>
+                        <th>Duration</th>
+                        <th>Distance</th>
+                        <th>Delivered</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {driverRuns.map((run) => (
+                        <tr key={run.route_id}>
+                          <td>
+                            <div className="driver-runs-table__name">{run.driver_name || 'Unknown driver'}</div>
+                            {run.driver_code && <div className="driver-runs-table__code mono-num">{run.driver_code}</div>}
+                          </td>
+                          <td>{run.route_name}</td>
+                          <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</td>
+                          <td>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</td>
+                          <td className="mono-num">{run.duration_minutes != null ? `${run.duration_minutes} min` : '—'}</td>
+                          <td className="mono-num">{run.distance_travelled_km != null ? `${run.distance_travelled_km} km` : '—'}</td>
+                          <td className="mono-num">{run.delivered_count}/{run.total_stops}</td>
+                          <td>
+                            <span className={`run-status-pill run-status-pill--${run.route_run_status}`}>
+                              {run.route_run_status === 'in_progress' ? '🟢 In progress' : '⚪ Completed'}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn--danger-ghost btn--compact"
+                              disabled={run.route_run_status === 'in_progress' || deletingRunId === run.route_id}
+                              title={run.route_run_status === 'in_progress' ? 'End this route before deleting its record' : 'Delete this run record'}
+                              onClick={() => handleDeleteDriverRun(run)}
+                            >
+                              {deletingRunId === run.route_id ? <span className="spinner" /> : 'Delete'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
