@@ -1,4 +1,6 @@
 import re
+from math import asin, cos, radians, sin, sqrt
+from statistics import median
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
@@ -50,6 +52,36 @@ RELOCATE_MIN_SAVINGS_KM = 1.5
 # still correctly gets its own dedicated vehicle - this only kills *close*
 # calls in favor of consolidating, it never forces a bad detour.
 VEHICLE_ACTIVATION_PENALTY_KM = 4.0
+
+# --- Geographic outlier detection (route SEPARATION - which route a stop
+# belongs to - not route ORDERING, which _improve_route already handles).
+# See _extract_geographic_outliers for the full explanation. Every
+# threshold here is deliberately RELATIVE to each route's own scale, not
+# a fixed km value - a rural route's stops are naturally more spread out
+# than a dense urban one, and a fixed threshold would flag half of one and
+# none of the other for exactly the same real-world "does this stop
+# actually belong here" answer. -------------------------------------------
+
+# A route needs at least this many stops before "outlier" is even a
+# meaningful question - a 1-2 stop route has no internal structure to be
+# an outlier relative to.
+MIN_ROUTE_SIZE_FOR_OUTLIER_CHECK = 3
+# A stop is a candidate outlier once its nearest OTHER stop on the same
+# route is farther than this many times the route's own median
+# nearest-neighbor spacing (a robust "how tight is this route normally"
+# baseline - median, not mean, so the outlier itself can't drag its own
+# threshold up).
+OUTLIER_DISTANCE_FACTOR = 3.0
+# ...but never for a genuinely small gap - even 3x a very tight route's
+# spacing can be under a km, which isn't worth reacting to. This absolute
+# floor (straight-line) is what actually stops "5 close together, 1
+# slightly farther" (spec Test Case 5) from being flagged at all.
+MIN_OUTLIER_DETOUR_KM = 3.0
+# Once a stop IS flagged, it's only actually moved to an existing route if
+# that insertion costs no more than this much real (road-distance) detour
+# - past this, no existing route is a good enough fit and a fresh vehicle
+# is spawned for it instead (see _extract_geographic_outliers).
+MAX_OUTLIER_RELOCATE_DETOUR_KM = 6.0
 
 
 def parse_delivery_time(value: object) -> float:
@@ -355,6 +387,225 @@ def _relocate_across_routes(vehicles: List[Dict[str, object]], depot: Dict[str, 
             break
 
 
+def _haversine_km(a: Dict[str, float], b: Dict[str, float]) -> float:
+    """Straight-line distance, not a road-distance API call - exactly what
+    outlier DETECTION should use (see the block comment above the
+    OUTLIER_* constants and generate_routes' own reasoning: GPS distance
+    for clustering/filtering, road distance only for the final cost check
+    on a stop that's already been flagged). Finding "which stop is
+    geographically disconnected" for a handful of stops per route, many
+    times over as routes settle, would otherwise mean a real network call
+    every time - this is instant and free."""
+    r_km = 6371.0
+    lat1, lat2 = radians(a["lat"]), radians(b["lat"])
+    dlat = radians(b["lat"] - a["lat"])
+    dlng = radians(b["lng"] - a["lng"])
+    h = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
+    return 2 * r_km * asin(sqrt(h))
+
+
+def _smallest_disconnected_group(route_orders: List[Dict[str, object]]) -> Optional[Tuple[List[int], float, float]]:
+    """Finds whether this route is actually more than one geographical
+    group stitched together, and if so returns the smallest of those
+    groups to peel off - (indexes, that group's nearest gap to the rest,
+    the route's own typical spacing) - or None if the route is too small
+    to judge, has stops without coordinates, or is genuinely one
+    connected cluster.
+
+    A single "this one point's nearest neighbor is far" check (an earlier
+    version of this function) catches a lone outlier fine, but silently
+    misses two real multi-point clusters stitched into one route: every
+    point in a 3-and-3 split still has a *close* neighbor - the other two
+    points in its own half - so a per-point nearest-neighbor check alone
+    finds nothing wrong. What's actually needed is single-linkage
+    clustering: connect any two stops closer than the route's own
+    relative threshold (same OUTLIER_DISTANCE_FACTOR/MIN_OUTLIER_DETOUR_KM
+    reasoning as before, just applied as an edge cutoff instead of a
+    per-point check), take the connected components under that cutoff,
+    and treat any component other than the largest as disconnected. This
+    is a standard technique (equivalent to cutting a minimum spanning
+    tree's longest edges) - reliable for both a single stray point AND
+    genuinely separate clusters, since either way it's really asking the
+    same question: "does removing one gap split this into pieces that
+    were never actually one group?"
+
+    Only the SMALLEST disconnected group is ever returned in one call -
+    the caller (_extract_geographic_outliers) handles one group at a
+    time, across repeated passes, the same conservative one-at-a-time
+    approach the single-outlier version used, rather than restructuring a
+    whole route's grouping in one shot from a single scan.
+    """
+    n = len(route_orders)
+    if n < MIN_ROUTE_SIZE_FOR_OUTLIER_CHECK or not all(has_coordinates(o) for o in route_orders):
+        return None
+
+    pairwise_km = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = _haversine_km(route_orders[i], route_orders[j])
+            pairwise_km[i][j] = pairwise_km[j][i] = d
+
+    nearest_neighbor_km = [min(pairwise_km[i][j] for j in range(n) if j != i) for i in range(n)]
+    typical_spacing_km = median(nearest_neighbor_km)
+    threshold_km = max(MIN_OUTLIER_DETOUR_KM, typical_spacing_km * OUTLIER_DISTANCE_FACTOR)
+
+    # Union-find single-linkage clustering: two stops end up in the same
+    # component iff there's a chain of stops between them where every
+    # consecutive link is within threshold_km - exactly cutting every
+    # inter-component gap larger than the route's own relative scale.
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if pairwise_km[i][j] <= threshold_km:
+                root_i, root_j = find(i), find(j)
+                if root_i != root_j:
+                    parent[root_i] = root_j
+
+    components: Dict[int, List[int]] = {}
+    for i in range(n):
+        components.setdefault(find(i), []).append(i)
+
+    if len(components) < 2:
+        return None  # one connected group - nothing to split
+
+    smallest = min(components.values(), key=len)
+    others = [idx for group in components.values() if group is not smallest for idx in group]
+    gap_km = min(pairwise_km[i][j] for i in smallest for j in others)
+    return smallest, gap_km, typical_spacing_km
+
+
+def _extract_geographic_outliers(
+    vehicles: List[Dict[str, object]],
+    depot: Dict[str, float],
+    route_start_minutes: float,
+    capacity_by_type: Dict[str, int],
+    configured_types: List[str],
+    spawn_count: int,
+    max_auto_spawns: int,
+) -> int:
+    """Pass 2 of route separation (Pass 1 is build_routes' own greedy
+    assignment + _relocate_across_routes above, both already run by the
+    time this is called): catches the one thing neither of those can -
+    a stop (or a whole tight cluster of stops) that's genuinely
+    geographically disconnected from every route it could plausibly be
+    on, including the one it's currently stuck on. _relocate_across_routes
+    already moves a *single* stop to a *better existing* route when one
+    exists; what nothing before this does is (a) notice a stitched-
+    together multi-cluster route at all, or (b) create a *new* route for
+    a group that has no good existing home - the literal Point-6 scenario
+    (5 tightly clustered stops sharing one time slot, a 6th far away with
+    nowhere reasonable to relocate to), and its multi-point cousin (two
+    real 3-stop clusters that ended up sharing one route/time-slot bucket).
+
+    For every route, repeatedly: find its smallest disconnected group
+    (see _smallest_disconnected_group - single-linkage clustering
+    relative to that route's OWN typical spacing, never a fixed km
+    value; a lone outlier is just the size-1 case of the same check).
+    Try relocating the WHOLE group onto whichever OTHER existing route
+    has spare capacity for all of it at the lowest real (road-distance)
+    insertion cost; if that cost is within MAX_OUTLIER_RELOCATE_DETOUR_KM,
+    do that - no new vehicle needed. Otherwise, if there's still spawn
+    budget, a configured vehicle type to spawn as, and that vehicle type
+    actually has room for the whole group (the exact spawn mechanism
+    build_routes already uses for capacity/deadline overflow - same
+    is_auto_created flag), give the group a fresh dedicated route of its
+    own. If none of that is possible, the group is left exactly where it
+    was - never lost, never duplicated, just not improved this round.
+
+    Repeats across every route until a full sweep makes no change, or
+    until a safety cap on total moves - bounded by how many stops exist,
+    since each successful move/spawn strictly reduces how much work is
+    left to do, but an infinite loop here would be a genuinely bad place
+    to have one.
+    """
+    max_iterations = sum(len(v["orders"]) for v in vehicles) + 1
+    for _ in range(max_iterations):
+        moved = False
+
+        for source in vehicles:
+            if not source["orders"]:
+                continue
+            found = _smallest_disconnected_group(source["orders"])
+            if found is None:
+                continue
+            indexes, gap_km, typical_spacing_km = found
+            index_set = set(indexes)
+            group = [order for idx, order in enumerate(source["orders"]) if idx in index_set]
+            without = [order for idx, order in enumerate(source["orders"]) if idx not in index_set]
+            _, dist_without, _, source_feasible_without = _simulate_route(without, depot, route_start_minutes) if without else (None, 0.0, 0.0, True)
+            if dist_without is None or not source_feasible_without:
+                continue  # can't cleanly remove it (an unroutable leg elsewhere) - leave it
+
+            group_ids = [order.get("order_id") for order in group]
+            print(
+                f"[route-separation] disconnected group candidate: order_ids={group_ids} "
+                f"gap_from_rest_km={gap_km:.2f} route_typical_spacing_km={typical_spacing_km:.2f}"
+            )
+
+            best_target = None
+            best_insert_at = None
+            best_insertion_cost = None
+            for target in vehicles:
+                if target is source or target["capacity"] - len(target["orders"]) < len(group):
+                    continue
+                _, target_dist_before, _, _ = _simulate_route(target["orders"], depot, route_start_minutes)
+                if target_dist_before is None:
+                    continue
+                # Only the two simplest insertion points for the whole
+                # group as one block (start, end) - not every position, to
+                # keep this to a handful of simulations even for a
+                # multi-stop group. Final ordering doesn't depend on this
+                # choice anyway: _improve_route (2-opt) resequences the
+                # whole route again right after this pass.
+                for candidate in (
+                    group + target["orders"],
+                    target["orders"] + group,
+                ):
+                    if not _slot_order_preserved(candidate):
+                        continue
+                    _, cand_dist, _, cand_feasible = _simulate_route(candidate, depot, route_start_minutes)
+                    if cand_dist is None or not cand_feasible:
+                        continue
+                    insertion_cost = cand_dist - target_dist_before
+                    if best_insertion_cost is None or insertion_cost < best_insertion_cost:
+                        best_insertion_cost = insertion_cost
+                        best_target = target
+                        best_insert_at = candidate
+
+            if best_target is not None and best_insertion_cost <= MAX_OUTLIER_RELOCATE_DETOUR_KM:
+                source["orders"] = without
+                best_target["orders"] = best_insert_at
+                print(f"[route-separation] decision: relocated group of {len(group)} to an existing route (detour {best_insertion_cost:.2f} km)")
+                moved = True
+                break
+
+            spawn_type = source["vehicle_type"] if source["vehicle_type"] in capacity_by_type else (configured_types[0] if configured_types else None)
+            if spawn_type and capacity_by_type.get(spawn_type, 0) >= len(group) and spawn_count < max_auto_spawns:
+                fresh_vehicle = _spawn_vehicle(spawn_type, capacity_by_type[spawn_type], route_start_minutes, depot)
+                fresh_vehicle["is_auto_created"] = True
+                fresh_vehicle["orders"] = group
+                vehicles.append(fresh_vehicle)
+                spawn_count += 1
+                source["orders"] = without
+                print(f"[route-separation] decision: spawned a new route for {len(group)} stop(s) (no existing route within {MAX_OUTLIER_RELOCATE_DETOUR_KM} km detour)")
+                moved = True
+                break
+
+            print("[route-separation] decision: left in place (no relocation target, no spawn budget/capacity for a new route)")
+
+        if not moved:
+            break
+
+    return spawn_count
+
+
 def build_routes(
     orders: List[Dict[str, object]],
     available_cars: int,
@@ -505,6 +756,25 @@ def build_routes(
             remaining.remove(best_order)
 
     _relocate_across_routes(vehicles, depot, route_start_minutes)
+
+    # Route SEPARATION's own second pass - catches a stop (or a whole
+    # tight cluster of stops) that's geographically disconnected from
+    # every route it could be on, including the one the greedy build +
+    # relocate above left it on (relocate only ever moves a stop to a
+    # *better existing* route on a bare "does this reduce total distance"
+    # basis; this is the one thing that can give a genuine outlier group
+    # a route of its own). See _extract_geographic_outliers' own
+    # docstring - deliberately NOT followed by another plain
+    # _relocate_across_routes pass: that pass has no notion of "these two
+    # groups were just separated on purpose" and, on a real batch, was
+    # observed merging two newly-separated outlier groups straight back
+    # together whenever doing so happened to shave a bit off total
+    # distance - undoing this pass's whole point. Any consolidation worth
+    # doing was already considered *inside* extraction itself, under its
+    # own bounded, geography-aware detour cap.
+    spawn_count = _extract_geographic_outliers(
+        vehicles, depot, route_start_minutes, capacity_by_type, configured_types, spawn_count, max_auto_spawns,
+    )
 
     for vehicle in vehicles:
         _improve_route(vehicle, depot, route_start_minutes)

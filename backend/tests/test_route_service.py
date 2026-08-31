@@ -164,6 +164,15 @@ def test_generate_routes_never_delays_earlier_slot_for_closer_later_slot(monkeyp
     # build_order_matrix directly, not through either mocked function.
     monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
     monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 0.0, "lng": 0.0})
+    # This test's lat values (1.0, 0.1, 1.2) are an abstract 1D scale for
+    # the fake travel_time_minutes lookup above, not real coordinates -
+    # taken as real degrees they're ~100km+ apart, which is exactly what
+    # _extract_geographic_outliers (real haversine distance - see its own
+    # docstring) would now correctly flag. That's a different concern from
+    # what this test is actually about (slot-ordering precedence, not
+    # route separation) - isolated out the same way prime_route_cache is
+    # above, rather than hand-tuning coordinates around its thresholds.
+    monkeypatch.setattr("app.route_service._extract_geographic_outliers", lambda vehicles, depot, start, cap, types, spawned, max_spawns: spawned)
 
     result = generate_routes(orders, available_cars=1, available_bikes=0)
 
@@ -372,6 +381,190 @@ def test_generate_routes_gives_isolated_far_order_its_own_vehicle(monkeypatch):
     assert result["route_count"] == 2
     far_route = next(r for r in result["routes"] if any(o["order_id"] == "far" for o in r["orders"]))
     assert far_route["number_of_stops"] == 1
+
+
+# --------------------------------------------------------------------------
+# Geographic outlier detection (route SEPARATION - see
+# _extract_geographic_outliers) - real coordinates throughout, since the
+# whole point is testing real-geography behavior, not an abstract distance
+# table. _road_distance_time/get_distances_from_point are mocked to real
+# haversine distance (not left unmocked - the standard test isolation
+# pattern this file already uses everywhere else, just backed by the real
+# math instead of a fake lookup) so the whole pipeline - greedy build,
+# relocate, outlier extraction, 2-opt - runs internally consistently
+# without ever needing a real network call.
+# --------------------------------------------------------------------------
+
+def _mock_real_distance_functions(monkeypatch):
+    from app.route_service import _haversine_km
+
+    def fake_road_distance_time(source, destination):
+        d = _haversine_km(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    def fake_get_distances_from_point(origin, destinations):
+        return [fake_road_distance_time(origin, d) for d in destinations]
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+    monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
+
+
+def test_generate_routes_separates_a_geographically_isolated_point_into_its_own_route(monkeypatch):
+    # The exact spec scenario: 5 points forming a tight real-world cluster
+    # (roughly 250m-650m apart from each other) plus a 6th point ~23km
+    # away, deliberately listed LAST in the input so nothing about input
+    # order could explain a correct separation. A single car (capacity 6)
+    # is configured - exactly enough to hold all 6 on one vehicle - so the
+    # only thing that could split this into two routes is genuine
+    # geographic separation, not a capacity limit forcing the split.
+    orders = [
+        {"order_id": "1", "customer_name": "P1", "address": "P1", "delivery_time": None, "lat": 11.0000, "lng": 79.8000},
+        {"order_id": "2", "customer_name": "P2", "address": "P2", "delivery_time": None, "lat": 11.0020, "lng": 79.8030},
+        {"order_id": "3", "customer_name": "P3", "address": "P3", "delivery_time": None, "lat": 11.0040, "lng": 79.8010},
+        {"order_id": "4", "customer_name": "P4", "address": "P4", "delivery_time": None, "lat": 11.0010, "lng": 79.8060},
+        {"order_id": "5", "customer_name": "P5", "address": "P5", "delivery_time": None, "lat": 11.0030, "lng": 79.8050},
+        {"order_id": "6", "customer_name": "P6", "address": "P6", "delivery_time": None, "lat": 11.1500, "lng": 79.9500},
+    ]
+    _mock_real_distance_functions(monkeypatch)
+    monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 11.0000, "lng": 79.8000})
+
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 2
+    routes_by_ids = [{o["order_id"] for o in r["orders"]} for r in result["routes"]]
+    assert {"1", "2", "3", "4", "5"} in routes_by_ids
+    assert {"6"} in routes_by_ids
+
+
+def test_generate_routes_keeps_a_tight_cluster_on_one_route(monkeypatch):
+    # Spec Test Case 1: every point close together must stay one route -
+    # the new outlier pass must not be trigger-happy on a perfectly normal
+    # compact cluster.
+    orders = [
+        {"order_id": str(i), "customer_name": f"P{i}", "address": f"P{i}", "delivery_time": None,
+         "lat": 11.0000 + i * 0.0010, "lng": 79.8000 + i * 0.0008}
+        for i in range(5)
+    ]
+    _mock_real_distance_functions(monkeypatch)
+    monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 11.0000, "lng": 79.8000})
+
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 1
+    assert result["routes"][0]["number_of_stops"] == 5
+
+
+def test_generate_routes_keeps_a_slightly_farther_point_with_its_cluster(monkeypatch):
+    # Spec Test Case 5: a point that's only modestly farther than the rest
+    # (not a genuine outlier, just the farthest of a still-compact group)
+    # must NOT be split out on its own - the relative+absolute thresholds
+    # existing to prevent exactly this over-eager splitting.
+    orders = [
+        {"order_id": "1", "customer_name": "P1", "address": "P1", "delivery_time": None, "lat": 11.0000, "lng": 79.8000},
+        {"order_id": "2", "customer_name": "P2", "address": "P2", "delivery_time": None, "lat": 11.0020, "lng": 79.8030},
+        {"order_id": "3", "customer_name": "P3", "address": "P3", "delivery_time": None, "lat": 11.0040, "lng": 79.8010},
+        {"order_id": "4", "customer_name": "P4", "address": "P4", "delivery_time": None, "lat": 11.0010, "lng": 79.8060},
+        # Only ~1.2km from the cluster centre, not 23km - a real but modest
+        # outer edge, the kind every normal delivery area has somewhere.
+        {"order_id": "5", "customer_name": "P5", "address": "P5", "delivery_time": None, "lat": 11.0120, "lng": 79.8090},
+    ]
+    _mock_real_distance_functions(monkeypatch)
+    monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 11.0000, "lng": 79.8000})
+
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 1
+    assert result["routes"][0]["number_of_stops"] == 5
+
+
+def test_generate_routes_separates_two_distinct_geographical_clusters(monkeypatch):
+    # Spec Test Case 3: two real, separate clusters, neither of which is a
+    # single lone point - both must survive as their own routes.
+    cluster_a = [
+        {"order_id": f"a{i}", "customer_name": f"A{i}", "address": f"A{i}", "delivery_time": None,
+         "lat": 11.0000 + i * 0.0010, "lng": 79.8000 + i * 0.0008}
+        for i in range(3)
+    ]
+    cluster_b = [
+        {"order_id": f"b{i}", "customer_name": f"B{i}", "address": f"B{i}", "delivery_time": None,
+         "lat": 11.1500 + i * 0.0010, "lng": 79.9500 + i * 0.0008}
+        for i in range(3)
+    ]
+    orders = cluster_a + cluster_b
+    _mock_real_distance_functions(monkeypatch)
+    monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 11.0000, "lng": 79.8000})
+
+    # One car, capacity 6 - exactly enough to hold all 6 on one vehicle,
+    # same as the single-outlier test above: only genuine geography can
+    # justify the split here, not a capacity ceiling.
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 2
+    routes_by_ids = [{o["order_id"] for o in r["orders"]} for r in result["routes"]]
+    assert {"a0", "a1", "a2"} in routes_by_ids
+    assert {"b0", "b1", "b2"} in routes_by_ids
+
+
+def test_generate_routes_separates_three_distinct_geographical_clusters(monkeypatch):
+    # Spec Test Case 6: not just a 2-way split - three real clusters must
+    # each survive as their own route, all sharing one time slot/vehicle
+    # capacity ceiling so only geography explains the 3-way split.
+    cluster_a = [
+        {"order_id": f"a{i}", "customer_name": f"A{i}", "address": f"A{i}", "delivery_time": None,
+         "lat": 11.0000 + i * 0.0010, "lng": 79.8000 + i * 0.0008}
+        for i in range(3)
+    ]
+    cluster_b = [
+        {"order_id": f"b{i}", "customer_name": f"B{i}", "address": f"B{i}", "delivery_time": None,
+         "lat": 11.1500 + i * 0.0010, "lng": 79.9500 + i * 0.0008}
+        for i in range(2)
+    ]
+    cluster_c = [
+        {"order_id": "c0", "customer_name": "C0", "address": "C0", "delivery_time": None,
+         "lat": 11.3000, "lng": 79.7000},
+    ]
+    orders = cluster_a + cluster_b + cluster_c  # 3 + 2 + 1 = 6 - exactly one car's worth
+    _mock_real_distance_functions(monkeypatch)
+    monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 11.0000, "lng": 79.8000})
+
+    # One car, capacity 6 - exactly enough to hold all 6 stops on a single
+    # vehicle by capacity alone, so a 3-way split can only come from
+    # genuine geographic separation, not a capacity ceiling forcing it.
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 3
+    routes_by_ids = [{o["order_id"] for o in r["orders"]} for r in result["routes"]]
+    assert {"a0", "a1", "a2"} in routes_by_ids
+    assert {"b0", "b1"} in routes_by_ids
+    assert {"c0"} in routes_by_ids
+
+
+def test_generate_routes_separation_is_independent_of_input_order(monkeypatch):
+    # Spec Test Case 7: the 5-cluster-plus-1-outlier scenario, but with the
+    # outlier listed FIRST and the cluster genuinely shuffled - proving the
+    # separation comes from geography (single-linkage clustering considers
+    # every pairwise distance, not a sequential scan) and not from
+    # whatever order the sheet happened to list stops in.
+    cluster_ids_in_order = ["6", "3", "1", "5", "2", "4"]
+    coords = {
+        "1": (11.0000, 79.8000), "2": (11.0020, 79.8030), "3": (11.0040, 79.8010),
+        "4": (11.0010, 79.8060), "5": (11.0030, 79.8050), "6": (11.1500, 79.9500),
+    }
+    orders = [
+        {"order_id": oid, "customer_name": f"P{oid}", "address": f"P{oid}", "delivery_time": None,
+         "lat": coords[oid][0], "lng": coords[oid][1]}
+        for oid in cluster_ids_in_order
+    ]
+    _mock_real_distance_functions(monkeypatch)
+    monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 11.0000, "lng": 79.8000})
+
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 2
+    routes_by_ids = [{o["order_id"] for o in r["orders"]} for r in result["routes"]]
+    assert {"1", "2", "3", "4", "5"} in routes_by_ids
+    assert {"6"} in routes_by_ids
 
 
 def test_improve_route_uncrosses_a_self_crossing_route(monkeypatch):
