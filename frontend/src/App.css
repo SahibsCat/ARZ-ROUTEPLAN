@@ -1317,6 +1317,16 @@ textarea:focus-visible, [tabindex]:focus-visible {
 /* =======================================================================
    Drivers Board & Roster Page
 ======================================================================= */
+/* .board-grid is the stack that holds the Routes/Unassigned board,
+   Drivers board, and Returns board one after another - it had no rule
+   of its own, so the boards butted straight into each other with zero
+   space between them. */
+.board-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 /* Shared card shell for every board (App.jsx renders className="board
    board--X" on each one) - only .board--drivers had this styling
    defined directly on itself, so any other board (Returns/Failed
