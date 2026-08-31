@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 import httpx
@@ -12,6 +13,15 @@ from app.geocoding.base import (
     GeocodingProviderError,
 )
 from app.geocoding.provider_factory import build_geocoding_provider
+
+# How many addresses geocode_orders will have in flight at once - see its
+# own docstring for why this exists at all. Google/Mapbox have no
+# meaningful rate limit at this volume and httpx.Client is documented
+# thread-safe; Nominatim self-throttles to ~1 req/sec across ALL callers
+# via its own module-level lock (nominatim_geocoder._throttle), so running
+# it concurrently doesn't violate that policy - it just serializes there
+# naturally, without this module needing to know which provider is active.
+GEOCODE_CONCURRENCY = 8
 
 
 def clean_address(address: str) -> str:
@@ -146,6 +156,46 @@ def geocode_address(
     }
 
 
+def _fetch_concurrently(
+    geocoder: GeocodingProvider,
+    to_fetch: Dict[str, str],
+    resolved: Dict[str, Optional[GeocodeResult]],
+) -> Optional[str]:
+    """Runs every still-uncached address at once (bounded by
+    GEOCODE_CONCURRENCY) instead of one at a time - this is the actual fix
+    for a real Excel upload timing out server-side. Geocoding used to be
+    fully sequential: for a real dispatch sheet with dozens of addresses
+    that haven't been seen before (a fresh route area, a new customer),
+    every one of them was a real network round-trip, strictly one after
+    another - easily tens of seconds even before Render's own cold-start
+    delay (independently confirmed at ~30s), which is exactly what a
+    request that then has nothing to show for over a minute looks like
+    from the frontend: "backend not responding", with the orders that DID
+    get created (the upload itself succeeded) sitting unrouted in
+    Unassigned because /api/routes/generate never got a chance to run.
+
+    Fills `resolved` in place (cache_key -> GeocodeResult|None) as futures
+    complete. Returns the provider error message if the provider itself
+    turned out to be broken (billing/key/access) - every future already
+    in flight at that point is left to finish rather than force-cancelled
+    (a `with ThreadPoolExecutor` always waits out what's already running),
+    but nothing here treats a provider error as anything other than fatal
+    for the whole batch, same as before.
+    """
+    provider_error_message: Optional[str] = None
+    with ThreadPoolExecutor(max_workers=min(GEOCODE_CONCURRENCY, len(to_fetch))) as executor:
+        futures = {executor.submit(geocoder.geocode, cleaned): cache_key for cache_key, cleaned in to_fetch.items()}
+        for future in as_completed(futures):
+            cache_key = futures[future]
+            try:
+                resolved[cache_key] = future.result()
+            except GeocodingProviderError as exc:
+                if provider_error_message is None:
+                    provider_error_message = str(exc)
+                    print(f"   🛑 Provider error - {provider_error_message}")
+    return provider_error_message
+
+
 def geocode_orders(
     orders: List[Dict[str, object]],
     db: Optional[Session] = None,
@@ -155,58 +205,89 @@ def geocode_orders(
     enabled, an invalid/missing key or token, the account/IP being blocked -
     as opposed to any particular address being unresolvable. In that case
     every remaining order is marked with the same clear message instead of
-    hammering a known-broken provider hundreds more times."""
-    geocoded_orders: List[Dict[str, object]] = []
-    address_cache: Dict[str, object] = {}
-    provider_error_message: Optional[str] = None
+    hammering a known-broken provider hundreds more times.
 
+    Three passes, deliberately kept separate: (1) sequential, DB cache
+    lookups only - fast, and this is the only phase allowed to touch `db`
+    from more than one place at a time; (2) concurrent, network calls only,
+    for whatever's left after cache hits - see _fetch_concurrently; (3)
+    sequential again, writing freshly-resolved addresses back to the DB
+    cache. SQLAlchemy Sessions aren't safe to use from multiple threads,
+    which is exactly why phase 2 never touches `db` at all."""
     print(f"\nStarting geocoding for {len(orders)} orders...\n")
 
-    with _build_geocoder() as geocoder:
-        for index, order in enumerate(orders, start=1):
+    # Batch-level in-memory dedup, keyed by the raw address text (same
+    # semantics the old `address_cache` dict had) - a within-batch
+    # duplicate address is only ever looked up once, whether that ends up
+    # being a cache hit or a fresh provider call.
+    prepared: List[Dict[str, object]] = []  # one entry per order, in input order
+    resolved: Dict[str, Optional[GeocodeResult]] = {}
+    to_fetch: Dict[str, str] = {}  # raw cache_key -> cleaned address, still needing a provider call
 
+    with _build_geocoder() as geocoder:
+        for order in orders:
             merged = dict(order)
             address = str(order.get("address", ""))
             cache_key = address.strip().lower()
+            needs_lookup = merged.get("lat") is None or merged.get("lng") is None
+            prepared.append({"merged": merged, "cache_key": cache_key, "needs_lookup": needs_lookup})
 
-            if merged.get("lat") is None or merged.get("lng") is None:
+            if not needs_lookup or cache_key in resolved or cache_key in to_fetch:
+                continue
 
-                if cache_key in address_cache:
-                    result = address_cache[cache_key]
-                    print(f"[{index}/{len(orders)}] {address} (cached)")
-                else:
-                    cleaned = clean_address(address)
-                    print(f"[{index}/{len(orders)}] original='{address}' normalized='{cleaned}'")
-                    try:
-                        result = _lookup_or_geocode(geocoder, cleaned, db) if cleaned else None
-                    except GeocodingProviderError as exc:
-                        provider_error_message = str(exc)
-                        print(f"   🛑 STOPPING - {provider_error_message}")
-                        merged["lat"] = None
-                        merged["lng"] = None
-                        merged["geocode_error"] = provider_error_message
-                        geocoded_orders.append(merged)
-                        break
-                    address_cache[cache_key] = result
+            cleaned = clean_address(address)
+            print(f"original='{address}' normalized='{cleaned}'")
+            if not cleaned:
+                resolved[cache_key] = None
+                continue
 
-                merged.update(_interpret_result(result))
+            cached_row = crud.get_cached_geocode(db, _cache_key(cleaned)) if db is not None else None
+            if cached_row is not None:
+                resolved[cache_key] = _result_from_cache_row(cached_row)
+                print(f"   {address} (cached)")
+            else:
+                to_fetch[cache_key] = cleaned
 
-                if merged.get("lat") is not None:
-                    print(f"   ✅ Success ({merged.get('geocode_error') or 'OK'})")
-                else:
-                    print(f"   ❌ {merged.get('geocode_error')}")
+        provider_error_message: Optional[str] = None
+        if to_fetch:
+            print(f"Fetching {len(to_fetch)} uncached address(es), up to {GEOCODE_CONCURRENCY} at a time...")
+            provider_error_message = _fetch_concurrently(geocoder, to_fetch, resolved)
 
-            geocoded_orders.append(merged)
+    # Persist freshly-resolved (non-cached) results - sequential, main
+    # thread only, after every network call above has already finished.
+    if db is not None:
+        for cache_key, cleaned in to_fetch.items():
+            result = resolved.get(cache_key)
+            if result is not None and result.status == STATUS_OK:
+                crud.save_geocode_cache(
+                    db,
+                    address_key=_cache_key(cleaned),
+                    address=cleaned,
+                    formatted_address=result.formatted_address,
+                    lat=result.lat,
+                    lng=result.lng,
+                    provider=result.provider,
+                    confidence=result.confidence,
+                )
 
-    if provider_error_message is not None:
-        # Every order we never got to attempt gets the same clear reason,
-        # rather than being left out or looking untouched.
-        for order in orders[len(geocoded_orders):]:
-            merged = dict(order)
-            merged["lat"] = None
-            merged["lng"] = None
-            merged["geocode_error"] = provider_error_message
-            geocoded_orders.append(merged)
+    geocoded_orders: List[Dict[str, object]] = []
+    for entry in prepared:
+        merged = entry["merged"]
+        if entry["needs_lookup"]:
+            cache_key = entry["cache_key"]
+            if provider_error_message is not None and cache_key not in resolved:
+                # Never got a chance to attempt this one (the provider
+                # broke before its turn, or it was still queued when a
+                # sibling future's error was seen) - same clear reason as
+                # every other order in this batch, not left looking
+                # untouched.
+                merged["lat"] = None
+                merged["lng"] = None
+                merged["geocode_error"] = provider_error_message
+            else:
+                merged.update(_interpret_result(resolved.get(cache_key)))
+            print(f"   ✅ Success" if merged.get("lat") is not None else f"   ❌ {merged.get('geocode_error')}")
+        geocoded_orders.append(merged)
 
     success = len([order for order in geocoded_orders if order.get("lat") is not None])
     failed = len(geocoded_orders) - success

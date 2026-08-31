@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -184,9 +187,75 @@ def test_geocode_orders_stops_immediately_on_provider_error(monkeypatch):
     for order in result:
         assert order["lat"] is None
         assert order["geocode_error"] == provider_error
-    # Only the first address was actually attempted - the rest were marked
-    # without wasting more requests on a known-broken provider.
-    assert broken_geocoder.calls == ["1 Main Street, Chennai, India"]
+    # Uncached addresses are now fetched concurrently (see GEOCODE_CONCURRENCY
+    # in geocode_service.py - the fix for a real upload's geocoding step
+    # timing out server-side), so a broken provider is no longer guaranteed
+    # to be hit exactly once before the batch stops - every address already
+    # in flight when the first failure is seen gets attempted too, rather
+    # than force-cancelled. The guarantee that actually matters, and is
+    # asserted above, is that every order ends up correctly marked with the
+    # same provider error regardless of how many of the 3 were attempted.
+    assert 1 <= len(broken_geocoder.calls) <= 3
+
+
+def test_geocode_orders_resolves_many_distinct_addresses_to_the_right_order(monkeypatch):
+    # The actual regression risk in going concurrent: results must still
+    # land back on the ORDER they belong to, not whichever order the
+    # network calls happened to finish in.
+    results_by_address = {
+        f"{i} Main Street, Chennai, India": GeocodeResult(
+            lat=float(i), lng=float(i) + 0.5, formatted_address=f"Resolved {i}", status="OK", provider="google",
+        )
+        for i in range(1, 11)
+    }
+    fake_geocoder = _FakeGeocoder(results_by_address)
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    orders = [{"order_id": str(i), "customer_name": f"C{i}", "address": f"{i} Main Street"} for i in range(1, 11)]
+
+    result, provider_error = geocode_orders(orders)
+
+    assert provider_error is None
+    assert len(fake_geocoder.calls) == 10  # every distinct address attempted exactly once
+    for i, order in enumerate(result, start=1):
+        assert order["order_id"] == str(i)
+        assert order["lat"] == float(i)
+        assert order["lng"] == float(i) + 0.5
+
+
+def test_geocode_orders_actually_fetches_uncached_addresses_concurrently(monkeypatch):
+    # Proves the concurrency is real, not just structurally present but
+    # accidentally serialized somewhere - a slow fake geocoder (a stand-in
+    # for a real network round-trip) records how many calls were ever
+    # in-flight at once.
+    lock = threading.Lock()
+    state = {"current": 0, "max_seen": 0}
+
+    class _SlowGeocoder:
+        def geocode(self, address):
+            with lock:
+                state["current"] += 1
+                state["max_seen"] = max(state["max_seen"], state["current"])
+            time.sleep(0.05)
+            with lock:
+                state["current"] -= 1
+            return GeocodeResult(lat=1.0, lng=2.0, formatted_address=address, status="OK", provider="google")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: _SlowGeocoder())
+
+    orders = [{"order_id": str(i), "customer_name": f"C{i}", "address": f"{i} Distinct Street"} for i in range(1, 6)]
+    geocode_orders(orders)
+
+    # More than one call was genuinely in flight at the same time - not a
+    # strict lower bound on thread-scheduling timing, just proof this
+    # isn't secretly still one-at-a-time.
+    assert state["max_seen"] > 1
 
 
 @pytest.fixture
