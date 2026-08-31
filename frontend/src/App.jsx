@@ -27,11 +27,14 @@ const CAR_CAPACITY = 6;
 const capacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_CAPACITY : BIKE_CAPACITY);
 const isRouteFull = (route) => route.orders.length >= capacityFor(route.vehicle_type);
 
-// A car's flex ceiling once "Add Address from Another Route" is used -
-// mirrors CAR_MAX_CAPACITY / BIKE_MAX_CAPACITY in route_service.py. A bike
-// has no flex room, so its max equals its base.
-const CAR_MAX_CAPACITY = 10;
-const maxCapacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_MAX_CAPACITY : BIKE_CAPACITY);
+// The admin's one-time "Add Address from Another Route" override - exactly
+// one delivery point past normal capacity, for either vehicle type. Mirrors
+// MANUAL_OVERRIDE_EXTRA / CAR_MAX_CAPACITY / BIKE_MAX_CAPACITY in
+// route_service.py - keep in sync.
+const MANUAL_OVERRIDE_EXTRA = 1;
+const CAR_MAX_CAPACITY = CAR_CAPACITY + MANUAL_OVERRIDE_EXTRA;
+const BIKE_MAX_CAPACITY = BIKE_CAPACITY + MANUAL_OVERRIDE_EXTRA;
+const maxCapacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_MAX_CAPACITY : BIKE_MAX_CAPACITY);
 
 // A small, fixed palette so each route reads as a distinct color at a
 // glance - cycles if there are more routes than colors.
@@ -928,6 +931,49 @@ function App() {
     setMobileNavOpen(false);
     setSoonOverlay(item.key);
   };
+
+  // Sidebar scroll-spy - the four boards below are one continuous page
+  // (see NAV_GROUPS' own comment above), reachable either by clicking a
+  // nav item (which smooth-scrolls to it) or just scrolling by hand. Only
+  // the click path used to update activeNav, so scrolling manually left
+  // whichever item was clicked last highlighted no matter what was
+  // actually on screen. Tracks the same anchors handleNavClick already
+  // scrolls to, so the two stay in sync automatically.
+  useEffect(() => {
+    if (routeDetailOpen) return undefined;
+    const sectionKeys = ['generate', 'unassigned', 'failed', 'drivers'];
+    const sections = sectionKeys
+      .map((key) => ({ key, el: document.getElementById(findNavItem(key).anchor) }))
+      .filter((s) => s.el);
+    if (sections.length === 0) return undefined;
+
+    const visible = new Set();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // A History/Driver Data/Soon overlay owns the sidebar highlight
+        // while it's open - don't let a section scrolling into view
+        // behind it steal that back.
+        if (historyOpen || driverDataOpen || soonOverlay) return;
+        entries.forEach((entry) => {
+          const key = sections.find((s) => s.el === entry.target)?.key;
+          if (!key) return;
+          if (entry.isIntersecting) visible.add(key);
+          else visible.delete(key);
+        });
+        // Topmost visible section wins, matching reading order down the
+        // page; nothing visible means we're scrolled up into the KPI/
+        // shortcuts area above Routes, i.e. the Dashboard section.
+        const next = sectionKeys.find((key) => visible.has(key)) || 'dashboard';
+        setActiveNav((prev) => (prev === next ? prev : next));
+      },
+      // Counts a section as "current" once it's cleared the topbar/tabs
+      // header and before it's mostly scrolled past, rather than only
+      // while it fills the whole viewport.
+      { rootMargin: '-112px 0px -65% 0px', threshold: 0 }
+    );
+    sections.forEach((s) => observer.observe(s.el));
+    return () => observer.disconnect();
+  }, [routeDetailOpen, historyOpen, driverDataOpen, soonOverlay]);
 
   // Client-side search across orders and routes - never mutates state,
   // just narrows what the three boards render.
@@ -1840,11 +1886,16 @@ function App() {
     }
   };
 
-  // "Add Address from Another Route" - the one action allowed to push a
-  // car route past its base capacity (6), up to its max (10). Both routes
-  // come back already recomputed (distance/duration/ETA/sequence) from the
-  // backend, so there's no separate "recreate this route" step - the
-  // updated route is just what's shown the moment this resolves.
+  // "Add Address from Another Route" - a move that stays within the
+  // destination's normal capacity (6 for a car, 3 for a bike) is
+  // unrestricted; a move that would push it past that is the one
+  // deliberate admin override - exactly one delivery point, and only once
+  // per route (see route_service.MANUAL_OVERRIDE_EXTRA / crud.
+  // move_orders_between_routes). Both routes come back already recomputed
+  // (distance/duration/ETA/sequence, resequenced to fit the moved stop in
+  // properly, not appended) from the backend, so there's no separate
+  // "recreate this route" step - the updated route is just what's shown
+  // the moment this resolves.
   const [isMovingAddresses, setIsMovingAddresses] = useState(false);
   const handleMoveOrdersBetweenRoutes = async (sourceRouteId, targetRouteId, orderIds) => {
     setIsMovingAddresses(true);
@@ -1866,6 +1917,31 @@ function App() {
       return false;
     } finally {
       setIsMovingAddresses(false);
+    }
+  };
+
+  // Undo for the manual override - removes the one stop that used it back
+  // to Unassigned (same as any ordinary stop removal) and frees the
+  // override up again on this route (route.manual_extra_order_id comes
+  // back null in the confirmed response).
+  const [isRemovingManualExtra, setIsRemovingManualExtra] = useState(false);
+  const handleRemoveManualExtra = async (routeId) => {
+    setIsRemovingManualExtra(true);
+    try {
+      const res = await apiFetch(`/api/routes/${routeId}/manual-extra`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to undo the manually-added delivery. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      if (data.order) setPendingOrders((prev) => [data.order, ...prev.filter((o) => String(o.order_id) !== String(data.order.order_id))]);
+      markRoutesEdited(data.route.route_name);
+      setStatus(`Removed the manually-added delivery from ${data.route.route_name} - the override is available again.`);
+      return true;
+    } catch (err) {
+      console.error('Undo manual override failed:', err);
+      setWarnings([err.message || 'Unable to undo the manually-added delivery. Please try again.']);
+      return false;
+    } finally {
+      setIsRemovingManualExtra(false);
     }
   };
 
@@ -2792,7 +2868,7 @@ function App() {
             <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" onClick={() => handleNavClick(findNavItem('generate'))} />
             <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" onClick={() => handleNavClick(findNavItem('generate'))} />
             <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" onClick={() => handleNavClick(findNavItem('generate'))} />
-            <KpiTile variant="distance" icon={IconRoute} value={totalDistanceKm} suffix=" km" label="Total distance" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile variant="distance" icon={IconGauge} value={totalDistanceKm} suffix=" km" label="Total distance" onClick={() => handleNavClick(findNavItem('generate'))} />
             <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" onClick={() => handleNavClick(findNavItem('generate'))} />
           </div>
 
@@ -3093,6 +3169,7 @@ function App() {
             isChangingVehicle={isChangingVehicle}
             isDeletingRoute={isDeletingRoute}
             isMovingAddresses={isMovingAddresses}
+            isRemovingManualExtra={isRemovingManualExtra}
             onCreateRoute={handleCreateRoute}
             onToggleVehicle={handleToggleVehicleType}
             onDeleteRoute={handleDeleteRoute}
@@ -3101,6 +3178,7 @@ function App() {
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
+            onRemoveManualExtra={handleRemoveManualExtra}
             requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
             requestedView={activeNav === 'live-tracking' ? 'map' : undefined}
             requestedLiveTracking={activeNav === 'live-tracking'}

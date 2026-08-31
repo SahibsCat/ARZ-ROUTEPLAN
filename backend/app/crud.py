@@ -19,7 +19,13 @@ from app.models import (
     RouteStop,
     UploadBatch,
 )
-from app.route_service import recompute_route_metrics, single_stop_maps_link, vehicle_capacity, vehicle_max_capacity
+from app.route_service import (
+    insert_orders_into_route,
+    recompute_route_metrics,
+    single_stop_maps_link,
+    vehicle_capacity,
+    vehicle_max_capacity,
+)
 
 SETTINGS_ROW_ID = 1
 
@@ -664,6 +670,20 @@ def _persist_route_stops(db: Session, route: Route, batch_id: Optional[int], met
     if max_capacity and len(incoming_orders) > max_capacity:
         raise CapacityError(capacity=max_capacity, available=0, requested=len(incoming_orders))
 
+    # Safety net, not just move_orders_between_routes' own bookkeeping:
+    # whichever path got this route's stop list here (an ordinary remove,
+    # a vehicle-type change, anything), if the one stop the manual
+    # override was recorded against is no longer actually on the route,
+    # the flag would otherwise go stale - claiming the override is used
+    # up when the route no longer has anything to show for it. Since this
+    # is the one choke point every stop-list write funnels through (see
+    # this function's own docstring), it's the one place that's
+    # guaranteed to catch every path, not just the dedicated Undo action.
+    if route.manual_extra_order_id is not None:
+        incoming_ids = {str(o.get("order_id")) for o in incoming_orders}
+        if route.manual_extra_order_id not in incoming_ids:
+            route.manual_extra_order_id = None
+
     for stop in list(route.stops):
         db.delete(stop)
     db.flush()
@@ -936,12 +956,19 @@ def move_orders_between_routes(
     """"Add Address from Another Route" - moves one or more stops directly
     from one route to another. Distinct from the ordinary Unassigned-pool
     add (add_orders_to_route), which is capped at each vehicle type's base
-    capacity (6 for a car, 3 for a bike): this is the one deliberate path
-    allowed to push the destination past its base, up to its hard max (10
-    for a car - a bike's max equals its base, so it never actually flexes).
-    Capacity is validated for the whole batch before anything is written,
-    and both routes are recomputed and persisted together, so a route
-    plan can never be left with an order missing from both, or on both."""
+    capacity (6 for a car, 3 for a bike): a move that stays within the
+    destination's base capacity is unrestricted (any number of stops, same
+    as an ordinary add), but a move that would push the destination PAST
+    its base capacity is the one deliberate admin override - exactly one
+    delivery point, and only once per route. That "once" is tracked
+    explicitly (Route.manual_extra_order_id - not inferred from
+    len(stops) > capacity, which can't tell an override apart from a
+    route that simply has more stops for some other reason) rather than
+    left to capacity math alone, so the UI can show which stop it was and
+    offer Undo (see remove_manual_extra_stop). Capacity/override rules are
+    validated before anything is written, and both routes are recomputed
+    and persisted together, so a route plan can never be left with an
+    order missing from both, or on both."""
     if source_route_id == target_route_id:
         raise RootplanError("Source and destination route must be different")
 
@@ -972,10 +999,21 @@ def move_orders_between_routes(
         raise RootplanError("No addresses were selected to move")
 
     target_stops = sorted(target_route.stops, key=lambda s: s.sequence)
+    base_capacity = vehicle_capacity(target_route.vehicle_type)
     max_capacity = vehicle_max_capacity(target_route.vehicle_type)
-    available = max_capacity - len(target_stops)
-    if len(requested_ids) > available:
-        raise CapacityError(capacity=max_capacity, available=max(available, 0), requested=len(requested_ids))
+    final_count = len(target_stops) + len(requested_ids)
+
+    uses_override = final_count > base_capacity
+    if uses_override:
+        if target_route.manual_extra_order_id is not None:
+            raise CapacityError(capacity=base_capacity, available=0, requested=len(requested_ids))
+        if len(requested_ids) != 1:
+            raise RootplanError(
+                "Only one delivery point can be added past this route's normal capacity at a time - "
+                "select just one, or select up to its normal capacity."
+            )
+        if final_count > max_capacity:
+            raise CapacityError(capacity=max_capacity, available=max(max_capacity - len(target_stops), 0), requested=len(requested_ids))
 
     moved_order_dicts = [dict(source_stops_by_id[oid].order_snapshot or {}) for oid in requested_ids]
     remaining_source_dicts = [
@@ -983,10 +1021,19 @@ def move_orders_between_routes(
         for stop in sorted(source_route.stops, key=lambda s: s.sequence)
         if str(stop.order_id) not in seen
     ]
-    target_order_dicts = [dict(stop.order_snapshot or {}) for stop in target_stops] + moved_order_dicts
+    # Inserted at its actual best position, not simply appended to the
+    # end - a manually moved stop still deserves a sensible position in
+    # the route, same as every automatically-placed one.
+    target_order_dicts = insert_orders_into_route(
+        [dict(stop.order_snapshot or {}) for stop in target_stops],
+        moved_order_dicts,
+        target_route.vehicle_type,
+    )
 
     source_metrics = recompute_route_metrics(remaining_source_dicts, source_route.vehicle_type)
     target_metrics = recompute_route_metrics(target_order_dicts, target_route.vehicle_type)
+    if uses_override:
+        target_route.manual_extra_order_id = requested_ids[0]
 
     _apply_route_metrics(source_route, source_metrics)
     _apply_route_metrics(target_route, target_metrics)
@@ -1002,6 +1049,24 @@ def move_orders_between_routes(
     db.refresh(source_route)
     db.refresh(target_route)
     return {"source_route": source_route, "target_route": target_route}
+
+
+def remove_manual_extra_stop(db: Session, route_id: int) -> Dict[str, object]:
+    """Undoes the admin's one-time "Add Address from Another Route"
+    override on this route (brief's optional "Remove Manual Delivery" /
+    Undo) - removes exactly the stop that used it
+    (Route.manual_extra_order_id) back to Unassigned, via the same
+    remove_order_from_route every ordinary removal already goes through.
+    That path's own _persist_route_stops call clears the flag as a side
+    effect (the stop is no longer among the route's incoming orders), so
+    the override becomes available again with no separate bookkeeping
+    needed here."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    if not route.manual_extra_order_id:
+        raise RootplanError("This route has no manually-added delivery to undo")
+    return remove_order_from_route(db, route_id, route.manual_extra_order_id)
 
 
 # --------------------------------------------------------------------------
@@ -1229,6 +1294,11 @@ def route_summary(route: Route) -> Dict[str, object]:
         "max_capacity": max_capacity,
         "available_max_capacity": max(max_capacity - len(stops), 0),
         "is_at_max_capacity": len(stops) >= max_capacity,
+        # Which stop (if any) is here via the admin's one-time "Add
+        # Address from Another Route" override - lets the UI badge it and
+        # offer Undo, and tells it whether that override is still
+        # available on this route at all.
+        "manual_extra_order_id": route.manual_extra_order_id,
         "areas": seen_areas,
         "route_segments": segments,
         "google_maps_url": route.google_maps_url,

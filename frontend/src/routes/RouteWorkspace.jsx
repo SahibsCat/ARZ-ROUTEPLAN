@@ -1190,31 +1190,29 @@ function RouteOverviewStrip({ route, capacity, maxCapacity }) {
   );
 }
 
-// "Add Address from Another Route" - the modal for pulling stops directly
-// from a different route once this one is at (or past) its base capacity.
-// Capped at the destination's max capacity (10 for a car; a bike has no
-// flex room and never gets this button in the first place).
+// "Add Address from Another Route" - the modal for pulling one stop
+// directly from a different route. A move that stays within the
+// destination's normal capacity is unrestricted in principle, but this
+// modal only ever opens once the route is already full (see RouteDetail's
+// canFlexAddresses/isFull gate), so what it's actually offering here is
+// always the one manual capacity override - exactly one address, never
+// more (backend-enforced too, see crud.move_orders_between_routes).
 function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor, onConfirm, onClose, isSubmitting }) {
   const eligibleSourceRoutes = routes.filter((r) => r.route_name !== destinationRoute.route_name && r.orders.length > 0);
   const [sourceRouteName, setSourceRouteName] = useState(eligibleSourceRoutes[0]?.route_name || '');
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
 
   const sourceRoute = eligibleSourceRoutes.find((r) => r.route_name === sourceRouteName) || null;
   const maxCapacity = maxCapacityFor(destinationRoute.vehicle_type);
+  const baseCapacity = capacityFor(destinationRoute.vehicle_type);
   const destinationCount = destinationRoute.orders.length;
   const remainingSlots = Math.max(maxCapacity - destinationCount, 0);
-  const overSelected = selectedIds.length > remainingSlots;
 
-  const toggleId = (orderId) => {
-    const id = String(orderId);
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const changeSource = (name) => { setSourceRouteName(name); setSelectedIds([]); };
+  const changeSource = (name) => { setSourceRouteName(name); setSelectedId(null); };
 
   const handleConfirm = async () => {
-    if (!sourceRoute || selectedIds.length === 0 || overSelected) return;
-    const ok = await onConfirm(sourceRoute.route_id, selectedIds);
+    if (!sourceRoute || !selectedId || remainingSlots < 1) return;
+    const ok = await onConfirm(sourceRoute.route_id, [selectedId]);
     if (ok) onClose();
   };
 
@@ -1222,17 +1220,21 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
-          <h3>Add Address to Route</h3>
+          <h3>Add Delivery Point</h3>
           <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
         </div>
 
         <div className="modal__meta">
           <span>{destinationRoute.route_name}</span>
           <span>Vehicle: {destinationRoute.vehicle_type === 'car' ? 'Car' : 'Bike'}</span>
-          <span>Current addresses: <strong className="mono-num">{destinationCount} / {maxCapacity}</strong></span>
+          <span>Current addresses: <strong className="mono-num">{destinationCount} / {baseCapacity}</strong> + 1 manual override</span>
         </div>
 
         <div className="modal__body">
+          <p className="modal__hint">
+            This route is at its normal capacity ({baseCapacity}). Select exactly one delivery point from another
+            route to add here as a manual override - only one is allowed per route.
+          </p>
           <label className="modal__field-label" htmlFor="add-address-source">Select Source Route</label>
           {eligibleSourceRoutes.length === 0 ? (
             <div className="empty-state">No other routes have addresses available to move.</div>
@@ -1255,9 +1257,10 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
                 {sourceRoute?.orders.map((order) => (
                   <label key={order.order_id} className="address-pick-row">
                     <input
-                      type="checkbox"
-                      checked={selectedIds.includes(String(order.order_id))}
-                      onChange={() => toggleId(order.order_id)}
+                      type="radio"
+                      name="add-address-selection"
+                      checked={selectedId === String(order.order_id)}
+                      onChange={() => setSelectedId(String(order.order_id))}
                     />
                     <div className="address-pick-row__body">
                       <div className="address-pick-row__top">
@@ -1280,14 +1283,14 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
 
         {eligibleSourceRoutes.length > 0 && (
           <div className="modal__summary">
-            <span>Selected: <strong className="mono-num">{selectedIds.length} address{selectedIds.length === 1 ? '' : 'es'}</strong></span>
-            <span>Destination Route: <strong className="mono-num">{destinationCount + selectedIds.length} / {maxCapacity}</strong></span>
+            <span>Selected: <strong className="mono-num">{selectedId ? '1 address' : 'none yet'}</strong></span>
+            <span>Destination Route after adding: <strong className="mono-num">{destinationCount + (selectedId ? 1 : 0)} / {maxCapacity}</strong></span>
           </div>
         )}
-        {overSelected && (
+        {remainingSlots < 1 && (
           <div className="modal__warning">
             <IconAlert width={13} height={13} />
-            Only {remainingSlots} address slot{remainingSlots === 1 ? '' : 's'} {remainingSlots === 1 ? 'is' : 'are'} available. Deselect {selectedIds.length - remainingSlots} to continue.
+            This route has already used its one manual override - undo it first to free the slot up again.
           </div>
         )}
 
@@ -1296,10 +1299,10 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
           <button
             type="button"
             className="btn btn--primary"
-            disabled={!sourceRoute || selectedIds.length === 0 || overSelected || isSubmitting}
+            disabled={!sourceRoute || !selectedId || remainingSlots < 1 || isSubmitting}
             onClick={handleConfirm}
           >
-            {isSubmitting ? 'Adding…' : `Add ${selectedIds.length || ''} Address${selectedIds.length === 1 ? '' : 'es'}`.trim()}
+            {isSubmitting ? 'Adding…' : 'Add to Route'}
           </button>
         </div>
       </div>
@@ -1942,6 +1945,7 @@ function RouteDetail({
   fetchRouteTracking, fetchRoutePlannedPath, onOpenDriverPage,
   selectedOrderId, onSelectOrder,
   maxCapacityFor, onMoveOrders, isMovingAddresses,
+  onRemoveManualExtra, isRemovingManualExtra,
 }) {
   const capacity = capacityFor(route.vehicle_type);
   const maxCapacity = maxCapacityFor(route.vehicle_type);
@@ -1949,6 +1953,12 @@ function RouteDetail({
   const isFull = count >= capacity;
   const isAtMaxCapacity = count >= maxCapacity;
   const canFlexAddresses = maxCapacity > capacity;
+  // The one admin override this route has used, if any (crud.
+  // move_orders_between_routes / Route.manual_extra_order_id) - a real
+  // tracked fact, not inferred from count > capacity (which can't tell
+  // "used the override" apart from "just has more stops for some other
+  // reason" - see the backend's own reasoning for why).
+  const manualExtraOrderId = route.manual_extra_order_id != null ? String(route.manual_extra_order_id) : null;
   const isEdited = route.status === 'manually_edited';
   const status = routeStatus(route, capacity);
   const nodeRefs = useRef({});
@@ -2050,11 +2060,15 @@ function RouteDetail({
               type="button"
               className="btn btn--outline"
               disabled={isAtMaxCapacity}
-              title={isAtMaxCapacity ? `This route has reached the maximum capacity of ${maxCapacity} addresses.` : 'Move addresses here from another route'}
+              title={
+                isAtMaxCapacity
+                  ? `This route already used its one manual override (normal capacity ${capacity} + 1). Undo it below to free the override up again.`
+                  : `Normal capacity (${capacity}) reached - one manual override is available to add exactly one more.`
+              }
               onClick={() => setShowAddAddressModal(true)}
             >
               <IconPlus width={14} height={14} />
-              {isAtMaxCapacity ? 'Maximum capacity reached' : 'Add Address from Another Route'}
+              {isAtMaxCapacity ? 'Manual override used' : 'Add Address from Another Route'}
             </button>
           )}
           <button type="button" className="btn btn--secondary" onClick={() => onDownload(route)}>
@@ -2120,7 +2134,28 @@ function RouteDetail({
                       {order.is_late ? '🔴 Late' : '🟢 On time'}
                     </span>
                     {order.is_delivered && <span className="stop-status stop-status--delivered">✅ Delivered</span>}
+                    {manualExtraOrderId === String(order.order_id) && (
+                      <span className="stop-status stop-status--manual" title="Added past this route's normal capacity via the admin's one-time override">
+                        🟡 Manual Override
+                      </span>
+                    )}
                   </div>
+                  {manualExtraOrderId === String(order.order_id) && (
+                    <button
+                      type="button"
+                      className="stop-undo-manual"
+                      disabled={isRemovingManualExtra}
+                      title="Remove this delivery and free the manual override up again for this route"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm('Undo the manual override?\n\nThis delivery moves back to Unassigned Orders, and this route can accept one manual addition again.')) {
+                          onRemoveManualExtra?.(route.route_id);
+                        }
+                      }}
+                    >
+                      {isRemovingManualExtra ? 'Undoing…' : 'Undo manual override'}
+                    </button>
+                  )}
                   {order.area && <span className="route-stop__area">{order.area}</span>}
                   <p className="route-stop__address">{order.address || 'No address on file'}</p>
                   <div className="route-stop__meta">
@@ -2350,9 +2385,9 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
 
 export default function RouteWorkspace({
   routes, pendingOrders, isProcessing, capacityFor, maxCapacityFor, isRouteFull,
-  isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses,
+  isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
-  onAssignOrders, onDownloadRoute, onMoveOrders,
+  onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra,
   requestedTab, requestedView, requestedLiveTracking,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
   onViewChange,
@@ -2687,6 +2722,8 @@ export default function RouteWorkspace({
                 maxCapacityFor={maxCapacityFor}
                 onMoveOrders={onMoveOrders}
                 isMovingAddresses={isMovingAddresses}
+                onRemoveManualExtra={onRemoveManualExtra}
+                isRemovingManualExtra={isRemovingManualExtra}
                 selectedOrderId={selectedOrderId}
                 onSelectOrder={setSelectedOrderId}
                 fetchRouteTracking={fetchRouteTracking}

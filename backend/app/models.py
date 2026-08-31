@@ -155,6 +155,16 @@ class Route(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # The one stop (business order_id, matching RouteStop.order_id) this
+    # route currently holds past its normal vehicle capacity via the
+    # admin's "Add Address from Another Route" override - NULL when the
+    # override hasn't been used. Deliberately not a separate boolean
+    # ("manual_extra_used"): this column doubles as that flag (IS NOT
+    # NULL) *and* records which stop it was, which is what the UI needs
+    # to show the "Manual Override" badge and offer Undo. See
+    # crud.move_orders_between_routes / crud.remove_manual_extra_stop.
+    manual_extra_order_id = Column(String, nullable=True)
+
     route_plan = relationship("RoutePlan", back_populates="routes")
     stops = relationship(
         "RouteStop", back_populates="route", cascade="all, delete-orphan",

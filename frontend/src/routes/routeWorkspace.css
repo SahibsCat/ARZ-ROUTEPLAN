@@ -857,6 +857,26 @@ select.add-route-select:hover:not(:disabled) {
 }
 .stop-status--late { background: var(--critical-soft); color: var(--critical); }
 .stop-status--delivered { background: var(--info-soft); color: var(--info); }
+.stop-status--manual { background: var(--signal-soft); color: var(--signal); }
+
+/* Inline undo for the one stop currently using this route's manual
+   capacity override - sits right under that stop's badge, not a
+   route-level button, so it's obvious which delivery it acts on. */
+.stop-undo-manual {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--signal);
+  background: var(--signal-soft);
+  color: var(--signal);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.stop-undo-manual:hover:not(:disabled) { opacity: 0.8; }
+.stop-undo-manual:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Warehouse / Finish endpoints - same rail width (34px) as .route-stop__seq
    so the dot lines up in the same column as the numbered badges above/

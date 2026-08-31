@@ -706,9 +706,11 @@ def move_orders_between_routes_endpoint(
     route_id: int, payload: MoveOrdersRequest = Body(...), db: Session = Depends(get_db),
 ):
     """"Add Address from Another Route" - route_id is the destination;
-    payload.source_route_id is where the addresses currently are. The one
-    path allowed to push a route past its base capacity, up to its max
-    (10 for a car; a bike has no flex room)."""
+    payload.source_route_id is where the addresses currently are. A move
+    that stays within the destination's normal capacity is unrestricted;
+    a move that would push it past normal capacity is the one admin
+    override - exactly one delivery point, and only once per route (see
+    crud.move_orders_between_routes)."""
     try:
         result = crud.move_orders_between_routes(db, payload.source_route_id, route_id, payload.order_ids)
     except crud.RootplanError as e:
@@ -716,6 +718,21 @@ def move_orders_between_routes_endpoint(
     return {
         "source_route": crud.route_summary(result["source_route"]),
         "target_route": crud.route_summary(result["target_route"]),
+    }
+
+
+@app.delete("/api/routes/{route_id}/manual-extra")
+def remove_manual_extra_stop_endpoint(route_id: int, db: Session = Depends(get_db)):
+    """Undo for the admin's one-time capacity override - removes the one
+    stop that used it back to Unassigned and frees the override up again
+    on this route."""
+    try:
+        result = crud.remove_manual_extra_stop(db, route_id)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {
+        "route": crud.route_summary(result["route"]),
+        "order": crud.unassigned_order_summary(result["order"]) if result["order"] else None,
     }
 
 

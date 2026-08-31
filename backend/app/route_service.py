@@ -13,14 +13,22 @@ VELOCHERY_DEPOT = {"lat": 12.989953044885272, "lng": 80.21804157624011}
 BIKE_CAPACITY = 3
 CAR_CAPACITY = 6
 
-# A car's *base* capacity (6) is what auto-generate fills to, and the
-# ceiling for every ordinary add - from the Unassigned Orders pool, via
-# "Move to...", or in bulk. A car's *max* capacity (10) only comes into
-# play through the one deliberate "Add Address from Another Route" action,
-# which is allowed to push a route past its base up to this hard ceiling -
-# never further. A bike has no flex room: its base and max are the same 3.
-CAR_MAX_CAPACITY = 10
-BIKE_MAX_CAPACITY = BIKE_CAPACITY
+# A vehicle's *base* capacity (6 for a car, 3 for a bike, above) is what
+# auto-generate fills to, and the ceiling for every ordinary add - from
+# the Unassigned Orders pool, via "Move to...", or in bulk. *Max* capacity
+# only comes into play through the one deliberate "Add Address from
+# Another Route" admin action (crud.move_orders_between_routes), which is
+# allowed to push a route ONE delivery point past its base - never
+# further, and never more than once per route (that "once" is enforced by
+# Route.manual_extra_order_id, not by capacity math alone - see
+# move_orders_between_routes' own comment for why). Conceptually: Normal
+# Capacity + Admin Override (this one extra slot) = Temporary Route
+# Capacity - never a change to the normal capacity itself, which is why
+# CAR_CAPACITY/BIKE_CAPACITY above stay exactly 6/3 and every automatic
+# and ordinary-add path keeps using them, not these.
+MANUAL_OVERRIDE_EXTRA = 1
+CAR_MAX_CAPACITY = CAR_CAPACITY + MANUAL_OVERRIDE_EXTRA
+BIKE_MAX_CAPACITY = BIKE_CAPACITY + MANUAL_OVERRIDE_EXTRA
 
 SERVICE_TIME_MINUTES = 3.0
 LATE_GRACE_MINUTES = 0.0
@@ -937,6 +945,59 @@ def recompute_route_metrics(route_orders: List[Dict[str, object]], vehicle_type:
         "utilization_percent": round(stops / capacity * 100, 1) if capacity else None,
         "capacity": capacity,
     }
+
+
+def insert_orders_into_route(
+    existing_orders: List[Dict[str, object]], new_orders: List[Dict[str, object]], vehicle_type: str,
+) -> List[Dict[str, object]]:
+    """Adds `new_orders` into `existing_orders` at each one's actual best
+    position - not appended to the end - then runs the same 2-opt local
+    search (_improve_route) the automatic build already relies on, for
+    any further polish (e.g. a crossing the insertion itself introduced).
+    Used by the admin's manual "Add Address from Another Route" action
+    (crud.move_orders_between_routes) so a newly-added stop lands where
+    it geographically belongs.
+
+    2-opt alone isn't enough for this: it only reverses contiguous
+    segments, which can fix a route that crosses itself but can't relocate
+    one stop from the end of the list into the middle while leaving every
+    other stop's relative order untouched - that's a different move
+    (insertion/relocation), the same "try every position, keep the
+    cheapest" search _relocate_across_routes and _extract_geographic_
+    outliers already use elsewhere in this file, reused here rather than
+    a third, separate implementation of the same idea. New orders are
+    inserted one at a time (in the order given) so each one sees the
+    route as it stands after the previous insertion, not the original."""
+    depot = VELOCHERY_DEPOT
+    sequence = list(existing_orders)
+
+    for order in new_orders:
+        route_start_minutes = compute_route_start_minutes(sequence + [order])
+        best_at = len(sequence)  # falls back to "append" only if nothing scores better
+        best_distance = None
+        for insert_at in range(len(sequence) + 1):
+            candidate = sequence[:insert_at] + [order] + sequence[insert_at:]
+            if not _slot_order_preserved(candidate):
+                continue
+            _, candidate_distance, candidate_time, _ = _simulate_route(candidate, depot, route_start_minutes)
+            if candidate_time is None:
+                continue
+            if best_distance is None or candidate_distance < best_distance:
+                best_distance = candidate_distance
+                best_at = insert_at
+        sequence = sequence[:best_at] + [order] + sequence[best_at:]
+
+    route_start_minutes = compute_route_start_minutes(sequence)
+    vehicle = {
+        "vehicle_type": vehicle_type,
+        "capacity": vehicle_max_capacity(vehicle_type),
+        "orders": sequence,
+        "current_time": route_start_minutes,
+        "current_location": dict(depot),
+        "is_auto_created": False,
+    }
+    _improve_route(vehicle, depot, route_start_minutes)
+    return vehicle["orders"]
 
 
 def generate_routes(orders: List[Dict[str, object]], available_cars: int, available_bikes: int) -> Dict[str, object]:

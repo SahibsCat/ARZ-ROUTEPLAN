@@ -164,47 +164,131 @@ def test_reorder_route_rejects_mismatched_order_ids(db_session):
         crud.reorder_route(db_session, route.id, ["1", "999"])
 
 
-def test_move_orders_between_routes_lets_a_car_flex_past_base_up_to_max(db_session):
+def test_move_orders_between_routes_stays_within_base_capacity_unrestricted(db_session):
+    # A move that doesn't push the destination past its normal capacity
+    # is an ordinary move - any number of stops, no override consumed.
+    batch = _batch(db_session, 16)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 4)])  # 3/6
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
+
+    result = crud.move_orders_between_routes(db_session, source.id, dest.id, ["7", "8", "9"])  # -> 6/6, exactly base
+
+    updated_dest = result["target_route"]
+    assert len(updated_dest.stops) == 6
+    assert updated_dest.manual_extra_order_id is None  # normal capacity, override untouched
+
+
+def test_move_orders_between_routes_lets_a_car_flex_exactly_one_past_base(db_session):
     batch = _batch(db_session, 16)
     plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
     dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])  # 6/6, base-full
-    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])  # another full car
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
 
-    result = crud.move_orders_between_routes(db_session, source.id, dest.id, ["7", "8", "9", "10"])
+    result = crud.move_orders_between_routes(db_session, source.id, dest.id, ["7"])
 
     updated_dest = result["target_route"]
     updated_source = result["source_route"]
-    assert len(updated_dest.stops) == 10  # flexed past base (6) up to max (10)
-    assert len(updated_source.stops) == 2
+    assert len(updated_dest.stops) == 7  # base (6) + exactly one admin override
+    assert len(updated_source.stops) == 5
     dest_ids = {stop.order_id for stop in updated_dest.stops}
-    assert dest_ids == {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+    assert dest_ids == {"1", "2", "3", "4", "5", "6", "7"}
+    assert updated_dest.manual_extra_order_id == "7"
 
 
-def test_move_orders_between_routes_rejects_past_max_capacity(db_session):
+def test_move_orders_between_routes_rejects_more_than_one_point_past_base(db_session):
+    # The override is exactly one point - a multi-select move that would
+    # push a full route past base by more than one is rejected outright,
+    # not silently capped.
     batch = _batch(db_session, 16)
     plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
     dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
     source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
 
-    with pytest.raises(crud.CapacityError):
-        # 6 already on dest + 5 requested = 11, past the max of 10.
-        crud.move_orders_between_routes(db_session, source.id, dest.id, ["7", "8", "9", "10", "11"])
+    with pytest.raises(crud.RootplanError):
+        crud.move_orders_between_routes(db_session, source.id, dest.id, ["7", "8"])
 
     # Nothing was written - the failed batch must not partially apply.
     dest_after = db_session.query(crud.Route).filter_by(id=dest.id).first()
     source_after = db_session.query(crud.Route).filter_by(id=source.id).first()
     assert len(dest_after.stops) == 6
     assert len(source_after.stops) == 6
+    assert dest_after.manual_extra_order_id is None
 
 
-def test_move_orders_between_routes_a_bike_has_no_flex_room(db_session):
-    batch = _batch(db_session, 6)
+def test_move_orders_between_routes_rejects_a_second_override_on_the_same_route(db_session):
+    batch = _batch(db_session, 16)
     plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
-    dest = crud.create_route(db_session, plan.id, "bike", order_ids=["1", "2", "3"])  # 3/3, base == max for a bike
-    source = crud.create_route(db_session, plan.id, "bike", order_ids=["4", "5", "6"])
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
+
+    crud.move_orders_between_routes(db_session, source.id, dest.id, ["7"])  # uses the one override -> 7/6
 
     with pytest.raises(crud.CapacityError):
-        crud.move_orders_between_routes(db_session, source.id, dest.id, ["4"])
+        crud.move_orders_between_routes(db_session, source.id, dest.id, ["8"])
+
+
+def test_move_orders_between_routes_a_bike_gets_exactly_one_point_of_flex(db_session):
+    batch = _batch(db_session, 6)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "bike", order_ids=["1", "2", "3"])  # 3/3, base-full
+    source = crud.create_route(db_session, plan.id, "bike", order_ids=["4", "5", "6"])
+
+    result = crud.move_orders_between_routes(db_session, source.id, dest.id, ["4"])
+
+    updated_dest = result["target_route"]
+    assert len(updated_dest.stops) == 4  # base (3) + one admin override
+    assert updated_dest.manual_extra_order_id == "4"
+
+    # A second one is rejected - a bike's override is exactly one point too.
+    with pytest.raises(crud.CapacityError):
+        crud.move_orders_between_routes(db_session, source.id, dest.id, ["5"])
+
+
+def test_remove_manual_extra_stop_frees_the_override_again(db_session):
+    batch = _batch(db_session, 16)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
+    crud.move_orders_between_routes(db_session, source.id, dest.id, ["7"])  # 7/6, override used
+
+    result = crud.remove_manual_extra_stop(db_session, dest.id)
+
+    updated_dest = result["route"]
+    assert len(updated_dest.stops) == 6
+    assert updated_dest.manual_extra_order_id is None
+    assert result["order"].status == "unassigned"
+
+    # The override is available again - a fresh add past base succeeds.
+    crud.move_orders_between_routes(db_session, source.id, dest.id, ["8"])
+    dest_after = db_session.query(crud.Route).filter_by(id=dest.id).first()
+    assert dest_after.manual_extra_order_id == "8"
+
+
+def test_remove_manual_extra_stop_rejects_a_route_with_no_override_used(db_session):
+    batch = _batch(db_session, 3)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "car", order_ids=["1", "2"])
+
+    with pytest.raises(crud.RootplanError):
+        crud.remove_manual_extra_stop(db_session, route.id)
+
+
+def test_removing_the_manual_stop_through_the_ordinary_path_also_clears_the_flag(db_session):
+    # Not just the dedicated Undo action - _persist_route_stops' own
+    # safety net must catch this too, since an admin can remove any stop
+    # (including the manually-added one) through the normal per-stop
+    # remove button, not only through Undo.
+    batch = _batch(db_session, 16)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
+    source = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(7, 13)])
+    crud.move_orders_between_routes(db_session, source.id, dest.id, ["7"])
+
+    crud.remove_order_from_route(db_session, dest.id, "7")
+
+    dest_after = db_session.query(crud.Route).filter_by(id=dest.id).first()
+    assert dest_after.manual_extra_order_id is None
 
 
 def test_move_orders_between_routes_rejects_order_not_on_source_route(db_session):
@@ -215,6 +299,42 @@ def test_move_orders_between_routes_rejects_order_not_on_source_route(db_session
 
     with pytest.raises(crud.OrderNotFoundError):
         crud.move_orders_between_routes(db_session, source.id, dest.id, ["3"])
+
+
+def test_move_orders_between_routes_resequences_the_added_stop_geographically(db_session, monkeypatch):
+    # "Do not simply append P7 to the end" - the moved stop's real
+    # coordinates put it between orders 2 and 3, not past order 6, so a
+    # plain append would be a real, avoidable detour. Mocked to real
+    # haversine distance (not left unmocked - keeps this deterministic
+    # and fast rather than depending on real network reachability),
+    # exercising the actual optimize_route_order/_improve_route path.
+    from app.route_service import _haversine_km
+
+    def fake_road_distance_time(source, destination):
+        d = _haversine_km(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    def fake_get_distances_from_point(origin, destinations):
+        return [fake_road_distance_time(origin, d) for d in destinations]
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+    monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+
+    orders = [
+        {"order_id": str(i), "customer_name": f"C{i}", "address": f"{i} Main St", "delivery_time": None,
+         "lat": 13.00 + i * 0.10, "lng": 80.20}
+        for i in range(1, 7)
+    ] + [{"order_id": "7", "customer_name": "C7", "address": "7 Main St", "delivery_time": None, "lat": 13.25, "lng": 80.20}]
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", len(orders), True, [], orders)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    dest = crud.create_route(db_session, plan.id, "car", order_ids=["1", "2", "3", "4", "5", "6"])  # 6/6, sorted by lat
+    source = crud.create_route(db_session, plan.id, "car", order_ids=["7"])  # lat sits between orders 2 and 3
+
+    result = crud.move_orders_between_routes(db_session, source.id, dest.id, ["7"])
+
+    sequence = [stop.order_id for stop in sorted(result["target_route"].stops, key=lambda s: s.sequence)]
+    assert sequence != ["1", "2", "3", "4", "5", "6", "7"]  # not simply appended
+    assert sequence.index("7") == sequence.index("2") + 1  # correctly slotted right after 2, before 3
 
 
 def test_get_or_create_draft_route_plan_reuses_existing_draft(db_session):
