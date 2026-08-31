@@ -939,6 +939,18 @@ function App() {
   // whichever item was clicked last highlighted no matter what was
   // actually on screen. Tracks the same anchors handleNavClick already
   // scrolls to, so the two stay in sync automatically.
+  //
+  // Computed directly from each section's current position on every
+  // observer firing, rather than accumulated from separate enter/leave
+  // events - an earlier version tracked a Set built up from those events,
+  // which had a transient gap while crossing from one section into the
+  // next (the outgoing section's "leave" landing before the incoming
+  // one's "enter" registered): the Set went briefly empty, activeNav fell
+  // back to 'dashboard', then immediately flipped back once the next
+  // section registered - visible as the sidebar highlight flickering to
+  // Dashboard and back on every section boundary. Recomputing "the last
+  // section whose top has crossed the line" from scratch each time has no
+  // such gap state to flicker through.
   useEffect(() => {
     if (routeDetailOpen) return undefined;
     const sectionKeys = ['generate', 'unassigned', 'failed', 'drivers'];
@@ -947,30 +959,26 @@ function App() {
       .filter((s) => s.el);
     if (sections.length === 0) return undefined;
 
-    const visible = new Set();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // A History/Driver Data/Soon overlay owns the sidebar highlight
-        // while it's open - don't let a section scrolling into view
-        // behind it steal that back.
-        if (historyOpen || driverDataOpen || soonOverlay) return;
-        entries.forEach((entry) => {
-          const key = sections.find((s) => s.el === entry.target)?.key;
-          if (!key) return;
-          if (entry.isIntersecting) visible.add(key);
-          else visible.delete(key);
-        });
-        // Topmost visible section wins, matching reading order down the
-        // page; nothing visible means we're scrolled up into the KPI/
-        // shortcuts area above Routes, i.e. the Dashboard section.
-        const next = sectionKeys.find((key) => visible.has(key)) || 'dashboard';
-        setActiveNav((prev) => (prev === next ? prev : next));
-      },
-      // Counts a section as "current" once it's cleared the topbar/tabs
-      // header and before it's mostly scrolled past, rather than only
-      // while it fills the whole viewport.
-      { rootMargin: '-112px 0px -65% 0px', threshold: 0 }
-    );
+    // Same line the old rootMargin top offset used - just past the
+    // sticky topbar/tabs strip.
+    const LINE_PX = 112;
+    const updateActive = () => {
+      // A History/Driver Data/Soon overlay owns the sidebar highlight
+      // while it's open - don't let a section scrolling into view behind
+      // it steal that back.
+      if (historyOpen || driverDataOpen || soonOverlay) return;
+      let current = 'dashboard';
+      sections.forEach(({ key, el }) => {
+        if (el.getBoundingClientRect().top <= LINE_PX) current = key;
+      });
+      setActiveNav((prev) => (prev === current ? prev : current));
+    };
+
+    updateActive();
+    const observer = new IntersectionObserver(updateActive, {
+      rootMargin: `-${LINE_PX}px 0px -65% 0px`,
+      threshold: [0, 1],
+    });
     sections.forEach((s) => observer.observe(s.el));
     return () => observer.disconnect();
   }, [routeDetailOpen, historyOpen, driverDataOpen, soonOverlay]);
