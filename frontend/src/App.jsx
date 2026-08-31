@@ -795,6 +795,19 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('dashboard');
+  // A real click on "Routes"/"Unassigned Orders" in the sidebar should
+  // force-switch RouteWorkspace's internal tab (see requestedTab below) -
+  // but activeNav ALSO changes continuously while merely scrolling the
+  // page (the IntersectionObserver above), and RouteWorkspace and
+  // Unassigned Orders share one DOM anchor/component, so scrolling that
+  // section into view was setting activeNav to 'unassigned' too - which
+  // then silently flipped the visible tab away from Routes to Unassigned,
+  // making the route list "disappear" with no click involved at all.
+  // navCommandSeq only advances inside handleNavClick's own body, never
+  // from the scroll-tracking effect, so RouteWorkspace can tell a genuine
+  // click apart from activeNav simply passing through 'unassigned' on its
+  // way past while scrolling.
+  const [navCommandSeq, setNavCommandSeq] = useState(0);
   // Whether RouteWorkspace is currently showing a single route's detail
   // page (as opposed to the Routes/Unassigned Orders list view) - lifted
   // up via onViewChange so the KPI row/shortcuts/Generate Routes panel
@@ -913,6 +926,12 @@ function App() {
     setActiveNav(item.key);
     setMobileNavOpen(false);
     setSoonOverlay(null);
+    // A genuine click, as opposed to activeNav merely passing through
+    // 'unassigned'/'generate' while scrolling - see navCommandSeq's own
+    // comment above for why this distinction is what actually matters.
+    if (item.key === 'unassigned' || item.key === 'generate' || item.key === 'live-tracking') {
+      setNavCommandSeq((n) => n + 1);
+    }
     if (item.key === 'history') {
       openHistory();
     } else if (item.key === 'driver-data') {
@@ -3190,6 +3209,7 @@ function App() {
             requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
             requestedView={activeNav === 'live-tracking' ? 'map' : undefined}
             requestedLiveTracking={activeNav === 'live-tracking'}
+            navCommandSeq={navCommandSeq}
             drivers={drivers}
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}

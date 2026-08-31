@@ -2388,7 +2388,7 @@ export default function RouteWorkspace({
   isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
   onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra,
-  requestedTab, requestedView, requestedLiveTracking,
+  requestedTab, requestedView, requestedLiveTracking, navCommandSeq,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
   onViewChange,
 }) {
@@ -2397,9 +2397,21 @@ export default function RouteWorkspace({
   // "Unassigned Orders" should actually switch this tab, not just scroll
   // near it) - a change in this prop jumps the tab; the tab buttons below
   // still update `tab` directly for an immediate click response.
+  //
+  // Deliberately keyed on navCommandSeq, not requestedTab itself: this
+  // component and the Unassigned Orders board share one DOM anchor, so
+  // App.jsx's scroll-position tracking sets activeNav (and so
+  // requestedTab) to 'unassigned' just from that section scrolling into
+  // view - no click involved. Reacting to every requestedTab *value*
+  // change used to mean the Routes list would silently get replaced by
+  // the Unassigned tab while merely scrolling past this part of the page.
+  // navCommandSeq only advances inside App.jsx's handleNavClick, so this
+  // only fires for a genuine sidebar click - reading requestedTab's
+  // current value when it does, same effect, right trigger.
   useEffect(() => {
     if (requestedTab === 'routes' || requestedTab === 'unassigned') setTab(requestedTab);
-  }, [requestedTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navCommandSeq]);
   const [view, setView] = useState('list'); // 'list' | 'detail'
   // A route's detail now opens as a slide-in drawer over this page (see
   // the render below) rather than replacing it outright, so App.jsx's
