@@ -68,6 +68,14 @@ def test_generate_routes_uses_osrm_distance_for_selection(monkeypatch):
 
     monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
     monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    # generate_routes() now primes _ROUTE_CACHE via one batched OSRM table
+    # request before build_routes runs (see distance_service.
+    # prime_route_cache) - without this, every test below with real lat/
+    # lng on its orders would silently make a real network call (and eat
+    # its retry/backoff delay on failure) despite the two mocks above,
+    # since prime_route_cache goes through distance_service.
+    # build_order_matrix directly, not through either mocked function.
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
     result = generate_routes(orders, available_cars=1, available_bikes=0)
 
     assert result["route_count"] == 1
@@ -102,6 +110,14 @@ def test_generate_routes_flags_late_deliveries(monkeypatch):
 
     monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
     monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    # generate_routes() now primes _ROUTE_CACHE via one batched OSRM table
+    # request before build_routes runs (see distance_service.
+    # prime_route_cache) - without this, every test below with real lat/
+    # lng on its orders would silently make a real network call (and eat
+    # its retry/backoff delay on failure) despite the two mocks above,
+    # since prime_route_cache goes through distance_service.
+    # build_order_matrix directly, not through either mocked function.
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
 
     result = generate_routes(orders, available_cars=0, available_bikes=1)
 
@@ -139,6 +155,14 @@ def test_generate_routes_never_delays_earlier_slot_for_closer_later_slot(monkeyp
 
     monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
     monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    # generate_routes() now primes _ROUTE_CACHE via one batched OSRM table
+    # request before build_routes runs (see distance_service.
+    # prime_route_cache) - without this, every test below with real lat/
+    # lng on its orders would silently make a real network call (and eat
+    # its retry/backoff delay on failure) despite the two mocks above,
+    # since prime_route_cache goes through distance_service.
+    # build_order_matrix directly, not through either mocked function.
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
     monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 0.0, "lng": 0.0})
 
     result = generate_routes(orders, available_cars=1, available_bikes=0)
@@ -226,6 +250,14 @@ def test_generate_routes_never_returns_empty_route_cards(monkeypatch):
 
     monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
     monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    # generate_routes() now primes _ROUTE_CACHE via one batched OSRM table
+    # request before build_routes runs (see distance_service.
+    # prime_route_cache) - without this, every test below with real lat/
+    # lng on its orders would silently make a real network call (and eat
+    # its retry/backoff delay on failure) despite the two mocks above,
+    # since prime_route_cache goes through distance_service.
+    # build_order_matrix directly, not through either mocked function.
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
 
     result = generate_routes(orders, available_cars=0, available_bikes=10)
 
@@ -266,6 +298,14 @@ def test_generate_routes_consolidates_nearby_orders_onto_fewer_vehicles(monkeypa
 
     monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
     monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    # generate_routes() now primes _ROUTE_CACHE via one batched OSRM table
+    # request before build_routes runs (see distance_service.
+    # prime_route_cache) - without this, every test below with real lat/
+    # lng on its orders would silently make a real network call (and eat
+    # its retry/backoff delay on failure) despite the two mocks above,
+    # since prime_route_cache goes through distance_service.
+    # build_order_matrix directly, not through either mocked function.
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
     monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", {"lat": 13.15, "lng": 80.35})
 
     result = generate_routes(orders, available_cars=0, available_bikes=10)
@@ -317,6 +357,14 @@ def test_generate_routes_gives_isolated_far_order_its_own_vehicle(monkeypatch):
 
     monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
     monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    # generate_routes() now primes _ROUTE_CACHE via one batched OSRM table
+    # request before build_routes runs (see distance_service.
+    # prime_route_cache) - without this, every test below with real lat/
+    # lng on its orders would silently make a real network call (and eat
+    # its retry/backoff delay on failure) despite the two mocks above,
+    # since prime_route_cache goes through distance_service.
+    # build_order_matrix directly, not through either mocked function.
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
     monkeypatch.setattr("app.route_service.VELOCHERY_DEPOT", depot)
 
     result = generate_routes(orders, available_cars=0, available_bikes=5)

@@ -230,3 +230,61 @@ def build_order_matrix(orders: List[Dict[str, object]], depot: Dict[str, float])
     empty_distances: List[List[Optional[float]]] = [[None] * n for _ in range(n)]
     empty_durations: List[List[Optional[float]]] = [[None] * n for _ in range(n)]
     return empty_distances, empty_durations
+
+
+# Above this, a full N x N matrix in ONE OSRM Table request stays cheap
+# and reliable; past it, a real route with this many stops is rare enough
+# that skipping the prime (falling back to route_service's normal
+# per-leg-as-needed calls, exactly like before this existed) is the safer
+# choice over risking one oversized request the public OSRM demo server
+# might reject or take a long time on.
+PRIME_CACHE_MAX_ORDERS = 80
+
+
+def prime_route_cache(orders: List[Dict[str, object]], depot: Dict[str, float]) -> None:
+    """Fills _ROUTE_CACHE with every pairwise depot<->order and
+    order<->order leg via ONE batched OSRM Table request, instead of
+    leaving route_service's route-construction/local-search optimizer
+    (_improve_route, _relocate_across_routes - together several full
+    sweeps over every candidate stop ordering) to discover each leg one at
+    a time through _simulate_route's per-leg route_distance_time calls.
+
+    That per-leg-during-optimization pattern is what a real Regenerate
+    Routes click was reproduced hanging on for 45+ seconds without ever
+    returning: a genuine batch of orders across a few vehicles means the
+    optimizer evaluates many candidate stop sequences, most of them a leg
+    combination that's never been tried before - each one its own fresh
+    network round-trip (with its own retries) to a shared public OSRM
+    server, rather than the whole matrix in a single request. Every
+    existing distance lookup already checks this exact cache first
+    (route_distance_time's own key lookup), so priming it up front speeds
+    up the whole optimizer without any of that code needing to change.
+
+    Best-effort and silent: an OSRM failure, a too-large order count, or
+    orders with no coordinates all just leave the cache unprimed, and
+    every caller falls back to individual per-leg calls exactly as it did
+    before this function existed - never worse than the status quo, only
+    faster when it works.
+    """
+    geocoded = [o for o in orders if o.get("lat") is not None and o.get("lng") is not None]
+    if not geocoded or len(geocoded) > PRIME_CACHE_MAX_ORDERS:
+        return
+
+    distances, durations = build_order_matrix(geocoded, depot)
+    points = [depot] + [{"lat": o["lat"], "lng": o["lng"]} for o in geocoded]
+    n = len(points)
+    if len(distances) != n or len(durations) != n:
+        return  # OSRM failed / returned something unexpected - leave the cache as-is
+
+    for i in range(n):
+        distance_row = distances[i]
+        duration_row = durations[i]
+        for j in range(n):
+            if i == j or j >= len(distance_row) or j >= len(duration_row):
+                continue
+            distance_value = distance_row[j]
+            duration_value = duration_row[j]
+            if distance_value is None or duration_value is None:
+                continue
+            key = _cache_key(points[i]["lat"], points[i]["lng"], points[j]["lat"], points[j]["lng"])
+            _ROUTE_CACHE[key] = {"distance_km": distance_value, "time_minutes": duration_value}

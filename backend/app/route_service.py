@@ -2,7 +2,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
-from app.distance_service import get_distances_from_point, route_distance_time
+from app.distance_service import get_distances_from_point, prime_route_cache, route_distance_time
 
 # ARZ Food Ventures Private Limited - 8/49, Indira Gandhi Nagar, Velachery,
 # Chennai, Tamil Nadu 600042 (dispatch depot; exact coordinates supplied
@@ -684,6 +684,15 @@ def generate_routes(orders: List[Dict[str, object]], available_cars: int, availa
 
     depot = VELOCHERY_DEPOT
     route_start_minutes = compute_route_start_minutes(orders)
+    # One batched OSRM call up front instead of build_routes' own
+    # optimization sweeps (_improve_route/_relocate_across_routes)
+    # discovering each depot<->order and order<->order leg one at a time
+    # as they evaluate candidate stop orderings - see prime_route_cache's
+    # own docstring for why this is the actual fix for Generate/Regenerate
+    # Routes hanging on a real batch of orders. Best-effort: every existing
+    # call still works exactly as before if this can't run (too many
+    # orders, or OSRM itself unavailable) - it just won't be as fast.
+    prime_route_cache(orders, depot)
     vehicles, leftover = build_routes(orders, available_cars, available_bikes)
     # A configured vehicle that never actually got a stop assigned isn't a
     # route - showing it anyway was a real bug: ask for 10 vehicles when the
