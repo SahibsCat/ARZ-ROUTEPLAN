@@ -150,8 +150,9 @@ def geocode_address(
         "lat": result.lat,
         "lng": result.lng,
         "display_name": result.formatted_address,
-        # None for providers that don't expose a relevance concept (Google) -
-        # the frontend shows that honestly rather than inventing a number.
+        # Google's is a derived heuristic (location_type/types/partial_match
+        # - see google_geocoder._score_result), Mapbox/Nominatim's are the
+        # provider's own relevance score - shown as-is either way.
         "confidence": result.confidence,
     }
 

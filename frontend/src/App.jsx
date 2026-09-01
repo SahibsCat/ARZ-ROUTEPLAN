@@ -3397,7 +3397,7 @@ function App() {
                             <p>
                               {selectedFeedback?.confidence != null
                                 ? `${Math.round(selectedFeedback.confidence * 100)}%`
-                                : 'Not reported by the active provider (Google).'}
+                                : 'Retry to see a confidence score here.'}
                             </p>
                           </div>
                         </div>

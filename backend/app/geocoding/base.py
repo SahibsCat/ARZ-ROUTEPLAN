@@ -18,8 +18,10 @@ class GeocodeResult:
     formatted_address: str
     status: str
     provider: str
-    # 0-1 relevance/confidence score, when the provider exposes one (Mapbox
-    # does; Google's Geocoding API doesn't, so it stays None there).
+    # 0-1 relevance/confidence score. Mapbox and Nominatim expose/compute one
+    # directly; Google's Geocoding API has no such field, so GoogleGeocoder
+    # derives one from geometry.location_type + result types + partial_match
+    # instead (see google_geocoder._score_result) - never None in practice.
     confidence: Optional[float] = None
 
 

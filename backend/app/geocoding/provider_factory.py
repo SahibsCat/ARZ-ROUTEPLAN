@@ -15,7 +15,14 @@ def build_geocoding_provider() -> GeocodingProvider:
     provider_name = os.environ.get("GEOCODING_PROVIDER", DEFAULT_PROVIDER).strip().lower()
 
     if provider_name == "google":
-        return GoogleGeocoder(api_key=os.environ.get("GOOGLE_MAPS_API_KEY", "").strip())
+        return GoogleGeocoder(
+            api_key=os.environ.get("GOOGLE_MAPS_API_KEY", "").strip(),
+            # Optional, separate key for the Places API fallback - Google
+            # Cloud API-restricted keys are commonly scoped to one API each.
+            # Falls back to GOOGLE_MAPS_API_KEY itself when unset (the
+            # single-key setup, one key enabled for both APIs).
+            places_api_key=os.environ.get("GOOGLE_PLACES_API_KEY", "").strip() or None,
+        )
 
     if provider_name == "nominatim":
         return NominatimGeocoder()

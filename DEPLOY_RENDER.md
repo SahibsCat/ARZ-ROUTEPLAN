@@ -30,7 +30,14 @@ Neon credentials and Google Maps key are never committed.
 4. It'll prompt for the env vars marked `sync: false` - fill in:
    - **rootplan-backend**
      - `DATABASE_URL` - your Neon connection string (the same one in `backend/.env`)
-     - `GOOGLE_MAPS_API_KEY` - your Google Maps key
+     - `GOOGLE_MAPS_API_KEY` - your Google Maps key. Needs both **Geocoding
+       API** and **Places API** enabled on this key's Google Cloud project
+       (Google Cloud Console -> APIs & Services -> Library) - the geocoder
+       falls back to Places' text search for addresses that name a specific
+       apartment/building the structured Geocoding API can't place (see
+       app/geocoding/google_geocoder.py's `_find_place`). Missing only
+       Places API doesn't break anything - that fallback just quietly never
+       fires - so this is safe to enable after the fact too.
      - `MAPBOX_ACCESS_TOKEN` - leave blank unless you use the Mapbox provider
      - `ALLOWED_ORIGINS` - leave blank (defaults to `*`) for now; you'll set this in step 4
    - **rootplan-frontend**

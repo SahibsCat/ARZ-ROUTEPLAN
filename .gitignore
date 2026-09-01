@@ -26,3 +26,5 @@ frontend/*_agent_error.log
 # OS/editor
 .DS_Store
 Thumbs.db
+backend/backend_dev.log
+frontend/frontend_dev.log

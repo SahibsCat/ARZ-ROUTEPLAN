@@ -148,6 +148,52 @@ def test_delete_upload_batch_cascades(db_session):
     assert crud.delete_upload_batch(db_session, batch_id) is False
 
 
+def test_delete_upload_batch_removes_geocode_cache_no_longer_used(db_session):
+    """An address used only by the deleted batch's orders is forgotten with
+    it - no cached geocode should outlive every order that referenced it."""
+    from app.geocode_service import _cache_key, clean_address
+    from app.models import GeocodingCache
+
+    address = "1 Main St, Chennai"
+    key = _cache_key(clean_address(address))
+    db_session.add(GeocodingCache(
+        address_key=key, address=address, formatted_address=address,
+        lat=13.0, lng=80.2, provider="google", confidence=0.95,
+    ))
+    db_session.commit()
+
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": address, "delivery_time": "10:00", "lat": 13.0, "lng": 80.2, "geocoded_address": address},
+    ])
+
+    crud.delete_upload_batch(db_session, batch.id)
+
+    assert crud.get_cached_geocode(db_session, key) is None
+
+
+def test_delete_upload_batch_keeps_geocode_cache_still_used_by_another_batch(db_session):
+    """The same address on a SECOND, still-existing batch must keep its
+    cached geocode - deleting one batch must never break another's cache."""
+    from app.geocode_service import _cache_key, clean_address
+    from app.models import GeocodingCache
+
+    address = "1 Main St, Chennai"
+    key = _cache_key(clean_address(address))
+    db_session.add(GeocodingCache(
+        address_key=key, address=address, formatted_address=address,
+        lat=13.0, lng=80.2, provider="google", confidence=0.95,
+    ))
+    db_session.commit()
+
+    order_fields = {"customer_name": "Alice", "address": address, "delivery_time": "10:00", "lat": 13.0, "lng": 80.2, "geocoded_address": address}
+    batch_one = crud.save_upload_batch(db_session, "orders1.xlsx", 1, True, [], [{"order_id": "1", **order_fields}])
+    crud.save_upload_batch(db_session, "orders2.xlsx", 1, True, [], [{"order_id": "2", **order_fields}])
+
+    crud.delete_upload_batch(db_session, batch_one.id)
+
+    assert crud.get_cached_geocode(db_session, key) is not None
+
+
 def test_delete_route_plan(db_session):
     plan = crud.save_route_plan(db_session, None, {"route_count": 0, "routes": [], "pending_orders": [], "warnings": []}, 0, 0)
     assert crud.delete_route_plan(db_session, plan.id) is True

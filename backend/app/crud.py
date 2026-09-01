@@ -268,11 +268,39 @@ def get_upload_batch(db: Session, batch_id: int) -> Optional[UploadBatch]:
 
 
 def delete_upload_batch(db: Session, batch_id: int) -> bool:
+    """Deletes the upload and everything derived from it. Also permanently
+    removes any geocoding_cache row that was used ONLY by this batch's
+    orders - once no other batch's order references that same normalized
+    address, there's no reason to keep remembering its coordinates. An
+    address another batch's order still uses is left alone - its cache
+    entry still speeds up (and stays consistent for) that other batch."""
+    # Local import - geocode_service imports crud at module level, so a
+    # top-of-file import here would be circular.
+    from app.geocode_service import _cache_key, clean_address
+
     batch = get_upload_batch(db, batch_id)
     if batch is None:
         return False
+
+    address_keys = {
+        _cache_key(clean_address(order.address)) for order in batch.orders if order.address
+    }
+    address_keys.discard("")
+
     db.delete(batch)  # cascades to orders, route plans (+ routes/stops), failed addresses
     db.flush()
+
+    if address_keys:
+        still_used = {
+            _cache_key(clean_address(row[0]))
+            for row in db.query(Order.address).filter(Order.address.isnot(None)).all()
+        }
+        orphaned_keys = address_keys - still_used
+        if orphaned_keys:
+            db.query(GeocodingCache).filter(
+                GeocodingCache.address_key.in_(orphaned_keys)
+            ).delete(synchronize_session=False)
+
     # None for plan_id: any route plan(s) this batch had are gone with it,
     # whichever id(s) they were - clearing by batch_id alone is enough.
     clear_current_session_if_matches(db, batch_id=batch_id, plan_id=None)
