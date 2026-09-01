@@ -13,13 +13,20 @@ import './routeWorkspace.css';
 // codebase. VITE_GOOGLE_MAPS_API_KEY can still override it without a
 // code change.
 //
-// This key's "API restrictions" now has BOTH Maps JavaScript API and
+// This key's "API restrictions" needs BOTH Maps JavaScript API and
 // Directions API checked (not split across separate keys, which doesn't
 // work - the JS loader binds one key to the whole google.maps namespace,
 // DirectionsService included, so both APIs have to live on the one key
-// that loads the map). Confirmed directly with a real headless-browser
-// load: mapOk, no gm_authFailure, DirectionsService status OK.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBi7VJIiAQ05YjdSZ4nBCUdkvoRjP3Yidk';
+// that loads the map). The previous hardcoded key here expired (same as
+// the backend's Geocoding key, around the same time - likely a project-
+// wide policy); this one was confirmed directly via the Geocoding,
+// Places, and Directions REST APIs (all three returned real results, no
+// REQUEST_DENIED/expired errors) - not yet confirmed with a real
+// browser load of the JS map itself, so if the map still doesn't render,
+// check for a gm_authFailure/ApiNotActivatedMapError in the browser
+// console next (Maps JavaScript API specifically may need enabling
+// separately even though the REST APIs above all work on this key).
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDodjkyPxxK0C_5m6pX0u-hAj2kHeeI-Zo';
 const GOOGLE_MAPS_LIBRARIES = [];
 
 // A stationary phone's GPS still drifts a few meters between fixes - real
