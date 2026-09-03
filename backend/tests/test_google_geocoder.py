@@ -181,6 +181,53 @@ def test_strip_leading_name_segment_needs_enough_left_over_to_be_worth_it():
     assert _strip_leading_name_segment("Sidharth Upscale Apartments, Porur") is None
 
 
+def test_number_confirmed_in_text_matches_whole_tokens_only():
+    from app.geocoding.google_geocoder import _number_confirmed_in_text
+
+    assert _number_confirmed_in_text("17", "Door No.17, Narayana Swami Men's PG, Bhavani St") is True
+    assert _number_confirmed_in_text("17", "17, Bhavani St, Chennai") is True
+    # Must not match INSIDE a longer, unrelated number.
+    assert _number_confirmed_in_text("17", "170, Bhavani St, Chennai 600113") is False
+    assert _number_confirmed_in_text("17", "217, Bhavani St, Chennai") is False
+    assert _number_confirmed_in_text("17", "Bhavani St, Chennai, Tamil Nadu 600113") is False
+
+
+def test_reorder_house_number_to_street_moves_the_number_next_to_its_street():
+    # Conventional Indian order - house number, THEN a name, THEN the
+    # street - that Google's parser doesn't recognize as-is.
+    from app.geocoding.google_geocoder import _reorder_house_number_to_street
+
+    assert _reorder_house_number_to_street(
+        "17, Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    ) == "17 Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    # "Door No 17" prefix form must resolve to the same underlying number.
+    assert _reorder_house_number_to_street(
+        "Door No 17, Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Chennai 600113"
+    ) == "17 Bhavani St, Bharathi Nagar, Chennai 600113"
+
+
+def test_reorder_house_number_to_street_does_nothing_when_already_adjacent():
+    from app.geocoding.google_geocoder import _reorder_house_number_to_street
+
+    assert _reorder_house_number_to_street("17 Bhavani St, Bharathi Nagar, Chennai 600113") is None
+
+
+def test_reorder_house_number_to_street_needs_a_leading_house_number():
+    # No number leads the address at all - this is _strip_leading_name_
+    # segment's case instead, not this function's.
+    from app.geocoding.google_geocoder import _reorder_house_number_to_street
+
+    assert _reorder_house_number_to_street(
+        "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Chennai 600113"
+    ) is None
+
+
+def test_reorder_house_number_to_street_needs_a_street_segment_somewhere():
+    from app.geocoding.google_geocoder import _reorder_house_number_to_street
+
+    assert _reorder_house_number_to_street("17, Narayana Swami Men's PG, Bharathi Nagar, Chennai") is None
+
+
 def test_name_stripped_places_retry_rescues_the_pg_case_end_to_end():
     # THE FULL FIX: the customer's exact wording is kept and still
     # succeeds - "can't enter the PG name" is no longer true. A wrong
@@ -598,6 +645,26 @@ def test_score_component_match_flags_street_found_but_house_number_unconfirmed()
     cap = _score_component_match(customer, google_components)
     assert cap == STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP
     assert cap < 0.5
+
+
+def test_score_component_match_confirms_a_house_number_embedded_in_free_text():
+    """An establishment/POI match's most specific component is often free
+    text with no "street_number" type at all - "Door No.17, Narayana
+    Swami Men's PG, Bhavani St...", types: [] (the exact same shape that
+    already needed a text-based fallback for the street name). The
+    number is genuinely confirmed there even though no component is
+    TYPED street_number - must not be treated as unconfirmed."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Door No 17, Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    google_components = [
+        {"long_name": "Door No.17, Narayana Swami Men's PG", "types": []},
+        {"long_name": "Bhavani St", "types": ["route"]},
+        {"long_name": "Bharathi Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600113", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
 
 
 def test_score_component_match_flags_a_different_house_number_on_the_same_street():

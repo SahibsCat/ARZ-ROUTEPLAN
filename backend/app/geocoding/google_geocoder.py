@@ -256,6 +256,15 @@ def _extract_house_number(address: str) -> Optional[str]:
     return None
 
 
+def _number_confirmed_in_text(number: str, text: str) -> bool:
+    """Whole-token match (word boundaries both sides) so a customer's "17"
+    confirms against free text containing "Door No.17" or "17, Bhavani
+    St" but never spuriously matches inside an unrelated longer number
+    like "170" or "217" - or, just as importantly, inside the PIN code
+    that's almost always present somewhere in that same joined text."""
+    return bool(re.search(r"\b" + re.escape(number) + r"\b", text, re.IGNORECASE))
+
+
 def _component_text_tokens(text: str) -> List[str]:
     """Tokenizes Google's address_components text for the street-name
     check specifically - NOT nominatim_geocoder._significant_tokens,
@@ -327,7 +336,17 @@ def _score_component_match(original_address: str, address_components: List[Dict[
             None,
         )
         if google_house_number is None:
-            caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
+            # No STRUCTURED street_number component - but an establishment/
+            # POI match's most specific component is often free text with
+            # no "street_number" type at all ("Door No.17, Narayana Swami
+            # Men's PG, Bhavani St...", types: [] - the exact same shape
+            # that already needed a text-based fallback for the street
+            # name below). Confirmed via that free text is still confirmed
+            # - only genuinely absent from every component counts as
+            # unconfirmed.
+            all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
+            if not _number_confirmed_in_text(customer_house_number, all_component_text):
+                caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
         elif google_house_number != customer_house_number:
             caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
 
@@ -354,6 +373,41 @@ def _strip_landmark_phrase(address: str) -> str:
     stripped = _LANDMARK_PATTERN.sub("", address)
     stripped = re.sub(r"\s+", " ", stripped).strip().strip(",").strip()
     return stripped
+
+
+def _reorder_house_number_to_street(address: str) -> Optional[str]:
+    """The other half of "a name Google can't find confuses the match":
+    Indian addresses conventionally write house-number, THEN a building/
+    business name, THEN the street ("17, Narayana Swami Men's PG, Bhavani
+    St, ..."), but Google's parsers only recognize a house number when
+    it's adjacent to the street it belongs to - "17 Bhavani St" parses
+    cleanly, "17, [anything else], Bhavani St" doesn't, and neither
+    _strip_leading_name_segment (this address already leads with a real
+    house number, so it correctly declines to touch it) nor the plain
+    house-number check (nothing to compare against - Google's own match
+    for the un-reordered text has no confirmed number at all) can fix
+    that on their own.
+
+    Moves the number next to the first street-suffix segment found and
+    drops whatever sat between them - "17, Narayana Swami Men's PG,
+    Bhavani St, Bharathi Nagar, ..." becomes "17 Bhavani St, Bharathi
+    Nagar, ...", the exact form Google actually parses a house number
+    from. Returns None when there's nothing to fix: no house number
+    leads the address, no later segment looks like a street, or the
+    street segment is already the very next one (nothing between them to
+    skip in the first place)."""
+    segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+    if len(segments) < 3:
+        return None
+    house_number = _extract_house_number(segments[0])
+    if not house_number:
+        return None
+    for i in range(1, len(segments)):
+        if _STREET_SUFFIX_PATTERN.search(segments[i]):
+            if i == 1:
+                return None  # already adjacent - nothing to fix
+            return ", ".join([f"{house_number} {segments[i]}"] + segments[i + 1:])
+    return None
 
 
 def _strip_leading_name_segment(address: str) -> Optional[str]:
@@ -438,7 +492,7 @@ class GoogleGeocoder(GeocodingProvider):
         self.close()
 
     def geocode(self, address: str) -> Optional[GeocodeResult]:
-        """Up to five attempts, each only tried when the one before it
+        """Up to six attempts, each only tried when the one before it
         didn't already land a confident (STATUS_OK) match - cheapest first:
           1. The address as given, straight to the Geocoding API.
           2. The same address with landmark phrases ("near X", "opposite Y")
@@ -452,19 +506,27 @@ class GoogleGeocoder(GeocodingProvider):
              street/locality/city/PIN often succeeds cleanly where the
              full text didn't. Skipped when there's no real name segment
              to strip (see that function's own docstring for exactly when).
-          4. Places API's fuzzy text search, against the ORIGINAL full
+          4. The same address with the house number moved next to its
+             street (see _reorder_house_number_to_street) - the OTHER
+             shape a name in the way breaks: "17, [Name], Bhavani St,
+             ..." (house number, then name, then street - the
+             conventional Indian order) instead of "[Name], 17 Bhavani
+             St, ...". Google only recognizes the number when it's
+             adjacent to the street, so this fixes exactly the case step 3
+             correctly declines to touch (a real house number already
+             leads the address). Mutually exclusive with step 3 by
+             construction - only ever one of them has something to do.
+          5. Places API's fuzzy text search, against the ORIGINAL full
              address (this is the one attempt actually built to recognize
              a named establishment/apartment complex BY NAME - the
              structured Geocoding API calls above never are).
-          5. Places API again, against the name-stripped text from step 3
-             (only if that stripping happened, and only if step 4 didn't
-             already succeed) - a named building Places has no listing for
-             can still resolve correctly once the confusing name is out of
-             the query: Places' own fuzzy matching gets dragged toward a
-             wrong nearby business by an unlisted name the exact same way
-             the structured API does in step 1, and clearing it here helps
-             for the exact same reason it helped in step 3.
-        Real added cost per call for attempts 4-5, which is exactly why
+          6. Places API again, against whichever cleaned-up variant from
+             steps 3-4 actually applied (only if step 5 didn't already
+             succeed) - a named building Places has no listing for
+             confuses ITS fuzzy matching the exact same way it confuses
+             the structured API, and clearing it out helps here for the
+             same reason it helped there.
+        Real added cost per call for attempts 5-6, which is exactly why
         they're the last resort, not the first attempt. Whichever attempt
         scores highest wins; if none reach STATUS_OK, the best (still-
         flagged) one found is returned rather than nothing - never worse
@@ -485,11 +547,14 @@ class GoogleGeocoder(GeocodingProvider):
             if best is not None and best.status == STATUS_OK:
                 return best
 
-        stripped_name = _strip_leading_name_segment(address)
-        if stripped_name and stripped_name.lower() != address.lower():
-            variant = self._geocode_once(stripped_name)
+        # Mutually exclusive by construction (see each function's own
+        # docstring) - cleaned_text is whichever one actually applied, used
+        # again below for the Places retry.
+        cleaned_text = _strip_leading_name_segment(address) or _reorder_house_number_to_street(address)
+        if cleaned_text and cleaned_text.lower() != address.lower():
+            variant = self._geocode_once(cleaned_text)
             if _rank(variant) > _rank(best):
-                print(f"Google Geocoding: name-stripped retry '{address}' -> '{stripped_name}' improved the match")
+                print(f"Google Geocoding: cleaned-text retry '{address}' -> '{cleaned_text}' improved the match")
                 best = variant
             if best is not None and best.status == STATUS_OK:
                 return best
@@ -500,11 +565,11 @@ class GoogleGeocoder(GeocodingProvider):
         if best is not None and best.status == STATUS_OK:
             return best
 
-        if stripped_name and stripped_name.lower() != address.lower():
-            fallback_stripped = self._find_place(stripped_name)
-            if _rank(fallback_stripped) > _rank(best):
-                print(f"Places API fallback: name-stripped retry '{address}' -> '{stripped_name}' improved the match")
-                best = fallback_stripped
+        if cleaned_text and cleaned_text.lower() != address.lower():
+            fallback_cleaned = self._find_place(cleaned_text)
+            if _rank(fallback_cleaned) > _rank(best):
+                print(f"Places API fallback: cleaned-text retry '{address}' -> '{cleaned_text}' improved the match")
+                best = fallback_cleaned
 
         return best
 
