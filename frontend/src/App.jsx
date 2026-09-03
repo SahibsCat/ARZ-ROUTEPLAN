@@ -2025,6 +2025,37 @@ function App() {
     }
   };
 
+  // Manual "type an address in by hand" - a phone-in order or a customer
+  // added after the day's upload, with no Excel row behind it. The backend
+  // geocodes it, then either slots it into an existing route already
+  // covering the same area (if one has room) or creates a new route
+  // (vehicleType, used only as that fallback) - see crud.add_manual_address.
+  const [isAddingManualAddress, setIsAddingManualAddress] = useState(false);
+  const handleAddManualAddress = async ({ address, customerName, deliveryTime, vehicleType }) => {
+    setIsAddingManualAddress(true);
+    try {
+      const res = await postJson('/api/routes/manual-address', 'POST', {
+        address, customer_name: customerName || null, delivery_time: deliveryTime || null, vehicle_type: vehicleType,
+      });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Could not add this address. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      setTotalOrders((t) => t + 1);
+      setStatus(
+        data.created_new_route
+          ? `Created ${data.route.route_name} for this address (no existing route with room in that area).`
+          : `Added to ${data.route.route_name} - already serving ${data.matched_area || 'this area'}.`
+      );
+      return true;
+    } catch (err) {
+      console.error('Add manual address failed:', err);
+      setWarnings([err.message || 'Could not add this address. Please try again.']);
+      return false;
+    } finally {
+      setIsAddingManualAddress(false);
+    }
+  };
+
   // Toggles a route's vehicle type (car <-> bike). Rejected server-side (and
   // the button disabled client-side) if the route currently carries more
   // stops than the new type's capacity.
@@ -3193,11 +3224,13 @@ function App() {
             maxCapacityFor={maxCapacityFor}
             isRouteFull={isRouteFull}
             isCreatingRoute={isCreatingRoute}
+            isAddingManualAddress={isAddingManualAddress}
             isChangingVehicle={isChangingVehicle}
             isDeletingRoute={isDeletingRoute}
             isMovingAddresses={isMovingAddresses}
             isRemovingManualExtra={isRemovingManualExtra}
             onCreateRoute={handleCreateRoute}
+            onAddManualAddress={handleAddManualAddress}
             onToggleVehicle={handleToggleVehicleType}
             onDeleteRoute={handleDeleteRoute}
             onReassignOrder={handleReassignOrder}

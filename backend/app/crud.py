@@ -3,6 +3,7 @@ function here. API routes call these; they never build SQLAlchemy queries
 themselves."""
 
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -145,6 +146,14 @@ class CapacityError(RootplanError):
             f"This route has only {available} available space(s) (capacity {capacity}). "
             f"{requested} order(s) were selected."
         )
+
+
+class GeocodeFailedError(RootplanError):
+    """A manually-entered address couldn't be geocoded precisely enough to
+    place it on the map - see add_manual_address. Distinct from
+    RouteNotFoundError/OrderNotFoundError (nothing is missing; the address
+    itself is the problem) so the frontend can show address-specific
+    guidance instead of a generic error."""
 
 
 # --------------------------------------------------------------------------
@@ -835,6 +844,105 @@ def add_orders_to_route(db: Session, route_id: int, order_ids: List[str]) -> Rou
     db.commit()
     db.refresh(route)
     return route
+
+
+def _generate_manual_order_id(db: Session, batch_id: int) -> str:
+    """MANUAL-<6 hex chars> - visually distinct from any real business
+    order_id an Excel upload would ever contain, so a hand-entered address
+    can never collide with (or be mistaken for) a real order number."""
+    for _ in range(20):
+        candidate = f"MANUAL-{uuid.uuid4().hex[:6].upper()}"
+        clash = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == candidate).first()
+        if clash is None:
+            return candidate
+    raise RootplanError("Could not generate a unique order id - please try again.")
+
+
+def add_manual_address(
+    db: Session,
+    batch_id: int,
+    address: str,
+    customer_name: Optional[str],
+    delivery_time: Optional[str],
+    fallback_vehicle_type: str,
+) -> Dict[str, object]:
+    """Powers the admin panel's Create Route "manual address entry" - types
+    one address in directly, no Excel row needed (a phone-in order, or a
+    customer added after the day's upload already happened). Looks for an
+    existing route in the current draft plan that's already serving the SAME
+    area (the identical derive_area() heuristic every uploaded order's AREA
+    already comes from - see resolve_location) with room left under its base
+    capacity, and adds the new stop there; only spins up a brand new route
+    (fallback_vehicle_type) if no route covers that area yet, or every route
+    that does is already full. Among several same-area candidates, picks the
+    one with the MOST existing stops in that area - the most "established"
+    route for it, not just the first one found.
+
+    Geocoding reuses the exact same pipeline (confidence scoring, landmark
+    retry, Places fallback) as a bulk Excel upload - a low-confidence/failed
+    match raises GeocodeFailedError immediately instead of creating an order
+    with a silently wrong pin; the admin fixes the address text and
+    resubmits, the same experience as retrying a Failed Order."""
+    # Local import - geocode_service imports crud at module level, so a
+    # top-of-file import here would be circular.
+    from app.geocode_service import geocode_address
+
+    if fallback_vehicle_type not in ("car", "bike"):
+        raise RootplanError("vehicle_type must be 'car' or 'bike'")
+
+    cleaned_address = (address or "").strip()
+    if not cleaned_address:
+        raise RootplanError("Address is required.")
+
+    geocoded = geocode_address(cleaned_address, db=db)
+    if geocoded is None:
+        raise GeocodeFailedError(
+            "Could not geocode this address precisely enough to place it on the map. "
+            "Check for a missing house/flat number or a landmark-only description, "
+            "then try again."
+        )
+
+    order_id = _generate_manual_order_id(db, batch_id)
+    order = Order(
+        batch_id=batch_id,
+        order_id=order_id,
+        customer_name=(customer_name or "").strip() or None,
+        address=cleaned_address,
+        formatted_address=geocoded.get("display_name"),
+        lat=geocoded["lat"],
+        lng=geocoded["lng"],
+        delivery_slot=(delivery_time or "").strip() or None,
+        status="pending",
+        extra_fields={},
+    )
+    db.add(order)
+    db.flush()
+
+    route_plan = get_or_create_draft_route_plan(db, batch_id)
+
+    new_area = derive_area(cleaned_address)
+    matched_route: Optional[Route] = None
+    matched_count = 0
+    if new_area:
+        new_area_key = new_area.strip().lower()
+        for candidate_route in route_plan.routes:
+            stops = candidate_route.stops
+            if len(stops) >= vehicle_capacity(candidate_route.vehicle_type):
+                continue
+            area_count = sum(
+                1 for stop in stops
+                if str((stop.order_snapshot or {}).get("area") or "").strip().lower() == new_area_key
+            )
+            if area_count > matched_count:
+                matched_count = area_count
+                matched_route = candidate_route
+
+    if matched_route is not None:
+        route = add_orders_to_route(db, matched_route.id, [order_id])
+        return {"route": route, "order_id": order_id, "matched_area": new_area, "created_new_route": False}
+
+    route = create_route(db, route_plan.id, fallback_vehicle_type, order_ids=[order_id])
+    return {"route": route, "order_id": order_id, "matched_area": new_area, "created_new_route": True}
 
 
 def remove_order_from_route(db: Session, route_id: int, order_id: str) -> Dict[str, object]:

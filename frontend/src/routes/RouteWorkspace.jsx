@@ -1317,6 +1317,113 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
   );
 }
 
+// A phone-in order or a customer added after the day's Excel upload - no
+// spreadsheet row behind it. The backend geocodes the typed address, then
+// either slots it into an existing route already covering the same area (if
+// one has room) or creates a new route with the vehicle type picked here
+// (used only as that fallback - see crud.add_manual_address).
+function ManualAddressModal({ onConfirm, onClose, isSubmitting }) {
+  const [address, setAddress] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [deliveryTime, setDeliveryTime] = useState('');
+  const [vehicleType, setVehicleType] = useState('bike');
+  const [error, setError] = useState(null);
+
+  const canSubmit = address.trim().length > 0 && !isSubmitting;
+
+  const handleConfirm = async () => {
+    if (!canSubmit) return;
+    setError(null);
+    const ok = await onConfirm({
+      address: address.trim(),
+      customerName: customerName.trim(),
+      deliveryTime: deliveryTime.trim(),
+      vehicleType,
+    });
+    if (ok) onClose();
+    else setError('Could not add this address - see the warning banner above for details.');
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__header">
+          <h3>Add Address Manually</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+
+        <div className="modal__body">
+          <p className="modal__hint">
+            For a phone-in order or a customer added after today's upload - no spreadsheet row needed.
+            If an existing route already covers this area and has room, it's added there; otherwise a
+            new route is created with the vehicle type below.
+          </p>
+
+          <label className="modal__field-label" htmlFor="manual-address-input">Address *</label>
+          <textarea
+            id="manual-address-input"
+            className="modal__input"
+            rows={3}
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="e.g. 12 Kamaraj Avenue, 1st Street, Adyar, Chennai 600020"
+            disabled={isSubmitting}
+          />
+
+          <label className="modal__field-label" htmlFor="manual-address-customer">Customer Name (optional)</label>
+          <input
+            id="manual-address-customer"
+            className="modal__input"
+            type="text"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            disabled={isSubmitting}
+          />
+
+          <label className="modal__field-label" htmlFor="manual-address-slot">Delivery Slot (optional)</label>
+          <input
+            id="manual-address-slot"
+            className="modal__input"
+            type="text"
+            value={deliveryTime}
+            onChange={(e) => setDeliveryTime(e.target.value)}
+            placeholder="e.g. 2:00 PM"
+            disabled={isSubmitting}
+          />
+
+          <label className="modal__field-label" htmlFor="manual-address-vehicle">
+            If a new route is needed
+          </label>
+          <select
+            id="manual-address-vehicle"
+            className="select-compact"
+            value={vehicleType}
+            onChange={(e) => setVehicleType(e.target.value)}
+            disabled={isSubmitting}
+          >
+            <option value="bike">Bike</option>
+            <option value="car">Car</option>
+          </select>
+        </div>
+
+        {error && (
+          <div className="modal__warning">
+            <IconAlert width={13} height={13} />
+            {error}
+          </div>
+        )}
+
+        <div className="modal__footer">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={handleConfirm}>
+            {isSubmitting ? 'Adding…' : 'Add Address'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TRACKING_STATUS_LABEL = {
   not_started: { emoji: '⚪', text: 'Not Started' },
   live: { emoji: '🟢', text: 'Live' },
@@ -2392,8 +2499,8 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
 
 export default function RouteWorkspace({
   routes, pendingOrders, isProcessing, capacityFor, maxCapacityFor, isRouteFull,
-  isCreatingRoute, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
-  onCreateRoute, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
+  isCreatingRoute, isAddingManualAddress, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
+  onCreateRoute, onAddManualAddress, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra,
   requestedTab, requestedView, requestedLiveTracking, navCommandSeq,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
@@ -2440,6 +2547,10 @@ export default function RouteWorkspace({
   // Download/Delete instead of Assign.
   const [selectedRouteNames, setSelectedRouteNames] = useState([]);
   const [isBulkActing, setIsBulkActing] = useState(false);
+
+  // "Add Address Manually" - opens next to both Create Route selects below
+  // (empty-state and the routes-page header).
+  const [showManualAddressModal, setShowManualAddressModal] = useState(false);
 
   // List | Map | Split, for the Routes tab only - independent of
   // `selectedRouteName`/`view` above (which is specifically "a route's
@@ -2596,6 +2707,9 @@ export default function RouteWorkspace({
             <option value="bike">Bike</option>
             <option value="car">Car</option>
           </select>
+          <button type="button" className="btn btn--ghost" onClick={() => setShowManualAddressModal(true)}>
+            + Add Address Manually
+          </button>
         </div>
       ) : (
         <>
@@ -2621,6 +2735,9 @@ export default function RouteWorkspace({
                 <option value="bike">Bike</option>
                 <option value="car">Car</option>
               </select>
+              <button type="button" className="btn btn--ghost" onClick={() => setShowManualAddressModal(true)}>
+                + Add Address Manually
+              </button>
             </div>
           </div>
 
@@ -2775,6 +2892,14 @@ export default function RouteWorkspace({
           </>
         )}
         </>
+      )}
+
+      {showManualAddressModal && (
+        <ManualAddressModal
+          onConfirm={onAddManualAddress}
+          onClose={() => setShowManualAddressModal(false)}
+          isSubmitting={isAddingManualAddress}
+        />
       )}
     </div>
   );

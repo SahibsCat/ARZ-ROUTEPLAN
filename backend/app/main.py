@@ -45,6 +45,7 @@ from app.schemas import (
     DriverLocationRequest,
     DriverLoginRequest,
     DriverStatusRequest,
+    ManualAddressRequest,
     MoveOrdersRequest,
     ReorderRouteRequest,
     ResetDriverPasswordRequest,
@@ -656,6 +657,35 @@ def create_route_endpoint(payload: CreateRouteRequest = Body(...), db: Session =
         _raise_for_crud_error(e)
     return {
         "route": crud.route_summary(route),
+        "unassigned_total": crud.count_unassigned_orders(db, batch_id),
+    }
+
+
+@app.post("/api/routes/manual-address")
+def add_manual_address_endpoint(payload: ManualAddressRequest = Body(...), db: Session = Depends(get_db)):
+    """Create Route's "type an address in by hand" option (brief: a
+    phone-in order or a customer added after the day's upload) - geocodes
+    the address, then adds it to an existing same-area route with room, or
+    creates a new one (payload.vehicle_type) if none qualifies. See
+    crud.add_manual_address for the matching logic."""
+    batch_id = _current_batch_id(db)
+    if batch_id is None:
+        raise HTTPException(status_code=400, detail="No active upload session - upload an Excel file first.")
+    try:
+        result = crud.add_manual_address(
+            db, batch_id,
+            address=payload.address,
+            customer_name=payload.customer_name,
+            delivery_time=payload.delivery_time,
+            fallback_vehicle_type=payload.vehicle_type,
+        )
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {
+        "route": crud.route_summary(result["route"]),
+        "order_id": result["order_id"],
+        "matched_area": result["matched_area"],
+        "created_new_route": result["created_new_route"],
         "unassigned_total": crud.count_unassigned_orders(db, batch_id),
     }
 

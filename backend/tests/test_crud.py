@@ -1,3 +1,5 @@
+from unittest import mock
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -192,6 +194,84 @@ def test_delete_upload_batch_keeps_geocode_cache_still_used_by_another_batch(db_
     crud.delete_upload_batch(db_session, batch_one.id)
 
     assert crud.get_cached_geocode(db_session, key) is not None
+
+
+def _fake_geocode(lat=13.05, lng=80.24, display_name="42 Fake St, Adyar, Chennai, Tamil Nadu 600020, India"):
+    return {"address": display_name, "lat": lat, "lng": lng, "display_name": display_name, "confidence": 0.9}
+
+
+def test_add_manual_address_creates_new_route_when_nothing_matches(db_session):
+    """No existing route at all - the fallback vehicle type is used."""
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
+
+    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+        result = crud.add_manual_address(
+            db_session, batch.id,
+            address="42 Fake St, Adyar, Chennai", customer_name="Walk-in Customer",
+            delivery_time=None, fallback_vehicle_type="bike",
+        )
+
+    assert result["created_new_route"] is True
+    assert result["matched_area"] == "Adyar"
+    assert result["route"].vehicle_type == "bike"
+    assert len(result["route"].stops) == 1
+    assert result["route"].stops[0].order_id == result["order_id"]
+
+
+def test_add_manual_address_joins_existing_route_in_the_same_area_with_room(db_session):
+    """An existing route already serving Adyar, with room left - the new
+    address should land there instead of spawning a new route."""
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "1 Main St, Adyar, Chennai", "delivery_time": "10:00", "lat": 13.0, "lng": 80.25, "geocoded_address": "1 Main St, Adyar, Chennai"},
+    ])
+    route_plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    existing_route = crud.create_route(db_session, route_plan.id, "car", order_ids=["1"])  # capacity 6, 1 used
+
+    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+        result = crud.add_manual_address(
+            db_session, batch.id,
+            address="42 Fake St, Adyar, Chennai", customer_name=None,
+            delivery_time=None, fallback_vehicle_type="bike",
+        )
+
+    assert result["created_new_route"] is False
+    assert result["route"].id == existing_route.id
+    assert len(result["route"].stops) == 2
+
+
+def test_add_manual_address_skips_a_full_same_area_route(db_session):
+    """The same-area route exists but is already at capacity - a new route
+    is created instead of overfilling it."""
+    order_fields = [
+        {"order_id": str(i), "customer_name": f"Cust {i}", "address": f"{i} Main St, Adyar, Chennai", "delivery_time": "10:00", "lat": 13.0, "lng": 80.25, "geocoded_address": f"{i} Main St, Adyar, Chennai"}
+        for i in range(1, 4)
+    ]
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 3, True, [], order_fields)
+    route_plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    full_route = crud.create_route(db_session, route_plan.id, "bike", order_ids=["1", "2", "3"])  # bike capacity 3, now full
+
+    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+        result = crud.add_manual_address(
+            db_session, batch.id,
+            address="42 Fake St, Adyar, Chennai", customer_name=None,
+            delivery_time=None, fallback_vehicle_type="car",
+        )
+
+    assert result["created_new_route"] is True
+    assert result["route"].id != full_route.id
+    assert result["route"].vehicle_type == "car"
+
+
+def test_add_manual_address_raises_on_failed_geocode(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
+
+    with mock.patch("app.geocode_service.geocode_address", return_value=None):
+        with pytest.raises(crud.GeocodeFailedError):
+            crud.add_manual_address(
+                db_session, batch.id,
+                address="not a real place", customer_name=None,
+                delivery_time=None, fallback_vehicle_type="bike",
+            )
 
 
 def test_delete_route_plan(db_session):

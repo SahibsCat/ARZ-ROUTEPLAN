@@ -130,6 +130,15 @@ class CreateRouteRequest(BaseModel):
     order_ids: List[str] = []
 
 
+class ManualAddressRequest(BaseModel):
+    address: str
+    customer_name: Optional[str] = None
+    delivery_time: Optional[str] = None
+    # Only used as a fallback: if no existing route in the same area has
+    # room, the new route created for this address uses this vehicle type.
+    vehicle_type: str = "bike"
+
+
 class AddOrdersRequest(BaseModel):
     order_ids: List[str]
 
