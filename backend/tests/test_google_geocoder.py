@@ -59,7 +59,7 @@ def test_geocode_returns_result_on_ok_status():
 # and still returns a clean formatted_address for that broader area. These
 # lock in that a rough match is now flagged instead of silently trusted.
 
-def _ok_response(location_type, types, partial_match=False, lat=13.0, lng=80.2):
+def _ok_response(location_type, types, partial_match=False, lat=13.0, lng=80.2, address_components=None):
     return {
         "status": "OK",
         "results": [{
@@ -67,6 +67,7 @@ def _ok_response(location_type, types, partial_match=False, lat=13.0, lng=80.2):
             "geometry": {"location": {"lat": lat, "lng": lng}, "location_type": location_type},
             "types": types,
             "partial_match": partial_match,
+            "address_components": address_components or [],
         }],
     }
 
@@ -269,3 +270,103 @@ def test_geocode_returns_none_without_api_key():
 
     assert result is None
     assert client.call_count == 0
+
+
+# --- Address-component validation (_score_component_match / spec examples) -
+# a SECOND confidence signal alongside location_type/types: catches Google
+# confidently geocoding the WRONG place (a ROOFTOP-precise match for a
+# same-named building in a different locality), which the precision-only
+# score above has no way to see on its own.
+
+def test_score_component_match_catches_wrong_locality_despite_rooftop_precision():
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "ABC Apartments, XYZ Street, Velachery, Chennai, Tamil Nadu 600042"
+    google_components = [
+        {"long_name": "ABC Apartments", "types": ["premise"]},
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Thiruvanmiyur", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600041", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is not None
+    assert _score_component_match(customer, google_components) < 0.5
+
+
+def test_score_component_match_finds_no_issue_with_a_correct_match():
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "ABC Apartments, XYZ Street, Velachery, Chennai, Tamil Nadu 600042"
+    google_components = [
+        {"long_name": "ABC Apartments", "types": ["premise"]},
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_flags_pin_code_mismatch():
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Some Address, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600032", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is not None
+
+
+def test_score_component_match_tolerates_pure_formatting_differences():
+    """Spec example: same real address, differently formatted/ordered -
+    must NOT be flagged just because the words don't line up 1:1."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Flat 2B ABC Apts XYZ St Velachery Chennai 600042"
+    google_components = [
+        {"long_name": "2B", "types": ["subpremise"]},
+        {"long_name": "ABC Apartments", "types": ["premise"]},
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_has_no_opinion_on_a_bare_locality_query():
+    """A customer address with nothing specific to compare (just a bare
+    locality name, no significant tokens, no PIN) must defer entirely to
+    the precision-based score, not get penalized for "no overlap" when
+    there was nothing to overlap with in the first place."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    assert _score_component_match("Velachery, Chennai", [
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+    ]) is None
+
+
+def test_geocode_downgrades_a_rooftop_match_in_the_wrong_locality():
+    """End-to-end: even a location_type=ROOFTOP/street_address result (the
+    highest precision score _score_result alone can give) must still be
+    flagged when Google's own returned locality doesn't match anything in
+    the customer's address - confirms the two signals actually combine in
+    GoogleGeocoder.geocode(), not just in the standalone scoring function."""
+    address_components = [
+        {"long_name": "ABC Apartments", "types": ["premise"]},
+        {"long_name": "Thiruvanmiyur", "types": ["sublocality", "sublocality_level_1"]},
+    ]
+    client = _DummyClient([
+        _ok_response("ROOFTOP", ["street_address"], address_components=address_components),
+    ])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode("ABC Apartments, Velachery, Chennai")
+
+    assert result.status == "NEEDS_MANUAL_VERIFICATION"
+    assert result.confidence < 0.95  # would have been 0.95 from precision alone

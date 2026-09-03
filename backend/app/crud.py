@@ -234,6 +234,8 @@ def save_upload_batch(
             lng=order.get("lng"),
             formatted_address=order.get("geocoded_address"),
             geocode_error=order.get("geocode_error"),
+            geocode_confidence=order.get("confidence"),
+            location_source="geocoded" if has_coords else None,
             status="pending" if has_coords else "failed",
             extra_fields=order.get("extra_fields") or {},
         ))
@@ -945,6 +947,53 @@ def add_manual_address(
     return {"route": route, "order_id": order_id, "matched_area": new_area, "created_new_route": True}
 
 
+def set_manual_location(
+    db: Session, batch_id: int, order_id: str, lat: float, lng: float,
+) -> Order:
+    """An admin drags/places a pin themselves - the one case explicitly
+    trusted over anything a geocoder could produce (a human confirmed
+    against the real place). Marks the order location_source="manual" at
+    full confidence, and if it's currently on a route, patches that route's
+    one RouteStop snapshot to match - deliberately a direct field patch,
+    not a call into recompute_route_metrics/_persist_route_stops: this
+    only ever needs to move where ONE pin is drawn, and re-running that
+    machinery on a route a driver may be mid-delivery on risks wiping
+    delivery_status/delivered_at (see revalidate_google_geocodes.py's own
+    reasoning for the same thing this session already established).
+
+    Callers must never auto-re-geocode an order once location_source is
+    "manual" - see the guard in main.py's retry_single_geocode."""
+    order = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == str(order_id)).first()
+    if order is None:
+        raise OrderNotFoundError(f"Order {order_id} not found in the current session")
+
+    order.lat = lat
+    order.lng = lng
+    order.geocode_confidence = 1.0
+    order.location_source = "manual"
+    order.geocode_error = None
+    if order.status == "failed":
+        order.status = "pending"
+
+    if order.route_id is not None:
+        stop = (
+            db.query(RouteStop)
+            .filter(RouteStop.route_id == order.route_id, RouteStop.order_id == order.order_id)
+            .first()
+        )
+        if stop is not None:
+            snapshot = dict(stop.order_snapshot or {})
+            snapshot["lat"] = lat
+            snapshot["lng"] = lng
+            snapshot["geocode_confidence"] = 1.0
+            snapshot["location_source"] = "manual"
+            stop.order_snapshot = snapshot  # reassign whole dict - JSON columns only pick up changes on reassignment
+
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 def remove_order_from_route(db: Session, route_id: int, order_id: str) -> Dict[str, object]:
     """The single atomic "remove from route" operation (brief §4/§9): moves
     the order to Unassigned - never deletes it - and returns both the
@@ -1234,6 +1283,7 @@ def record_retry_attempt(
     edited_address: Optional[str],
     success: bool,
     failure_reason: Optional[str] = None,
+    confidence: Optional[float] = None,
 ) -> None:
     """Called after every retry (success or failure) so retry_count and
     status stay accurate. On success the row is marked resolved rather than
@@ -1260,6 +1310,8 @@ def record_retry_attempt(
             if success:
                 order.status = "pending"
                 order.geocode_error = None
+                order.geocode_confidence = confidence
+                order.location_source = "geocoded"
             else:
                 order.status = "failed"
                 order.geocode_error = failure_reason
@@ -1348,6 +1400,13 @@ def order_summary(order: Order) -> Dict[str, object]:
         "lng": order.lng,
         "geocoded_address": order.formatted_address,
         "geocode_error": order.geocode_error,
+        "geocode_confidence": order.geocode_confidence,
+        # "manual" (admin-corrected pin - see set_manual_location) or
+        # "geocoded" (whatever the geocoding pipeline last produced) -
+        # None for an order from before this field existed. Surfaced so the
+        # UI can show a status badge and gate "Adjust Location" separately
+        # from "this needs geocoding at all".
+        "location_source": order.location_source,
         "status": order.status,
         "assigned_vehicle": order.assigned_vehicle,
         "extra_fields": order.extra_fields or {},

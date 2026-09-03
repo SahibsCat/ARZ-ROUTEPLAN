@@ -274,6 +274,64 @@ def test_add_manual_address_raises_on_failed_geocode(db_session):
             )
 
 
+def test_set_manual_location_marks_order_manually_verified(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "1 Main, Chennai", "delivery_time": "10:00",
+         "lat": 13.0, "lng": 80.2, "geocoded_address": "1 Main, Chennai", "confidence": 0.2},
+    ])
+
+    order = crud.set_manual_location(db_session, batch.id, "1", lat=13.05, lng=80.25)
+
+    assert order.lat == 13.05
+    assert order.lng == 80.25
+    assert order.location_source == "manual"
+    assert order.geocode_confidence == 1.0
+    assert order.geocode_error is None
+
+
+def test_set_manual_location_promotes_a_failed_order_to_pending(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "bad address", "delivery_time": "10:00",
+         "lat": None, "lng": None, "geocode_error": "Address could not be geocoded"},
+    ])
+
+    order = crud.set_manual_location(db_session, batch.id, "1", lat=13.05, lng=80.25)
+
+    assert order.status == "pending"
+
+
+def test_set_manual_location_patches_the_live_route_stop_snapshot(db_session):
+    """The order is already on a route when corrected - the route's own
+    stop snapshot (what the map/driver app actually reads) must reflect
+    the corrected pin too, not just the underlying Order row."""
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "1 Main, Chennai", "delivery_time": "10:00",
+         "lat": 13.0, "lng": 80.2, "geocoded_address": "1 Main, Chennai"},
+    ])
+    route_plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, route_plan.id, "bike", order_ids=["1"])
+
+    crud.set_manual_location(db_session, batch.id, "1", lat=13.05, lng=80.25)
+
+    db_session.refresh(route)
+    stop = route.stops[0]
+    assert stop.order_snapshot["lat"] == 13.05
+    assert stop.order_snapshot["lng"] == 80.25
+    assert stop.order_snapshot["location_source"] == "manual"
+    # Nothing else about the stop was disturbed - no route-metrics
+    # recompute, no wholesale stop replacement (see the function's own
+    # docstring for why that matters on a route a driver may be mid-
+    # delivery on).
+    assert stop.delivery_status == "pending"
+
+
+def test_set_manual_location_raises_for_an_unknown_order(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
+
+    with pytest.raises(crud.OrderNotFoundError):
+        crud.set_manual_location(db_session, batch.id, "does-not-exist", lat=13.0, lng=80.2)
+
+
 def test_delete_route_plan(db_session):
     plan = crud.save_route_plan(db_session, None, {"route_count": 0, "routes": [], "pending_orders": [], "warnings": []}, 0, 0)
     assert crud.delete_route_plan(db_session, plan.id) is True

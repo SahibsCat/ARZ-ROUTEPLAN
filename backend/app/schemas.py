@@ -130,6 +130,11 @@ class CreateRouteRequest(BaseModel):
     order_ids: List[str] = []
 
 
+class ManualLocationRequest(BaseModel):
+    lat: float
+    lng: float
+
+
 class ManualAddressRequest(BaseModel):
     address: str
     customer_name: Optional[str] = None

@@ -99,6 +99,37 @@ def test_retry_geocode_with_zero_vehicles_returns_warning_not_silent_blank():
     assert any("no vehicles configured" in w.lower() for w in body["warnings"])
 
 
+def test_retry_geocode_never_overwrites_a_manually_verified_order():
+    """crud.set_manual_location's whole point (locationSource="manual")
+    would be defeated if this endpoint silently re-geocoded over it -
+    confirms the guard actually fires and geocode_single_address is never
+    even called for that order."""
+    call_count = {"n": 0}
+
+    def fake_geocode(address, db=None):
+        call_count["n"] += 1
+        return {"lat": 0.0, "lng": 0.0, "display_name": "Wherever this fake geocoder feels like"}
+
+    orders = [
+        {"order_id": "1", "customer_name": "Alice", "address": "A Street", "delivery_time": "10:00",
+         "lat": 13.05, "lng": 80.25, "location_source": "manual"},
+    ]
+    payload = {
+        "order_id": "1", "updated_address": "Some Other Address, Chennai",
+        "orders": orders, "available_cars": 1, "available_bikes": 1,
+    }
+
+    with mock.patch("app.geocode_service.geocode_single_address", fake_geocode):
+        response = client.post("/api/geocode/retry", json=payload)
+
+    assert response.status_code == 200
+    assert call_count["n"] == 0
+    updated = response.json()["orders"][0]
+    assert updated["lat"] == 13.05
+    assert updated["lng"] == 80.25
+    assert updated["location_source"] == "manual"
+
+
 def test_retry_geocode_with_vehicles_configured_produces_full_route_and_no_warning():
     fake_geocode = lambda address, db=None: {"lat": 12.99, "lng": 80.21, "display_name": "Fixed Address, Chennai"}
     fake_distance = lambda source, destination: {"distance_km": 2.0, "time_minutes": 5.0}
@@ -494,6 +525,33 @@ def test_delete_driver_history_endpoint_404s_for_an_unknown_route():
     # from DELETE /api/drivers/{driver_id}.
     response = client.delete("/api/drivers/history/999999")
     assert response.status_code == 404
+
+
+def test_set_manual_location_endpoint_marks_order_verified_and_persists():
+    fake_geocoded = [{
+        "order_id": "manual-loc-1", "customer_name": "Alice", "address": "1 Main Street, Chennai",
+        "delivery_time": "10:00", "lat": 13.0, "lng": 80.2, "geocoded_address": "1 Main Street, Chennai",
+    }]
+    with mock.patch("app.main.geocode_orders", return_value=(fake_geocoded, None)):
+        upload_response = client.post(
+            "/api/orders/upload",
+            files={"file": ("orders.xlsx", _build_test_workbook(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+    assert upload_response.status_code == 200
+
+    response = client.patch("/api/orders/manual-loc-1/location", json={"lat": 13.055, "lng": 80.255})
+
+    assert response.status_code == 200
+    order = response.json()["order"]
+    assert order["lat"] == 13.055
+    assert order["lng"] == 80.255
+    assert order["location_source"] == "manual"
+    assert order["geocode_confidence"] == 1.0
+
+
+def test_set_manual_location_endpoint_404s_for_an_unknown_order():
+    response = client.patch("/api/orders/no-such-order/location", json={"lat": 13.0, "lng": 80.2})
+    assert response.status_code in (400, 404)
 
 
 def test_manual_address_endpoint_works_with_no_active_session():

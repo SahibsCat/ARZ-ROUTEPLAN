@@ -62,6 +62,20 @@ class Order(Base):
     status = Column(String, default="pending", nullable=False)
     assigned_vehicle = Column(String, nullable=True)
     geocode_error = Column(String, nullable=True)
+    # 0-1 confidence the geocoder itself reported for lat/lng (see
+    # app/geocoding/base.py's GeocodeResult.confidence) - None for an order
+    # that predates this column, or one from a provider that never set one.
+    # Not the same thing as geocoding_cache.confidence: that one is tied to
+    # the ADDRESS TEXT (shared across every order with that exact address),
+    # this one is tied to the ORDER, so a manual correction (below) can set
+    # it to 1.0 for this order without touching the shared cache entry.
+    geocode_confidence = Column(Float, nullable=True)
+    # "geocoded" (default/normal - whatever the geocoding pipeline last
+    # produced) or "manual" (an admin dragged/placed this pin themselves -
+    # see crud.set_manual_location). The one thing every geocoding
+    # call site must check first: a "manual" order's lat/lng is never
+    # silently overwritten by a fresh auto-geocode again.
+    location_source = Column(String, nullable=True)
     # Which route (if any) this order currently sits on. Nullable - null
     # whenever status is pending/unassigned/failed. This plus
     # sequence_position is the single source of truth for route membership;

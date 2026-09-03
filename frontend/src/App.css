@@ -1894,6 +1894,15 @@ textarea.modal__input {
   line-height: 1.4;
   resize: vertical;
 }
+/* AdjustLocationModal's draggable-pin map (RouteWorkspace.jsx) - a fixed,
+   generous height so the map is actually usable for dragging a pin, not
+   squeezed down by the modal's own flex layout. */
+.adjust-location-map {
+  height: 320px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
 .modal__static-value { font-size: 0.9rem; color: var(--ink); padding: 0.4rem 0; font-weight: 700; }
 .modal__static-hint { font-size: 0.78rem; color: var(--ink-soft); font-weight: 400; }
 .modal__hint { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }

@@ -46,6 +46,7 @@ from app.schemas import (
     DriverLoginRequest,
     DriverStatusRequest,
     ManualAddressRequest,
+    ManualLocationRequest,
     MoveOrdersRequest,
     ReorderRouteRequest,
     ResetDriverPasswordRequest,
@@ -330,6 +331,15 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
         for order in orders_input:
             item = dict(order)
             if str(item.get("order_id")) == order_id:
+                if item.get("location_source") == "manual":
+                    # Never silently overwrite a manually-verified pin - see
+                    # crud.set_manual_location. In practice a manual order
+                    # already has real lat/lng and so is never actually in
+                    # the Failed Orders queue this endpoint retries from,
+                    # but this is the one place that could still clobber it
+                    # if that ever changed, so it's guarded explicitly.
+                    updated_orders.append(item)
+                    continue
                 target_address = updated_address if updated_address else str(item.get("address", ""))
                 item["address"] = target_address
                 res = geocode_single_address(target_address, db=db)
@@ -349,6 +359,7 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
                         db, batch_id, order_id, updated_address or None,
                         success=res is not None,
                         failure_reason=item.get("geocode_error"),
+                        confidence=item.get("confidence"),
                     )
                 except Exception:
                     traceback.print_exc()
@@ -697,6 +708,25 @@ def add_manual_address_endpoint(payload: ManualAddressRequest = Body(...), db: S
         "created_new_route": result["created_new_route"],
         "unassigned_total": crud.count_unassigned_orders(db, batch_id),
     }
+
+
+@app.patch("/api/orders/{order_id}/location")
+def set_manual_location_endpoint(
+    order_id: str, payload: ManualLocationRequest = Body(...), db: Session = Depends(get_db),
+):
+    """"Adjust Location" - an admin drags/places a pin themselves when the
+    geocoded one is wrong. Marks the order manually-verified (see
+    crud.set_manual_location); every geocoding call site in this app
+    already checks for that before ever touching an order's coordinates
+    again."""
+    batch_id = _current_batch_id(db)
+    if batch_id is None:
+        raise HTTPException(status_code=400, detail="No active upload session.")
+    try:
+        order = crud.set_manual_location(db, batch_id, order_id, lat=payload.lat, lng=payload.lng)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {"order": crud.order_summary(order)}
 
 
 @app.post("/api/routes/{route_id}/orders")

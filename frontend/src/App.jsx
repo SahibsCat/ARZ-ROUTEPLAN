@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
-import RouteWorkspace from './routes/RouteWorkspace';
+import RouteWorkspace, { AdjustLocationModal } from './routes/RouteWorkspace';
 import './App.css';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
 // modal) for the Drivers panel's create/edit/reset-password forms below,
@@ -2056,6 +2056,43 @@ function App() {
     }
   };
 
+  // "Adjust Location" - an admin drags a pin to the customer's real
+  // delivery point when the geocoded one looks wrong (Failed Orders ticket
+  // panel below). Marks the order manually-verified server-side (crud.
+  // set_manual_location) - never silently overwritten by a future
+  // auto-geocode again (see app/main.py's retry_single_geocode guard).
+  const [adjustLocationOrderId, setAdjustLocationOrderId] = useState(null);
+  const [isSettingManualLocation, setIsSettingManualLocation] = useState(false);
+  const handleSetManualLocation = async (orderId, lat, lng) => {
+    setIsSettingManualLocation(true);
+    try {
+      const res = await postJson(`/api/orders/${encodeURIComponent(orderId)}/location`, 'PATCH', { lat, lng });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Could not save this location. Please try again.'));
+      const data = await res.json();
+      const updatedOrder = data.order;
+      const idStr = String(orderId);
+
+      // Resolved - it now has a real, manually-verified location, so it
+      // comes out of the Failed Addresses queue.
+      setFailedOrders((prev) => prev.filter((o) => String(o.order_id) !== idStr));
+      setOrders((prev) => prev.map((o) => (String(o.order_id) === idStr ? { ...o, ...updatedOrder } : o)));
+      setSuccessfulOrders((prev) => {
+        const exists = prev.some((o) => String(o.order_id) === idStr);
+        return exists
+          ? prev.map((o) => (String(o.order_id) === idStr ? { ...o, ...updatedOrder } : o))
+          : [...prev, updatedOrder];
+      });
+      setStatus(`Location for order #${orderId} saved - marked as manually verified.`);
+      return true;
+    } catch (err) {
+      console.error('Set manual location failed:', err);
+      setWarnings([err.message || 'Could not save this location. Please try again.']);
+      return false;
+    } finally {
+      setIsSettingManualLocation(false);
+    }
+  };
+
   // Toggles a route's vehicle type (car <-> bike). Rejected server-side (and
   // the button disabled client-side) if the route currently carries more
   // stops than the new type's capacity.
@@ -2605,6 +2642,11 @@ function App() {
     : 0;
 
   const selectedFailedOrder = failedOrders.find((o) => String(o.order_id) === String(selectedFailedId)) || null;
+  const adjustLocationOrder = adjustLocationOrderId == null ? null : (
+    failedOrders.find((o) => String(o.order_id) === String(adjustLocationOrderId))
+    || orders.find((o) => String(o.order_id) === String(adjustLocationOrderId))
+    || { order_id: adjustLocationOrderId }
+  );
   const selectedFeedback = selectedFailedId != null ? retryFeedback[String(selectedFailedId)] : null;
   useEffect(() => {
     if (displayedFailedOrders.length === 0) {
@@ -3442,20 +3484,29 @@ function App() {
                           </div>
                         )}
 
-                        <button
-                          className="btn"
-                          onClick={() => handleRetrySingleOrder(selectedFailedOrder.order_id)}
-                          disabled={retryingOrderId === selectedFailedOrder.order_id}
-                        >
-                          {retryingOrderId === selectedFailedOrder.order_id ? (
-                            'Retrying…'
-                          ) : (
-                            <>
-                              <IconPin width={14} height={14} />
-                              Retry geocode
-                            </>
-                          )}
-                        </button>
+                        <div className="modal__footer" style={{ padding: 0, border: 'none' }}>
+                          <button
+                            className="btn"
+                            onClick={() => handleRetrySingleOrder(selectedFailedOrder.order_id)}
+                            disabled={retryingOrderId === selectedFailedOrder.order_id}
+                          >
+                            {retryingOrderId === selectedFailedOrder.order_id ? (
+                              'Retrying…'
+                            ) : (
+                              <>
+                                <IconPin width={14} height={14} />
+                                Retry geocode
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            onClick={() => setAdjustLocationOrderId(selectedFailedOrder.order_id)}
+                          >
+                            Adjust Location
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
@@ -3655,6 +3706,15 @@ function App() {
         onClose={() => setPaletteOpen(false)}
         groups={paletteGroups}
       />
+
+      {adjustLocationOrder && (
+        <AdjustLocationModal
+          order={adjustLocationOrder}
+          isSubmitting={isSettingManualLocation}
+          onConfirm={(lat, lng) => handleSetManualLocation(adjustLocationOrder.order_id, lat, lng)}
+          onClose={() => setAdjustLocationOrderId(null)}
+        />
+      )}
     </div>
   );
 }

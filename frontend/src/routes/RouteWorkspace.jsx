@@ -858,15 +858,24 @@ function FleetMap({
         }}
         options={{
           zoomControl: true, streetViewControl: false,
-          // Locked to satellite, no switcher - imagery is what makes the
-          // big numbered pins and route lines actually mean something
-          // (an admin can see the real driveway/building a pin sits on,
-          // not just an abstract road diagram), and mapTypeId is a plain
-          // option react-google-maps/api can safely reapply on every
-          // re-render (unlike renderingType above), so there's no risk of
-          // it silently reverting.
-          mapTypeControl: false,
-          mapTypeId: 'satellite',
+          // Defaults to Satellite (imagery is what makes the big numbered
+          // pins and route lines actually mean something - an admin can
+          // see the real driveway/building a pin sits on, not just an
+          // abstract road diagram) but with the native Map/Satellite
+          // toggle enabled so it's never locked - "Satellite" here maps to
+          // 'hybrid', not the bare 'satellite' type, since hybrid is
+          // satellite imagery WITH road/place-name labels drawn over it;
+          // bare 'satellite' has none at all. mapTypeId is a plain option
+          // react-google-maps/api can safely reapply on every re-render
+          // (unlike renderingType above), so there's no risk of it
+          // silently reverting to the wrong one.
+          mapTypeControl: true,
+          mapTypeControlOptions: {
+            mapTypeIds: ['roadmap', 'hybrid'],
+            style: window.google?.maps?.MapTypeControlStyle?.HORIZONTAL_BAR,
+            position: window.google?.maps?.ControlPosition?.TOP_RIGHT,
+          },
+          mapTypeId: 'hybrid',
           fullscreenControl: false, gestureHandling: 'greedy',
           backgroundColor: '#0b0f14',
         }}
@@ -1424,6 +1433,100 @@ function ManualAddressModal({ onConfirm, onClose, isSubmitting }) {
   );
 }
 
+// "Adjust Location" - when a geocoded pin is wrong (or just needs
+// confirming) and the admin knows exactly where the customer's delivery
+// point actually is. A single real, draggable google.maps.Marker on its
+// own focused map, not the multi-stop route map's plain <img> pins
+// (those don't support drag - see the route map's own comments on why
+// they're positioned <img> elements rather than Marker in the first
+// place). Saving marks the order "manually verified" (crud.
+// set_manual_location) - never silently overwritten by a future
+// auto-geocode again. Exported (named, alongside this file's default
+// export) so App.jsx's Failed Orders ticket panel can use it too.
+export function AdjustLocationModal({ order, onConfirm, onClose, isSubmitting }) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+  const hasStartingPoint = order?.lat != null && order?.lng != null;
+  // Mirrors backend/app/route_service.py's VELOCHERY_DEPOT - only used
+  // here as a starting point for an order with no location at all yet.
+  const [position, setPosition] = useState(
+    hasStartingPoint ? { lat: order.lat, lng: order.lng } : { lat: 12.989953044885272, lng: 80.21804157624011 }
+  );
+
+  const handleConfirm = async () => {
+    const ok = await onConfirm(position.lat, position.lng);
+    if (ok) onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__header">
+          <h3>Adjust Location</h3>
+          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
+        </div>
+
+        <div className="modal__body">
+          <p className="modal__hint">
+            Drag the pin to the customer's exact delivery point{order?.order_id ? ` for order #${order.order_id}` : ''}.
+            This becomes the permanent, manually-verified location - it will never be silently overwritten by a
+            future geocode.
+          </p>
+          {!hasStartingPoint && (
+            <p className="modal__hint">
+              This order has no location yet, so the map opens centered on the depot - drag the pin to where it
+              should actually be.
+            </p>
+          )}
+
+          <div className="adjust-location-map">
+            {loadError ? (
+              <div className="empty-state">Could not load Google Maps.</div>
+            ) : !isLoaded ? (
+              <div className="empty-state">Loading map…</div>
+            ) : (
+              <GoogleMap
+                mapContainerStyle={{ width: '100%', height: '100%' }}
+                center={position}
+                zoom={17}
+                options={{
+                  streetViewControl: false, fullscreenControl: false,
+                  mapTypeControl: true,
+                  mapTypeControlOptions: {
+                    mapTypeIds: ['roadmap', 'hybrid'],
+                    style: window.google?.maps?.MapTypeControlStyle?.HORIZONTAL_BAR,
+                    position: window.google?.maps?.ControlPosition?.TOP_RIGHT,
+                  },
+                }}
+              >
+                <Marker
+                  position={position}
+                  draggable
+                  onDragEnd={(e) => setPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
+                />
+              </GoogleMap>
+            )}
+          </div>
+
+          <div className="modal__meta">
+            <span>Lat: <strong className="mono-num">{position.lat.toFixed(6)}</strong></span>
+            <span>Lng: <strong className="mono-num">{position.lng.toFixed(6)}</strong></span>
+          </div>
+        </div>
+
+        <div className="modal__footer">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn--primary" disabled={isSubmitting} onClick={handleConfirm}>
+            {isSubmitting ? 'Saving…' : 'Save Location'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TRACKING_STATUS_LABEL = {
   not_started: { emoji: '⚪', text: 'Not Started' },
   live: { emoji: '🟢', text: 'Live' },
@@ -1736,13 +1839,21 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
               onLoad={(map) => { mapRef.current = map; }}
               onDragStart={() => setAutoFollow(false)}
               options={{
-                // Satellite, locked (no switcher) - same reasoning as
-                // FleetMap's own map: seeing the real ground under a live
-                // driver is the actual point of a live-tracking view, and
-                // a custom `styles` array (the old DARK_MAP_STYLE) is
-                // silently ignored on satellite/hybrid map types anyway.
-                mapTypeId: 'satellite',
+                // Defaults to Satellite (well, 'hybrid' - satellite
+                // imagery WITH road/place-name labels; bare 'satellite'
+                // draws none at all) for the same reason as FleetMap's own
+                // map: seeing the real ground under a live driver is the
+                // actual point of a live-tracking view. disableDefaultUI
+                // strips every control by default, so mapTypeControl below
+                // is an explicit override, same as zoomControl already is.
+                mapTypeId: 'hybrid',
                 disableDefaultUI: true, zoomControl: true,
+                mapTypeControl: true,
+                mapTypeControlOptions: {
+                  mapTypeIds: ['roadmap', 'hybrid'],
+                  style: window.google?.maps?.MapTypeControlStyle?.HORIZONTAL_BAR,
+                  position: window.google?.maps?.ControlPosition?.TOP_RIGHT,
+                },
                 gestureHandling: 'greedy', backgroundColor: '#0b0f14',
               }}
             >
