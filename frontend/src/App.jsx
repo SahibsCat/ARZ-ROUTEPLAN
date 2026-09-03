@@ -3288,6 +3288,7 @@ function App() {
             onDownloadRoute={handleDownloadRoute}
             onMoveOrders={handleMoveOrdersBetweenRoutes}
             onRemoveManualExtra={handleRemoveManualExtra}
+            onAdjustLocation={setAdjustLocationOrderId}
             requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
             requestedView={activeNav === 'live-tracking' ? 'map' : undefined}
             requestedLiveTracking={activeNav === 'live-tracking'}

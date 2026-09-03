@@ -2550,7 +2550,7 @@ function RouteDetail({
 // Unassigned Orders panel (unchanged workflow, out of scope for this pass).
 // --------------------------------------------------------------------------
 
-function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFull, onAssignOrders, onCreateRoute, isCreatingRoute }) {
+function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFull, onAssignOrders, onCreateRoute, isCreatingRoute, onAdjustLocation }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState([]);
   const [bulkTarget, setBulkTarget] = useState('');
@@ -2640,6 +2640,24 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
                   <span className="unassigned-row__prev">Previously: {order.previous_route_name} ({order.previous_vehicle_type})</span>
                 )}
               </div>
+              {onAdjustLocation && (
+                // An unassigned order still has SOME lat/lng (that's why
+                // it's not in Failed Addresses - it geocoded "successfully")
+                // but that pin can still be wrong, especially for an order
+                // created before a geocoding-accuracy fix - deploying a fix
+                // never retroactively re-checks already-stored coordinates,
+                // only new geocode attempts. Adjust Location was previously
+                // reachable only from the Failed Orders panel, leaving no
+                // way to correct a wrong-but-present pin sitting here.
+                <button
+                  type="button"
+                  className="btn btn--ghost stop-move"
+                  title="Move this order's pin to the correct spot"
+                  onClick={() => onAdjustLocation(order.order_id)}
+                >
+                  Adjust Location
+                </button>
+              )}
               <select
                 className="stop-move"
                 value=""
@@ -2672,7 +2690,7 @@ export default function RouteWorkspace({
   routes, pendingOrders, isProcessing, capacityFor, maxCapacityFor, isRouteFull,
   isCreatingRoute, isAddingManualAddress, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
   onCreateRoute, onAddManualAddress, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
-  onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra,
+  onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra, onAdjustLocation,
   requestedTab, requestedView, requestedLiveTracking, navCommandSeq,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
   onViewChange,
@@ -2862,6 +2880,7 @@ export default function RouteWorkspace({
           isRouteFull={isRouteFull}
           onAssignOrders={onAssignOrders}
           onCreateRoute={onCreateRoute}
+          onAdjustLocation={onAdjustLocation}
           isCreatingRoute={isCreatingRoute}
         />
       ) : routes.length === 0 ? (
