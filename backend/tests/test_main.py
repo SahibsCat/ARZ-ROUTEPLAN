@@ -494,3 +494,35 @@ def test_delete_driver_history_endpoint_404s_for_an_unknown_route():
     # from DELETE /api/drivers/{driver_id}.
     response = client.delete("/api/drivers/history/999999")
     assert response.status_code == 404
+
+
+def test_manual_address_endpoint_works_with_no_active_session():
+    """Unlike create_route_endpoint, this one must NOT require an Excel
+    upload first - typing in a single address is exactly the case where
+    there may never be one. Explicitly clears whatever session an earlier
+    test in this file left behind first, so this genuinely starts from
+    "nothing uploaded yet" rather than relying on file-level test order."""
+    dashboard = client.get("/api/dashboard").json()
+    if dashboard.get("batch_id") is not None:
+        client.delete(f"/api/history/{dashboard['batch_id']}")
+    assert client.get("/api/dashboard").json()["batch_id"] is None
+
+    fake_geocode = {
+        "address": "1 Manual St, Chennai", "lat": 13.05, "lng": 80.24,
+        "display_name": "1 Manual St, Chennai, Tamil Nadu, India", "confidence": 0.9,
+    }
+    with mock.patch("app.geocode_service.geocode_address", return_value=fake_geocode):
+        response = client.post("/api/routes/manual-address", json={
+            "address": "1 Manual St, Chennai", "customer_name": "Walk-in", "vehicle_type": "bike",
+        })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created_new_route"] is True
+    assert len(body["route"]["orders"]) == 1
+
+    # The batch created on the fly is now the current session - the next
+    # dashboard load sees it, same as after a real Excel upload.
+    dashboard_after = client.get("/api/dashboard").json()
+    assert dashboard_after["batch_id"] is not None
+    assert dashboard_after["file_name"] == "Manual Entries"

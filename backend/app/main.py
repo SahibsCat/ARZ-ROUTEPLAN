@@ -667,10 +667,19 @@ def add_manual_address_endpoint(payload: ManualAddressRequest = Body(...), db: S
     phone-in order or a customer added after the day's upload) - geocodes
     the address, then adds it to an existing same-area route with room, or
     creates a new one (payload.vehicle_type) if none qualifies. See
-    crud.add_manual_address for the matching logic."""
+    crud.add_manual_address for the matching logic.
+
+    Unlike create_route_endpoint/add_orders_to_route_endpoint, this one
+    doesn't require an Excel upload to already exist - typing in one
+    address is exactly the case where there may never be one. A fresh,
+    empty batch is created on first use (same shape any Excel upload gets,
+    just with 0 rows) and becomes the current session, so this only ever
+    creates one: the very next call already finds it via _current_batch_id.
+    """
     batch_id = _current_batch_id(db)
     if batch_id is None:
-        raise HTTPException(status_code=400, detail="No active upload session - upload an Excel file first.")
+        batch = crud.save_upload_batch(db, "Manual Entries", 0, True, [], [])
+        batch_id = batch.id
     try:
         result = crud.add_manual_address(
             db, batch_id,
