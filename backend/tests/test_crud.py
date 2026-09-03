@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import crud
 from app.database import Base
+from app.models import Order
 
 
 @pytest.fixture
@@ -218,6 +219,48 @@ def test_add_manual_address_creates_new_route_when_nothing_matches(db_session):
     assert result["route"].stops[0].order_id == result["order_id"]
 
 
+def test_add_manual_address_puts_the_order_on_a_route_not_in_unassigned(db_session):
+    """The order this creates is placed on a route in the same write - it
+    must never show up in the Unassigned Orders pool afterwards (reported
+    bug: it did, because batch.total_orders/status bookkeeping around this
+    call was incomplete)."""
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
+
+    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+        result = crud.add_manual_address(
+            db_session, batch.id,
+            address="42 Fake St, Adyar, Chennai", customer_name="Walk-in Customer",
+            delivery_time=None, fallback_vehicle_type="bike",
+        )
+
+    order = db_session.query(Order).filter(Order.order_id == result["order_id"]).first()
+    assert order.status == "assigned"
+    assert order.route_id == result["route"].id
+
+    rows, total = crud.list_unassigned_orders(db_session, batch_id=batch.id)
+    assert total == 0
+    assert result["order_id"] not in [r.order_id for r in rows]
+
+
+def test_add_manual_address_increments_the_batch_order_count(db_session):
+    # batch.total_orders is set once from the sheet's row count at upload
+    # time (0 here, an empty upload) - a manual add never touched it after
+    # that, so "N orders" labels stayed off by one for every hand-typed
+    # address even though it was routed fine.
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
+    assert batch.total_orders == 0
+
+    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+        crud.add_manual_address(
+            db_session, batch.id,
+            address="42 Fake St, Adyar, Chennai", customer_name=None,
+            delivery_time=None, fallback_vehicle_type="bike",
+        )
+
+    db_session.refresh(batch)
+    assert batch.total_orders == 1
+
+
 def test_add_manual_address_joins_existing_route_in_the_same_area_with_room(db_session):
     """An existing route already serving Adyar, with room left - the new
     address should land there instead of spawning a new route."""
@@ -356,6 +399,62 @@ def test_record_retry_attempt_resolves_failed_address_and_updates_order(db_sessi
     assert order.status == "pending"
     assert order.address == "Fixed Addr, Chennai"
     assert order.geocode_error is None
+
+
+def test_record_retry_attempt_stores_a_suggested_location_on_a_flagged_retry(db_session):
+    # A retry that comes back flagged (not hard-failed) still carries a
+    # best-guess location - see geocode_address_detailed - which must
+    # survive onto the Order row so Adjust Location can use it as a
+    # starting pin instead of the depot.
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "Bad Addr", "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "not found"},
+    ])
+
+    crud.record_retry_attempt(
+        db_session, batch.id, "1", "Some St, Chennai", success=False,
+        failure_reason="Needs Manual Verification - low confidence match (confidence: 0.30)",
+        confidence=0.3, suggested_lat=13.02, suggested_lng=80.21,
+    )
+
+    db_session.refresh(batch)
+    order = batch.orders[0]
+    assert order.status == "failed"
+    assert order.suggested_lat == 13.02
+    assert order.suggested_lng == 80.21
+    assert order.geocode_confidence == 0.3
+
+
+def test_record_retry_attempt_clears_the_suggestion_on_success(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "Bad Addr", "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "not found"},
+    ])
+    crud.record_retry_attempt(
+        db_session, batch.id, "1", None, success=False,
+        confidence=0.3, suggested_lat=13.02, suggested_lng=80.21,
+    )
+
+    crud.record_retry_attempt(db_session, batch.id, "1", "Fixed Addr, Chennai", success=True, confidence=0.9)
+
+    db_session.refresh(batch)
+    order = batch.orders[0]
+    assert order.suggested_lat is None
+    assert order.suggested_lng is None
+
+
+def test_set_manual_location_clears_any_leftover_suggestion(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "bad address", "delivery_time": "10:00",
+         "lat": None, "lng": None, "geocode_error": "not found"},
+    ])
+    crud.record_retry_attempt(
+        db_session, batch.id, "1", None, success=False,
+        confidence=0.3, suggested_lat=13.02, suggested_lng=80.21,
+    )
+
+    order = crud.set_manual_location(db_session, batch.id, "1", lat=13.05, lng=80.25)
+
+    assert order.suggested_lat is None
+    assert order.suggested_lng is None
 
 
 def test_geocoding_cache_round_trips(db_session):

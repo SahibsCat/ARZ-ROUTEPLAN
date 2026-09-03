@@ -62,6 +62,16 @@ class Order(Base):
     status = Column(String, default="pending", nullable=False)
     assigned_vehicle = Column(String, nullable=True)
     geocode_error = Column(String, nullable=True)
+    # A best-guess location the geocoder found for a FAILED/flagged order -
+    # e.g. it resolved the street but couldn't confirm the house number.
+    # Never treated as the order's real lat/lng (routing/maps use lat/lng
+    # only, which stay None until a human confirms) - purely a starting pin
+    # for Adjust Location, so correcting a flagged address means dragging a
+    # pin that's probably already close, not placing one from scratch on a
+    # street the admin has to go find themselves. See
+    # geocode_service._interpret_result / geocode_address_detailed.
+    suggested_lat = Column(Float, nullable=True)
+    suggested_lng = Column(Float, nullable=True)
     # 0-1 confidence the geocoder itself reported for lat/lng (see
     # app/geocoding/base.py's GeocodeResult.confidence) - None for an order
     # that predates this column, or one from a provider that never set one.

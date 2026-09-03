@@ -343,23 +343,35 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
                 target_address = updated_address if updated_address else str(item.get("address", ""))
                 item["address"] = target_address
                 res = geocode_single_address(target_address, db=db)
-                if res:
+                succeeded = res is not None and res.get("lat") is not None
+                if succeeded:
                     item["lat"] = res["lat"]
                     item["lng"] = res["lng"]
                     item["geocoded_address"] = res["display_name"]
                     item["confidence"] = res.get("confidence")
                     item.pop("geocode_error", None)
+                    item.pop("suggested_lat", None)
+                    item.pop("suggested_lng", None)
                 else:
                     item["lat"] = None
                     item["lng"] = None
-                    item["geocode_error"] = "Address could not be geocoded"
+                    item["geocode_error"] = (res or {}).get("geocode_error", "Address could not be geocoded")
+                    # A flagged (not hard-failed) retry still carries a
+                    # best-guess location - see geocode_address_detailed -
+                    # so Adjust Location can open centered there instead of
+                    # on the depot. Never used as the order's real lat/lng.
+                    item["suggested_lat"] = (res or {}).get("suggested_lat")
+                    item["suggested_lng"] = (res or {}).get("suggested_lng")
+                    item["confidence"] = (res or {}).get("confidence")
 
                 try:
                     crud.record_retry_attempt(
                         db, batch_id, order_id, updated_address or None,
-                        success=res is not None,
+                        success=succeeded,
                         failure_reason=item.get("geocode_error"),
                         confidence=item.get("confidence"),
+                        suggested_lat=item.get("suggested_lat"),
+                        suggested_lng=item.get("suggested_lng"),
                     )
                 except Exception:
                     traceback.print_exc()
@@ -455,10 +467,14 @@ def get_dashboard(db: Session = Depends(get_db)):
         return DashboardResponse(has_data=False, settings=settings_response)
 
     orders = [crud.order_summary(o) for o in batch.orders] if batch else []
-    failed_orders = (
-        [crud.failed_address_summary(f) for f in crud.list_failed_addresses(db, batch_id=batch.id)]
-        if batch else []
-    )
+    if batch:
+        orders_by_id = {o.order_id: o for o in batch.orders}
+        failed_orders = [
+            crud.failed_address_summary(f, order=orders_by_id.get(f.order_id))
+            for f in crud.list_failed_addresses(db, batch_id=batch.id)
+        ]
+    else:
+        failed_orders = []
     plan_summary = crud.route_plan_summary(route_plan) if route_plan else {
         "routes": [], "pending_orders": [], "warnings": [], "plan_id": None,
         "is_saved": False, "label": None,

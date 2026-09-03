@@ -8,7 +8,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.geocoding.base import GeocodeResult
-from app.geocode_service import clean_address, geocode_address, geocode_orders, geocode_single_address
+from app.geocode_service import (
+    clean_address,
+    geocode_address,
+    geocode_address_detailed,
+    geocode_orders,
+    geocode_single_address,
+)
 
 
 class _FakeGeocoder:
@@ -72,6 +78,58 @@ def test_geocode_orders_marks_unresolved_address_as_failed(monkeypatch):
     assert result[0]["lat"] is None
     assert result[0]["lng"] is None
     assert "geocode_error" in result[0]
+
+
+def test_geocode_orders_keeps_a_flagged_matchs_coordinates_as_a_suggestion(monkeypatch):
+    # A flagged (not hard-failed) result still found SOMETHING real - most
+    # often the correct street, just without a confirmed house number.
+    # lat/lng must stay None (never silently trusted as the order's real
+    # location) but suggested_lat/suggested_lng carry it through so Adjust
+    # Location can offer it as a starting pin instead of nothing at all.
+    flagged = GeocodeResult(
+        lat=13.02, lng=80.21, formatted_address="Some St, Chennai",
+        status="NEEDS_MANUAL_VERIFICATION", provider="google", confidence=0.3,
+    )
+    fake_geocoder = _FakeGeocoder({"12 Main Street, Chennai, India": flagged})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    orders = [{"order_id": "1", "customer_name": "A", "address": "12 Main Street"}]
+    result, _ = geocode_orders(orders)
+
+    assert result[0]["lat"] is None
+    assert result[0]["lng"] is None
+    assert result[0]["suggested_lat"] == 13.02
+    assert result[0]["suggested_lng"] == 80.21
+    assert result[0]["confidence"] == 0.3
+
+
+def test_geocode_address_detailed_returns_suggestion_for_a_flagged_match(monkeypatch):
+    flagged = GeocodeResult(
+        lat=13.02, lng=80.21, formatted_address="Some St, Chennai",
+        status="NEEDS_MANUAL_VERIFICATION", provider="google", confidence=0.3,
+    )
+    fake_geocoder = _FakeGeocoder({"12 Main Street, Chennai, India": flagged})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    result = geocode_address_detailed("12 Main Street")
+
+    assert result["lat"] is None
+    assert result["suggested_lat"] == 13.02
+    assert result["suggested_lng"] == 80.21
+    assert result["confidence"] == 0.3
+    assert "Needs Manual Verification" in result["geocode_error"]
+
+    # geocode_address() (used where a hard pass/fail is actually wanted -
+    # e.g. crud.add_manual_address) keeps its existing plain-None contract;
+    # only the _detailed variant changed.
+    assert geocode_address("12 Main Street") is None
+
+
+def test_geocode_address_detailed_returns_none_for_a_true_zero_results(monkeypatch):
+    fake_geocoder = _FakeGeocoder({})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    assert geocode_address_detailed("Nonexistent Place, Chennai") is None
 
 
 def test_geocode_orders_skips_orders_that_already_have_coordinates(monkeypatch):

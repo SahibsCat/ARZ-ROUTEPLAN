@@ -1490,10 +1490,23 @@ export function AdjustLocationModal({ order, onConfirm, onClose, isSubmitting })
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
   const hasStartingPoint = order?.lat != null && order?.lng != null;
-  // Mirrors backend/app/route_service.py's VELOCHERY_DEPOT - only used
-  // here as a starting point for an order with no location at all yet.
+  // A flagged order still usually carries a suggested_lat/suggested_lng -
+  // the geocoder found the right street, just couldn't confirm the exact
+  // house - so Adjust Location opens centered there (a probably-close
+  // guess to drag from) instead of blank/depot-centered, which used to
+  // mean starting from scratch on whatever street the address actually
+  // was, city-wide. Never used as-is: still just a starting position for
+  // the draggable pin, same as any other case here.
+  const hasSuggestion = order?.suggested_lat != null && order?.suggested_lng != null;
+  // Mirrors backend/app/route_service.py's VELOCHERY_DEPOT - last-resort
+  // starting point only when there's neither a confirmed nor a suggested
+  // location at all (a hard geocode failure with nothing to go on).
   const [position, setPosition] = useState(
-    hasStartingPoint ? { lat: order.lat, lng: order.lng } : { lat: 12.989953044885272, lng: 80.21804157624011 }
+    hasStartingPoint
+      ? { lat: order.lat, lng: order.lng }
+      : hasSuggestion
+      ? { lat: order.suggested_lat, lng: order.suggested_lng }
+      : { lat: 12.989953044885272, lng: 80.21804157624011 }
   );
 
   const handleConfirm = async () => {
@@ -1515,7 +1528,13 @@ export function AdjustLocationModal({ order, onConfirm, onClose, isSubmitting })
             This becomes the permanent, manually-verified location - it will never be silently overwritten by a
             future geocode.
           </p>
-          {!hasStartingPoint && (
+          {!hasStartingPoint && hasSuggestion && (
+            <p className="modal__hint">
+              This is Google's best guess for the street - it found the road but couldn't confirm the exact house/
+              door number, so the pin may be off by a bit. Drag it to the exact delivery point.
+            </p>
+          )}
+          {!hasStartingPoint && !hasSuggestion && (
             <p className="modal__hint">
               This order has no location yet, so the map opens centered on the depot - drag the pin to where it
               should actually be.

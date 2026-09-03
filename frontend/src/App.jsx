@@ -2041,6 +2041,13 @@ function App() {
       const data = await res.json();
       patchRouteInState(data.route);
       setTotalOrders((t) => t + 1);
+      // The new address always lands directly on a route (see
+      // crud.add_manual_address) - never in Unassigned - but every other
+      // mutation in this file re-syncs pendingOrders from the server after
+      // it writes, and this was the one exception. Harmless when nothing
+      // changed there; guards against it ever drifting out of sync with
+      // what the backend actually did.
+      refreshUnassignedOrders();
       setStatus(
         data.created_new_route
           ? `Created ${data.route.route_name} for this address (no existing route with room in that area).`

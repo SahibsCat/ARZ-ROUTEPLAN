@@ -235,6 +235,8 @@ def save_upload_batch(
             formatted_address=order.get("geocoded_address"),
             geocode_error=order.get("geocode_error"),
             geocode_confidence=order.get("confidence"),
+            suggested_lat=order.get("suggested_lat"),
+            suggested_lng=order.get("suggested_lng"),
             location_source="geocoded" if has_coords else None,
             status="pending" if has_coords else "failed",
             extra_fields=order.get("extra_fields") or {},
@@ -914,10 +916,22 @@ def add_manual_address(
         lat=geocoded["lat"],
         lng=geocoded["lng"],
         delivery_slot=(delivery_time or "").strip() or None,
+        geocode_confidence=geocoded.get("confidence"),
+        location_source="geocoded",
         status="pending",
         extra_fields={},
     )
     db.add(order)
+
+    # save_upload_batch sets this from the sheet's row count at upload time -
+    # a manual add never touched it, so the header/dashboard order count
+    # (and "Manual Entries · N orders" style labels) silently stayed off by
+    # one for every hand-typed address, even though the order itself was
+    # created and routed correctly.
+    batch = db.query(UploadBatch).filter(UploadBatch.id == batch_id).first()
+    if batch is not None:
+        batch.total_orders = (batch.total_orders or 0) + 1
+
     db.flush()
 
     route_plan = get_or_create_draft_route_plan(db, batch_id)
@@ -972,6 +986,8 @@ def set_manual_location(
     order.geocode_confidence = 1.0
     order.location_source = "manual"
     order.geocode_error = None
+    order.suggested_lat = None
+    order.suggested_lng = None
     if order.status == "failed":
         order.status = "pending"
 
@@ -1284,6 +1300,8 @@ def record_retry_attempt(
     success: bool,
     failure_reason: Optional[str] = None,
     confidence: Optional[float] = None,
+    suggested_lat: Optional[float] = None,
+    suggested_lng: Optional[float] = None,
 ) -> None:
     """Called after every retry (success or failure) so retry_count and
     status stay accurate. On success the row is marked resolved rather than
@@ -1312,9 +1330,14 @@ def record_retry_attempt(
                 order.geocode_error = None
                 order.geocode_confidence = confidence
                 order.location_source = "geocoded"
+                order.suggested_lat = None
+                order.suggested_lng = None
             else:
                 order.status = "failed"
                 order.geocode_error = failure_reason
+                order.geocode_confidence = confidence
+                order.suggested_lat = suggested_lat
+                order.suggested_lng = suggested_lng
 
     db.commit()
 
@@ -1401,6 +1424,12 @@ def order_summary(order: Order) -> Dict[str, object]:
         "geocoded_address": order.formatted_address,
         "geocode_error": order.geocode_error,
         "geocode_confidence": order.geocode_confidence,
+        # A best-guess starting pin for a flagged/failed order only - never
+        # the order's real location (that stays lat/lng=None until a human
+        # confirms). Lets Adjust Location open centered near the actual
+        # street instead of the depot. See models.Order.suggested_lat.
+        "suggested_lat": order.suggested_lat,
+        "suggested_lng": order.suggested_lng,
         # "manual" (admin-corrected pin - see set_manual_location) or
         # "geocoded" (whatever the geocoding pipeline last produced) -
         # None for an order from before this field existed. Surfaced so the
@@ -1416,7 +1445,13 @@ def order_summary(order: Order) -> Dict[str, object]:
     return data
 
 
-def failed_address_summary(failed: FailedAddress) -> Dict[str, object]:
+def failed_address_summary(failed: FailedAddress, order: Optional[Order] = None) -> Dict[str, object]:
+    """`order` is the matching Order row (same batch_id/order_id), passed in
+    by the caller rather than queried here - FailedAddress itself has no
+    suggested_lat/suggested_lng of its own (those live on Order, see
+    models.Order.suggested_lat), and every real caller already has the
+    batch's Order rows loaded (see /api/dashboard), so this avoids an
+    extra query per failed row."""
     return {
         "order_id": failed.order_id,
         "customer_name": failed.customer_name,
@@ -1426,6 +1461,8 @@ def failed_address_summary(failed: FailedAddress) -> Dict[str, object]:
         "geocode_error": failed.failure_reason,
         "retry_count": failed.retry_count,
         "status": failed.status,
+        "suggested_lat": order.suggested_lat if order is not None else None,
+        "suggested_lng": order.suggested_lng if order is not None else None,
     }
 
 

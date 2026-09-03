@@ -101,7 +101,17 @@ def _interpret_result(result: Optional[GeocodeResult]) -> Dict[str, object]:
     variant match, Mapbox's low-relevance results) is treated the same way
     a hard failure is - lat/lng stay empty and it's surfaced through the
     existing Failed Orders / retry workflow, rather than silently accepting
-    an imprecise guess."""
+    an imprecise guess as the order's real location.
+
+    A flagged (not hard-failed) result still carries real coordinates the
+    provider found SOMETHING at - most often the correct street/area, just
+    without a confirmed house number ("found the street, not the house").
+    Those are kept separately as suggested_lat/suggested_lng/confidence -
+    never used as the order's actual location, but given to Adjust Location
+    as a starting pin so the admin corrects a probably-close guess instead
+    of placing a pin from scratch on a street they have to go find
+    themselves (previously: the map opened centered on the depot, wherever
+    in the city the real address happened to be)."""
     if result is None:
         return {"lat": None, "lng": None, "geocode_error": "Address could not be geocoded"}
 
@@ -113,6 +123,9 @@ def _interpret_result(result: Optional[GeocodeResult]) -> Dict[str, object]:
             "lat": None,
             "lng": None,
             "geocode_error": f"Needs Manual Verification - low confidence match{confidence_note}",
+            "suggested_lat": result.lat,
+            "suggested_lng": result.lng,
+            "confidence": result.confidence,
         }
 
     return {
@@ -153,6 +166,54 @@ def geocode_address(
         # Google's is a derived heuristic (location_type/types/partial_match
         # - see google_geocoder._score_result), Mapbox/Nominatim's are the
         # provider's own relevance score - shown as-is either way.
+        "confidence": result.confidence,
+    }
+
+
+def geocode_address_detailed(
+    address: str,
+    db: Optional[Session] = None,
+) -> Optional[Dict[str, object]]:
+    """Same lookup as geocode_address(), but never collapses a flagged
+    (NEEDS_MANUAL_VERIFICATION) match down to a bare None - callers that
+    need to offer the admin a starting pin for Adjust Location (the retry-
+    a-Failed-Order flow) use this instead of geocode_address() so a
+    genuinely-unresolvable address (None here too - clean_address emptied
+    it out, or the provider found literally nothing) still reads
+    differently from "found the street, just not confirmed house-number-
+    precise" (suggested_lat/suggested_lng/confidence set, lat/lng still
+    None - never treated as the order's real location, see
+    _interpret_result's docstring for why)."""
+    cleaned = clean_address(address)
+    if not cleaned:
+        return None
+
+    print(f"Geocoding: original='{address}' normalized='{cleaned}'")
+
+    with _build_geocoder() as geocoder:
+        result = _lookup_or_geocode(geocoder, cleaned, db)
+
+    if result is None:
+        return None
+
+    if result.status != STATUS_OK:
+        print(f"Geocoding: '{cleaned}' flagged ({result.status}, confidence={result.confidence})")
+        return {
+            "address": cleaned,
+            "lat": None,
+            "lng": None,
+            "geocode_error": f"Needs Manual Verification - low confidence match"
+            + (f" (confidence: {result.confidence:.2f})" if result.confidence is not None else ""),
+            "suggested_lat": result.lat,
+            "suggested_lng": result.lng,
+            "confidence": result.confidence,
+        }
+
+    return {
+        "address": cleaned,
+        "lat": result.lat,
+        "lng": result.lng,
+        "display_name": result.formatted_address,
         "confidence": result.confidence,
     }
 
@@ -305,4 +366,8 @@ def geocode_orders(
 
 
 def geocode_single_address(address: str, db: Optional[Session] = None) -> Optional[Dict[str, object]]:
-    return geocode_address(address, db=db)
+    """Used by the Failed Orders "Retry" flow - geocode_address_detailed(),
+    not geocode_address(), so a flagged (not hard-failed) retry still
+    surfaces suggested_lat/suggested_lng for Adjust Location instead of
+    collapsing to a bare failure. See geocode_address_detailed's docstring."""
+    return geocode_address_detailed(address, db=db)
