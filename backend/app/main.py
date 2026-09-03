@@ -324,7 +324,7 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
     batch_id = int(raw_batch_id) if raw_batch_id is not None else None
 
     try:
-        from app.geocode_service import geocode_single_address
+        from app.geocode_service import geocode_single_address, invalidate_cached_geocode
 
         updated_orders = []
 
@@ -342,6 +342,15 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
                     continue
                 target_address = updated_address if updated_address else str(item.get("address", ""))
                 item["address"] = target_address
+                # "Retry" means try again for real - the cache has no way to
+                # know a geocoding-accuracy fix landed since this exact
+                # address text was last (possibly wrongly) resolved, so
+                # without this a retry on unchanged address text would just
+                # silently replay the same stale cached result forever
+                # rather than actually asking the provider again. Always
+                # invalidated, edited address or not - even a same-address
+                # retry should count as a fresh attempt.
+                invalidate_cached_geocode(target_address, db)
                 res = geocode_single_address(target_address, db=db)
                 succeeded = res is not None and res.get("lat") is not None
                 if succeeded:

@@ -14,6 +14,7 @@ from app.geocode_service import (
     geocode_address_detailed,
     geocode_orders,
     geocode_single_address,
+    invalidate_cached_geocode,
 )
 
 
@@ -349,3 +350,33 @@ def test_geocode_orders_reuses_db_cache_across_calls_without_hitting_provider(mo
     assert len(fake_geocoder.calls) == 1  # unchanged - served from cache
     assert result[0]["lat"] == 12.9
     assert result[0]["lng"] == 80.2
+
+
+def test_invalidate_cached_geocode_forces_a_real_relookup(monkeypatch, db_session):
+    # The exact scenario this exists for: an address was successfully
+    # geocoded once (cached), a validation rule has since gotten stricter,
+    # and a retry/re-add on the SAME address text must not just replay the
+    # old cached answer - it has to actually ask the provider again.
+    stale_result = GeocodeResult(lat=12.9, lng=80.2, formatted_address="Old Wrong Match, Chennai", status="OK", provider="google")
+    fresh_result = GeocodeResult(lat=13.5, lng=80.9, formatted_address="Correct Match, Chennai", status="OK", provider="google")
+    fake_geocoder = _FakeGeocoder({"12 Main Street, Chennai, India": stale_result})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+
+    first = geocode_address("12 Main Street", db=db_session)
+    assert first["lat"] == 12.9
+    assert len(fake_geocoder.calls) == 1
+
+    # Without invalidating, a second call is served straight from cache -
+    # confirms the premise before proving the fix.
+    second = geocode_address("12 Main Street", db=db_session)
+    assert second["lat"] == 12.9
+    assert len(fake_geocoder.calls) == 1
+
+    assert invalidate_cached_geocode("12 Main Street", db_session) is True
+
+    # Now that the stale cache entry is gone, swap in what the provider
+    # would return today and confirm the next lookup actually reaches it.
+    fake_geocoder._results_by_address["12 Main Street, Chennai, India"] = fresh_result
+    third = geocode_address("12 Main Street", db=db_session)
+    assert third["lat"] == 13.5
+    assert len(fake_geocoder.calls) == 2

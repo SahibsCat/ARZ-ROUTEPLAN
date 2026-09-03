@@ -317,6 +317,47 @@ def test_add_manual_address_raises_on_failed_geocode(db_session):
             )
 
 
+def test_add_manual_address_ignores_a_stale_cache_entry(db_session):
+    # A STATUS_OK result cached under this exact address text before a
+    # geocoding-accuracy fix landed must not silently win over asking the
+    # provider again - typing an address in by hand is a deliberate,
+    # single-address action (same reasoning as the Failed Orders retry
+    # flow's cache invalidation in main.py).
+    from app.geocode_service import _cache_key, clean_address
+    from app.geocoding.base import GeocodeResult
+
+    cleaned = clean_address("42 Fake St, Adyar, Chennai")
+    crud.save_geocode_cache(
+        db_session, _cache_key(cleaned), cleaned,
+        "STALE WRONG MATCH, Chennai", 1.0, 2.0, "google", 0.65,
+    )
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
+
+    class _FakeProvider:
+        def geocode(self, address):
+            return GeocodeResult(
+                lat=13.05, lng=80.24, formatted_address="Correct Match, Chennai",
+                status="OK", provider="google", confidence=0.9,
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    with mock.patch("app.geocode_service._build_geocoder", return_value=_FakeProvider()):
+        result = crud.add_manual_address(
+            db_session, batch.id,
+            address="42 Fake St, Adyar, Chennai", customer_name=None,
+            delivery_time=None, fallback_vehicle_type="bike",
+        )
+
+    order = db_session.query(Order).filter(Order.order_id == result["order_id"]).first()
+    assert order.lat == 13.05
+    assert order.lng == 80.24
+
+
 def test_set_manual_location_marks_order_manually_verified(db_session):
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
         {"order_id": "1", "customer_name": "Alice", "address": "1 Main, Chennai", "delivery_time": "10:00",
@@ -469,6 +510,22 @@ def test_geocoding_cache_round_trips(db_session):
     assert cached is not None
     assert cached.lat == 13.0
     assert cached.lng == 80.2
+
+
+def test_delete_cached_geocode_removes_a_stale_entry(db_session):
+    # A STATUS_OK result cached under an older, looser validation rule has
+    # no way to expire on its own when the rule tightens - this is what
+    # lets a retry/re-add actually ask the provider again instead of
+    # replaying the same stale wrong pin forever.
+    crud.save_geocode_cache(
+        db_session, "12 main st, chennai", "12 Main St, Chennai",
+        "12 Main Street, Chennai, India", 13.0, 80.2, "google", 0.65,
+    )
+
+    assert crud.delete_cached_geocode(db_session, "12 main st, chennai") is True
+    assert crud.get_cached_geocode(db_session, "12 main st, chennai") is None
+    # Deleting an address with nothing cached is a harmless no-op, not an error.
+    assert crud.delete_cached_geocode(db_session, "12 main st, chennai") is False
 
 
 def test_save_route_plan_replaces_prior_unsaved_draft_for_same_batch(db_session):

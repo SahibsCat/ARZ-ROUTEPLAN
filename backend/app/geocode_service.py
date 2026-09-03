@@ -53,6 +53,18 @@ def _cache_key(cleaned_address: str) -> str:
     return cleaned_address.strip().lower()
 
 
+def invalidate_cached_geocode(address: str, db: Session) -> bool:
+    """Clears one address's cached result (see crud.delete_cached_geocode
+    for why this needs to exist at all) - takes the RAW address text, same
+    as every other public function here, and normalizes it the same way
+    before computing the cache key so callers never have to know the
+    cache's internal key format."""
+    cleaned = clean_address(address)
+    if not cleaned:
+        return False
+    return crud.delete_cached_geocode(db, _cache_key(cleaned))
+
+
 def _result_from_cache_row(row) -> GeocodeResult:
     return GeocodeResult(
         lat=row.lat,

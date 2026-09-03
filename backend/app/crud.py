@@ -889,7 +889,7 @@ def add_manual_address(
     resubmits, the same experience as retrying a Failed Order."""
     # Local import - geocode_service imports crud at module level, so a
     # top-of-file import here would be circular.
-    from app.geocode_service import geocode_address
+    from app.geocode_service import geocode_address, invalidate_cached_geocode
 
     if fallback_vehicle_type not in ("car", "bike"):
         raise RootplanError("vehicle_type must be 'car' or 'bike'")
@@ -898,6 +898,12 @@ def add_manual_address(
     if not cleaned_address:
         raise RootplanError("Address is required.")
 
+    # Same reasoning as the Failed Orders retry flow (see main.py's
+    # retry_single_geocode): typing an address in by hand is a deliberate,
+    # single-address action - a stale cache entry from before a geocoding-
+    # accuracy fix would otherwise keep winning here too, silently placing
+    # the same wrong pin again even after the underlying logic improved.
+    invalidate_cached_geocode(cleaned_address, db)
     geocoded = geocode_address(cleaned_address, db=db)
     if geocoded is None:
         raise GeocodeFailedError(
@@ -1350,6 +1356,26 @@ def get_cached_geocode(db: Session, address_key: str) -> Optional[GeocodingCache
     if not address_key:
         return None
     return db.query(GeocodingCache).filter(GeocodingCache.address_key == address_key).first()
+
+
+def delete_cached_geocode(db: Session, address_key: str) -> bool:
+    """Removes one address's cached result so the next lookup for it is a
+    real, fresh provider call instead of replaying whatever was cached
+    before - the cache has no way to know a geocoding-accuracy fix landed
+    since a row was written, so a STATUS_OK result cached under an OLDER,
+    looser validation rule would otherwise keep winning forever (a retry
+    checks the cache first - see geocode_service._lookup_or_geocode -
+    so without this, "Retry" on an address that was wrongly-but-
+    successfully geocoded before a fix would just silently hand back the
+    same wrong pin again, never actually re-asking the provider)."""
+    if not address_key:
+        return False
+    existing = get_cached_geocode(db, address_key)
+    if existing is None:
+        return False
+    db.delete(existing)
+    db.commit()
+    return True
 
 
 def save_geocode_cache(
