@@ -134,7 +134,10 @@ def test_landmark_stripped_retry_rescues_a_match_the_raw_address_missed():
     # needed - it should stop as soon as the stripped variant scores OK.
     responses = [
         _ok_response("GEOMETRIC_CENTER", ["route"]),  # the raw address, landmark noise confuses it
-        _ok_response("ROOFTOP", ["street_address"], lat=13.05, lng=80.25),  # the stripped variant
+        _ok_response(  # the stripped variant - a real ROOFTOP match confirms the "12" too
+            "ROOFTOP", ["street_address"], lat=13.05, lng=80.25,
+            address_components=[{"long_name": "12", "types": ["street_number"]}],
+        ),
     ]
     client = _DummyClient(responses)
     geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
@@ -370,3 +373,137 @@ def test_geocode_downgrades_a_rooftop_match_in_the_wrong_locality():
 
     assert result.status == "NEEDS_MANUAL_VERIFICATION"
     assert result.confidence < 0.95  # would have been 0.95 from precision alone
+
+
+# --- House/door-number validation (_extract_house_number /
+# _score_component_match's third check) - a building name is never
+# required; a customer address that's just house-number + street + locality
+# must be handled correctly on its own, and "Google found the street but not
+# necessarily this exact house number" must never auto-accept.
+
+def test_extract_house_number_handles_every_format_the_spec_lists():
+    from app.geocoding.google_geocoder import _extract_house_number
+
+    assert _extract_house_number("24 XYZ Street, Velachery, Chennai 600042") == "24"
+    assert _extract_house_number("12A XYZ Road, Velachery, Chennai") == "12A"
+    assert _extract_house_number("12-B XYZ Road, Velachery, Chennai") == "12-B"
+    assert _extract_house_number("12/2 XYZ Street, Velachery") == "12/2"
+    assert _extract_house_number("12/2A XYZ Street, Velachery") == "12/2A"
+    assert _extract_house_number("Plot 24, XYZ Road, Chennai") == "24"
+    assert _extract_house_number("Door No 15, ABC Main Road, Chennai 600042") == "15"
+    assert _extract_house_number("D.No 12, XYZ Street, Chennai") == "12"
+    assert _extract_house_number("No. 12, XYZ Street, Chennai") == "12"
+    # A flat/unit number can precede the house number - spec's own example.
+    assert _extract_house_number("Flat 2B, 12 XYZ Street, Chennai") == "12"
+    # A building name can precede it too - Case 1 must keep working.
+    assert _extract_house_number("ABC Apartments, 12 XYZ Street, Velachery, Chennai 600042") == "12"
+    # No house number stated at all - must not invent one.
+    assert _extract_house_number("Velachery, Chennai") is None
+    # A 6-digit run is a PIN code, never mistaken for a house number.
+    assert _extract_house_number("600042, Velachery, Chennai") is None
+
+
+def test_score_component_match_accepts_an_exact_house_level_result():
+    """Spec Test 1/2/16: house number + street, no building name required -
+    Google confirms the exact house number -> no penalty."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "24 XYZ Street, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "24", "types": ["street_number"]},
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_flags_street_found_but_house_number_unconfirmed():
+    """Spec Test 3/15/20 - THE central case this turn is about: Google only
+    matched the street, not the specific house number. Must not be treated
+    as exact, and the resulting cap must be low enough to actually require
+    verification (below the 0.5 accept threshold) on its own."""
+    from app.geocoding.google_geocoder import STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP, _score_component_match
+
+    customer = "24 XYZ Street, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "XYZ Street", "types": ["route"]},  # no street_number component at all
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    cap = _score_component_match(customer, google_components)
+    assert cap == STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP
+    assert cap < 0.5
+
+
+def test_score_component_match_flags_a_different_house_number_on_the_same_street():
+    """Spec section 8: customer says 24, Google's result is for 22 - a
+    stronger, more specific mismatch than merely "unconfirmed"."""
+    from app.geocoding.google_geocoder import STREET_NUMBER_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "24 XYZ Street, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "22", "types": ["street_number"]},
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
+
+
+def test_score_component_match_never_requires_a_building_name():
+    """Spec's most-repeated non-negotiable rule: an address with no
+    building name (just house number + street + locality + city + PIN) is
+    completely valid and must be handled the same as one that has a
+    building name - confirmed here by using the exact same customer address
+    style as the "building name available" tests above, minus the name."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "12 XYZ Street, Velachery, Chennai 600042"  # no building name anywhere
+    google_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_does_not_invent_a_house_number_penalty_when_none_was_stated():
+    """A bare locality query (or any address the extractor can't find a
+    confident house number in) must never get a manufactured penalty - the
+    house-number check only ever engages when the customer's own address
+    actually contained one."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    assert _score_component_match("Velachery, Chennai", [
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+    ]) is None
+
+
+def test_geocode_flags_a_street_level_only_match_even_at_high_precision_location_type():
+    """End-to-end: RANGE_INTERPOLATED (a location_type _score_result alone
+    scores at 0.8, comfortably over the accept threshold) must still be
+    flagged once the house-number check runs and finds no street_number
+    component at all - the exact scenario this turn's spec is about."""
+    address_components = [
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+    ]
+    client = _DummyClient([
+        _ok_response("RANGE_INTERPOLATED", ["street_address"], address_components=address_components),
+    ])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode("24 XYZ Street, Velachery, Chennai 600042")
+
+    assert result.status == "NEEDS_MANUAL_VERIFICATION"
+    assert result.confidence < 0.5

@@ -168,39 +168,102 @@ PIN_MISMATCH_CONFIDENCE_CAP = 0.3
 LOCALITY_MISMATCH_CONFIDENCE_CAP = 0.4
 _LOCALITY_COMPONENT_TYPES = {"locality", "sublocality", "sublocality_level_1", "sublocality_level_2"}
 
+# The customer gave a house/door number and Google's result has NO
+# street_number component at all - "the street was found, the house was
+# not" (a building name is never required for this check to apply; see
+# _extract_house_number). Deliberately just under DEFAULT_MIN_CONFIDENCE
+# (0.5) - a customer-stated house number that Google couldn't confirm must
+# never auto-accept on its own, no matter how confident location_type
+# looked (RANGE_INTERPOLATED, in particular, can still be a plausible-
+# looking street-level guess with no real number match behind it).
+STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP = 0.45
+# Google DID return a street_number, and it's a different number than the
+# customer gave - stronger, more specific evidence of a wrong match than
+# the "unconfirmed" case above (this isn't "Google doesn't know", it's
+# "Google matched a different house on the same street").
+STREET_NUMBER_MISMATCH_CONFIDENCE_CAP = 0.3
+
+# Common Indian house/door/plot-number prefixes, stripped before matching
+# the number itself - "Door No 15" and "15" both mean the same thing.
+_HOUSE_NUMBER_PREFIX = re.compile(
+    r"^(?:door\s*no\.?|d\.?\s*no\.?|plot\s*(?:no\.?)?|house\s*no\.?|no\.?)\s*",
+    re.IGNORECASE,
+)
+# A house number token - plain (24), letter-suffixed (12A), or with a
+# second part after a slash/dash that's itself a number+letter or a bare
+# letter (12/2, 12/2A, 12-B). Anchored to the START of whatever segment is
+# being checked - Indian addresses reliably lead each relevant segment
+# with the number, never bury it mid-sentence.
+_HOUSE_NUMBER_TOKEN = re.compile(r"^(\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
+
+
+def _extract_house_number(address: str) -> Optional[str]:
+    """The customer's house/door/plot number - never required to be
+    present (a building-name-only or locality-only address simply has
+    none, and this correctly returns None for those rather than guessing).
+    Checked against the first few COMMA-SEPARATED segments, not just the
+    very first one, since a flat/unit number can precede it ("Flat 2B, 12
+    XYZ Street" - the spec's own listed format) or a building name can
+    ("ABC Apartments, 12 XYZ Street"). A bare 6-digit run is explicitly
+    rejected - that's a PIN code, not a house number (see
+    _extract_pincode, the actual PIN check, reused from nominatim_geocoder
+    same as this function's sibling checks)."""
+    segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+    for segment in segments[:3]:
+        candidate = _HOUSE_NUMBER_PREFIX.sub("", segment).strip()
+        match = _HOUSE_NUMBER_TOKEN.match(candidate)
+        if match and not re.fullmatch(r"\d{6}", match.group(1)):
+            return match.group(1).upper()
+    return None
+
 
 def _score_component_match(original_address: str, address_components: List[Dict[str, object]]) -> Optional[float]:
     """Returns a confidence CAP (never a floor/boost) when a real mismatch
     is found, or None when nothing meaningful was found to flag - callers
     combine this with _score_result via min(), so None means "no opinion,
     defer entirely to the precision-based score" rather than "confirmed
-    fine"."""
+    fine". Checks PIN, locality, and house/door number independently and
+    returns the MOST restrictive (lowest) cap among whichever ones actually
+    found something to flag - a result can fail more than one check at
+    once."""
+    caps: List[float] = []
+
     customer_pin = _extract_pincode(original_address)
     google_pin = next(
         (c.get("long_name") for c in address_components if "postal_code" in (c.get("types") or [])),
         None,
     )
     if customer_pin and google_pin and customer_pin != str(google_pin):
-        return PIN_MISMATCH_CONFIDENCE_CAP
+        caps.append(PIN_MISMATCH_CONFIDENCE_CAP)
 
     google_localities = [
         str(c.get("long_name") or "") for c in address_components
         if set(c.get("types") or []) & _LOCALITY_COMPONENT_TYPES
     ]
-    if not google_localities:
-        return None
-
     customer_tokens = _significant_tokens(original_address)
-    if not customer_tokens:
-        return None  # nothing specific enough in the customer's text to compare against
+    if google_localities and customer_tokens:
+        locality_tokens: List[str] = []
+        for locality in google_localities:
+            locality_tokens.extend(_significant_tokens(locality))
+        if locality_tokens and not any(_fuzzy_token_match(token, customer_tokens) for token in locality_tokens):
+            caps.append(LOCALITY_MISMATCH_CONFIDENCE_CAP)
 
-    locality_tokens: List[str] = []
-    for locality in google_localities:
-        locality_tokens.extend(_significant_tokens(locality))
-    if locality_tokens and not any(_fuzzy_token_match(token, customer_tokens) for token in locality_tokens):
-        return LOCALITY_MISMATCH_CONFIDENCE_CAP
+    # House/door number - the spec's central "street found, house not
+    # confirmed" case. Building name is never required (see
+    # _extract_house_number's own docstring) - only whether the customer's
+    # address happened to include a number, independent of anything else.
+    customer_house_number = _extract_house_number(original_address)
+    if customer_house_number:
+        google_house_number = next(
+            (str(c.get("long_name") or "").upper() for c in address_components if "street_number" in (c.get("types") or [])),
+            None,
+        )
+        if google_house_number is None:
+            caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
+        elif google_house_number != customer_house_number:
+            caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
 
-    return None
+    return min(caps) if caps else None
 
 
 def _strip_landmark_phrase(address: str) -> str:
