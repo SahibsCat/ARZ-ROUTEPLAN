@@ -149,21 +149,35 @@ def test_landmark_stripped_retry_rescues_a_match_the_raw_address_missed():
     assert client.call_count == 2  # stopped after the stripped retry - no Places call needed
 
 
+def _find_place_response(place_id="place123"):
+    return {"status": "OK", "candidates": [{"place_id": place_id}]}
+
+
+def _place_details_response(lat, lng, formatted_address, address_components=None):
+    return {
+        "status": "OK",
+        "result": {
+            "geometry": {"location": {"lat": lat, "lng": lng}},
+            "formatted_address": formatted_address,
+            "address_components": address_components or [],
+        },
+    }
+
+
 def test_places_fallback_rescues_a_named_apartment_the_geocoding_api_cant_place():
     # THE OTHER BUG CASE: a named apartment complex ("Sidharth Upscale
     # Apartments") isn't a street + number, so the structured Geocoding API
     # can only geometric-center the surrounding route. Places' fuzzy text
     # search is built for exactly this - matching a named establishment.
+    # Find Place From Text can only return a place_id (it has no
+    # address_components field) - the actual location and component
+    # validation come from the Place Details follow-up call.
     responses = [
         _ok_response("GEOMETRIC_CENTER", ["route"]),  # Geocoding API: only the street, not the building
-        {
-            "status": "OK",
-            "candidates": [{
-                "geometry": {"location": {"lat": 13.02, "lng": 80.21}},
-                "formatted_address": "Sidharth Upscale Apartments, Porur, Chennai, Tamil Nadu, India",
-                "name": "Sidharth Upscale Apartments",
-            }],
-        },
+        _find_place_response(),
+        _place_details_response(
+            13.02, 80.21, "Sidharth Upscale Apartments, Porur, Chennai, Tamil Nadu, India",
+        ),
     ]
     client = _DummyClient(responses)
     geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
@@ -174,7 +188,69 @@ def test_places_fallback_rescues_a_named_apartment_the_geocoding_api_cant_place(
     assert result.lat == 13.02
     assert result.provider == "google-places"
     assert result.confidence == PLACES_FALLBACK_CONFIDENCE
-    assert client.call_count == 2  # no landmark phrase to strip, straight to the Places fallback
+    assert client.call_count == 3  # no landmark phrase to strip: raw geocode, find place, place details
+
+
+def test_places_fallback_never_accepts_a_match_in_the_wrong_locality():
+    # THE REPORTED BUG: "...Bharathi Nagar, Velachery...600113" resolved via
+    # Places to a real but WRONG place - "Sarathy Nagar" a few streets over,
+    # a different PIN entirely (600042) - previously accepted outright at a
+    # flat 0.65 with no cross-check against what the customer actually
+    # typed. The Place Details follow-up's address_components now run
+    # through the same _score_component_match every Geocoding API result
+    # already gets, so this must be capped below the accept threshold
+    # instead of silently trusted.
+    responses = [
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # only the street matched, not the named PG
+        _find_place_response(),
+        _place_details_response(
+            12.9749, 80.2224,
+            "X6FC+XX2, Sarathy Nagar, Velachery, Chennai, Tamil Nadu 600042, India",
+            address_components=[
+                {"long_name": "Sarathy Nagar", "types": ["sublocality", "sublocality_level_1"]},
+                {"long_name": "600042", "types": ["postal_code"]},
+            ],
+        ),
+    ]
+    client = _DummyClient(responses)
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode(
+        "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    )
+
+    assert result.status == "NEEDS_MANUAL_VERIFICATION"
+    assert result.confidence < 0.5
+    assert client.call_count == 3
+
+
+def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality():
+    # The other half of the same fix: a Places match that DOES agree with
+    # the customer's stated PIN/locality must not be penalized just for
+    # having gone through Place Details - it still lands at the normal
+    # PLACES_FALLBACK_CONFIDENCE, same as before this change.
+    responses = [
+        _ok_response("GEOMETRIC_CENTER", ["route"]),
+        _find_place_response(),
+        _place_details_response(
+            12.9906, 80.2181,
+            "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113, India",
+            address_components=[
+                {"long_name": "Bharathi Nagar", "types": ["sublocality", "sublocality_level_1"]},
+                {"long_name": "600113", "types": ["postal_code"]},
+            ],
+        ),
+    ]
+    client = _DummyClient(responses)
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode(
+        "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    )
+
+    assert result.status == "OK"
+    assert result.confidence == PLACES_FALLBACK_CONFIDENCE
+    assert client.call_count == 3
 
 
 def test_geocode_returns_none_on_zero_results_after_places_fallback_also_empty():

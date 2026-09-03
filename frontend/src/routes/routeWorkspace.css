@@ -620,18 +620,19 @@ select.add-route-select:hover:not(:disabled) {
 .route-row__cell--progress { display: flex; flex-direction: column; gap: 0.4rem; }
 .route-row__progress-text { font-size: 0.8rem; font-weight: 600; color: var(--ink); white-space: nowrap; }
 
-/* Row overflow menu ("More") - the trigger reuses .btn.btn--ghost (App.css)
-   and was fine on its own, but the dropdown it opens (.row-menu__panel)
-   had no rule anywhere: no position:absolute, no card, so it rendered as
-   plain unstyled buttons/links inline in the page flow instead of a
-   floating menu. Matches the .quick-actions__menu dropdown pattern
-   elsewhere in the app. */
+/* Row overflow menu ("More") - the trigger reuses .btn.btn--ghost (App.css).
+   The panel (.row-menu__panel) is portaled to document.body in
+   RouteWorkspace.jsx (RowMenu) rather than rendered as a normal
+   position:absolute child here - .routes-table has `overflow: hidden` for
+   its rounded corners, which silently clipped the dropdown to nothing any
+   time it opened below the table's bottom edge (the last row or two on a
+   short list). Portaling escapes that; top/right come from the trigger's
+   own getBoundingClientRect() as inline style, so only position/z-index/
+   the card look are needed here. */
 .row-menu { position: relative; }
 .row-menu__panel {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
-  z-index: 20;
+  position: fixed;
+  z-index: 60;
   min-width: 190px;
   background: var(--surface);
   border: 1px solid var(--rule);

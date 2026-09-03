@@ -26,6 +26,16 @@ GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 # a street + number, exactly the class of address the Geocoding API isn't
 # built to recognize by name.
 PLACES_FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+# Find Place From Text's supported `fields` never includes address_components
+# (only formatted_address as free text) - so a place_id from it is resolved
+# through Place Details, which does return them, purely so _find_place can
+# run the SAME _score_component_match validation _geocode_once already gets.
+# Without this second call, a Places match could only ever be trusted by
+# name/formatted-address text - exactly how a same-named establishment in
+# the wrong neighbourhood ("Sarathy Nagar" matched for a "Bharathi Nagar"
+# address, both in Velachery) used to slip through at a flat, unvalidated
+# 0.65 confidence with no PIN/locality/house-number cross-check at all.
+PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 DEFAULT_MAX_RETRIES = 3
@@ -34,11 +44,15 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 # trust as a precise delivery point - same threshold/philosophy Mapbox and
 # Nominatim already apply, so all three providers behave consistently.
 DEFAULT_MIN_CONFIDENCE = 0.5
-# A Places API match is trusted at this fixed confidence when used at all -
-# not as certain as a real ROOFTOP geocode, but Places found and named an
-# actual establishment/building, meaningfully more specific than the
+# A Places API match STARTS at this confidence when used at all - not as
+# certain as a real ROOFTOP geocode, but Places found and named an actual
+# establishment/building, meaningfully more specific than the
 # locality/postal-code-level fallback the Geocoding API landed on instead
-# (the only time this fallback is even tried - see geocode()).
+# (the only time this fallback is even tried - see geocode()). Same as the
+# Geocoding API path, this is only the STARTING point - _score_component_match
+# against the Place Details result (see _place_details) can still cap it
+# below DEFAULT_MIN_CONFIDENCE when Places matched the wrong PIN/locality/
+# house number for what the customer actually typed.
 PLACES_FALLBACK_CONFIDENCE = 0.65
 # Chennai-centered, ~50km radius - every address this app handles is in
 # Chennai (see geocode_service.clean_address, which appends ", Chennai,
@@ -364,6 +378,11 @@ class GoogleGeocoder(GeocodingProvider):
         which the Geocoding API's structured address parser often can't do
         (it expects a street + number, not "Sidharth Upscale Apartments").
 
+        Only resolves a place_id here - Find Place From Text has no
+        address_components field to validate against, so the actual
+        location/confidence comes from a Place Details follow-up (see
+        _place_details) that CAN see them.
+
         Deliberately non-fatal on every failure path, unlike _geocode_once's
         REQUEST_DENIED handling: a denial here means "this fallback isn't
         enabled on this key/project", not "the provider is broken" - the
@@ -376,7 +395,7 @@ class GoogleGeocoder(GeocodingProvider):
         params = {
             "input": address,
             "inputtype": "textquery",
-            "fields": "geometry,formatted_address,name",
+            "fields": "place_id",
             "locationbias": _CHENNAI_LOCATION_BIAS,
             "key": self._places_api_key,
         }
@@ -398,19 +417,67 @@ class GoogleGeocoder(GeocodingProvider):
         candidates = data.get("candidates") or []
         if not candidates:
             return None
-        location = candidates[0].get("geometry", {}).get("location", {})
+        place_id = candidates[0].get("place_id")
+        if not place_id:
+            return None
+
+        return self._place_details(address, place_id)
+
+    def _place_details(self, original_address: str, place_id: str) -> Optional[GeocodeResult]:
+        """Resolves a Places place_id to a location AND validates it against
+        the customer's own address text, exactly like _geocode_once does for
+        the Geocoding API - reusing _score_component_match so a Places match
+        gets no free pass just for coming from a different Google API. This
+        is what catches Places confidently matching a same-named place in
+        the wrong neighbourhood (e.g. an unrelated "Sarathy Nagar" result
+        for a "Bharathi Nagar" address, both inside Velachery) - previously
+        accepted outright at a flat 0.65 with no cross-check at all."""
+        params = {
+            "place_id": place_id,
+            "fields": "geometry,formatted_address,name,address_component",
+            "key": self._places_api_key,
+        }
+
+        try:
+            response = self._client.get(PLACE_DETAILS_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+            print(f"Places Details request failed for '{original_address}': {exc}")
+            return None
+
+        status = data.get("status", "UNKNOWN_ERROR")
+        if status != "OK":
+            if status != "ZERO_RESULTS":
+                print(f"Places Details: {status} for '{original_address}' - skipping")
+            return None
+
+        result = data.get("result") or {}
+        location = result.get("geometry", {}).get("location", {})
         if "lat" not in location or "lng" not in location:
             return None
 
-        formatted = candidates[0].get("formatted_address") or candidates[0].get("name") or address
-        print(f"Places API fallback: '{address}' -> matched '{formatted}' (confidence={PLACES_FALLBACK_CONFIDENCE:.2f})")
+        address_components = result.get("address_components") or []
+        component_cap = _score_component_match(original_address, address_components)
+        confidence = PLACES_FALLBACK_CONFIDENCE if component_cap is None else min(PLACES_FALLBACK_CONFIDENCE, component_cap)
+        result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION
+        formatted = result.get("formatted_address") or result.get("name") or original_address
+
+        if result_status != STATUS_OK:
+            print(
+                f"Places API fallback: '{original_address}' -> matched '{formatted}' but address component "
+                f"mismatch capped it at {component_cap:.2f} (confidence={confidence:.2f}) - flagged for manual verification"
+            )
+        else:
+            print(f"Places API fallback: '{original_address}' -> matched '{formatted}' (confidence={confidence:.2f})")
+
         return GeocodeResult(
             lat=float(location["lat"]),
             lng=float(location["lng"]),
             formatted_address=formatted,
-            status=STATUS_OK if PLACES_FALLBACK_CONFIDENCE >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION,
+            status=result_status,
             provider="google-places",
-            confidence=PLACES_FALLBACK_CONFIDENCE,
+            confidence=confidence,
         )
 
     def _geocode_once(self, address: str) -> Optional[GeocodeResult]:

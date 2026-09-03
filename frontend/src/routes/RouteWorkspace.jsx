@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { GoogleMap, Marker, Polyline, Circle, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
@@ -469,22 +470,61 @@ function RoutesFilterBar({
 
 function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
   const [open, setOpen] = useState(false);
+  // Where to draw the panel, in viewport coordinates - computed fresh each
+  // time the menu opens (see triggerRef.getBoundingClientRect() below).
+  const [panelPos, setPanelPos] = useState(null);
   const ref = useRef(null);
+  const triggerRef = useRef(null);
+  const panelRef = useRef(null);
+
+  // The trigger lives inside .routes-table, which has `overflow: hidden`
+  // for its rounded corners - any row whose menu would open below the
+  // table's bottom edge (the last row or two, on a short list, matching
+  // what was reported) got silently clipped to nothing by that overflow,
+  // even though the panel itself rendered correctly. Portaling it to
+  // document.body with position:fixed escapes that (and every other
+  // ancestor's overflow/stacking context) the same way any real dropdown
+  // library does it.
+  const updatePosition = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPanelPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+  };
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onDocClick = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onReposition = () => updatePosition();
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    window.addEventListener('scroll', onReposition, true);
+    window.addEventListener('resize', onReposition);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
     <div className="row-menu" ref={ref} onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="btn btn--ghost row-menu__trigger" onClick={() => setOpen((v) => !v)}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="btn btn--ghost row-menu__trigger"
+        onClick={() => {
+          if (!open) updatePosition();
+          setOpen((v) => !v);
+        }}
+      >
         More
       </button>
-      {open && (
-        <div className="row-menu__panel">
+      {open && panelPos && createPortal(
+        <div className="row-menu__panel" ref={panelRef} style={{ top: panelPos.top, right: panelPos.right }}>
           <button type="button" onClick={() => { onDownload(route); setOpen(false); }}>
             <IconDownload width={13} height={13} />
             Download sheet
@@ -503,7 +543,8 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
             {isDeletingRoute === route.route_name ? <span className="spinner" /> : <IconX width={13} height={13} />}
             {isDeletingRoute === route.route_name ? 'Deleting…' : 'Delete Route'}
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
