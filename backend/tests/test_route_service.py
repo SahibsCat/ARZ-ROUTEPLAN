@@ -760,3 +760,176 @@ def test_google_maps_url_strips_embedded_line_breaks_from_address():
     assert "%0A" not in url  # no encoded newline reached the URL
     assert "\n" not in url
     assert "BBCL%20Stanburry%20Villa%2017%20Old%20No" in url
+
+
+# --------------------------------------------------------------------------
+# _detour_split_candidate - the fallback _smallest_disconnected_group calls
+# when its own fixed-threshold single-linkage check finds a route "one
+# connected group" despite a real, inefficient zigzag: a chain of hops each
+# individually too small to trip that check. See route_service.py's own
+# module-level comment above DETOUR_COST_RATIO_FACTOR and
+# _detour_split_candidate's docstring for the full reasoning.
+# --------------------------------------------------------------------------
+
+# Real production data this fallback was written to fix (see this session's
+# investigation): a 6-stop route that _smallest_disconnected_group's fixed
+# threshold read as "one connected group" (every consecutive gap 2.4-5.0km,
+# comfortably under its own ~7.5-9km threshold for this route) despite an
+# obvious NW-cluster/coastal-group split on the map.
+_REAL_ZIGZAG_STOPS = [
+    {"order_id": "17", "lat": 12.9831203, "lng": 80.21584059999999, "delivery_time": None},
+    {"order_id": "22", "lat": 12.9867924, "lng": 80.19001999999999, "delivery_time": None},
+    {"order_id": "25", "lat": 12.9680937, "lng": 80.20997360000001, "delivery_time": None},
+    {"order_id": "5", "lat": 12.9453063, "lng": 80.233682, "delivery_time": None},
+    {"order_id": "1", "lat": 12.9795033, "lng": 80.2630137, "delivery_time": None},
+    {"order_id": "23", "lat": 12.9593476, "lng": 80.2555699, "delivery_time": None},
+]
+
+
+def _mock_real_road_distance(monkeypatch):
+    """Every test below needs _simulate_route's road-distance calls to
+    resolve to something - real haversine distance stands in for OSRM here
+    (deterministic, no network), same monkeypatch point
+    (app.route_service._road_distance_time) every other test in this file
+    already uses."""
+    from app.route_service import _haversine_km
+
+    def fake_road_distance_time(source, destination):
+        d = _haversine_km(source, destination)
+        return {"distance_km": d, "time_minutes": d * 2.0}  # ~30 km/h, arbitrary but consistent
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+
+def test_smallest_disconnected_group_catches_the_real_zigzag_via_detour_fallback(monkeypatch):
+    from app.route_service import _smallest_disconnected_group, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES
+
+    _mock_real_road_distance(monkeypatch)
+    result = _smallest_disconnected_group(_REAL_ZIGZAG_STOPS, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES)
+
+    assert result is not None
+    indexes, _, _ = result
+    split_ids = {_REAL_ZIGZAG_STOPS[i]["order_id"] for i in indexes}
+    assert split_ids == {"5", "1", "23"}  # the coastal group, not the NW cluster
+
+
+def test_smallest_disconnected_group_result_is_independent_of_input_order(monkeypatch):
+    """Spec requirement: shuffling the input list must not change which
+    stops get grouped together - geographic grouping must never be a
+    function of array/database order."""
+    import random
+
+    from app.route_service import _smallest_disconnected_group, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES
+
+    _mock_real_road_distance(monkeypatch)
+    shuffled = list(_REAL_ZIGZAG_STOPS)
+    random.Random(42).shuffle(shuffled)
+
+    result = _smallest_disconnected_group(shuffled, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES)
+
+    assert result is not None
+    indexes, _, _ = result
+    split_ids = {shuffled[i]["order_id"] for i in indexes}
+    assert split_ids == {"5", "1", "23"}
+
+
+def test_smallest_disconnected_group_does_not_over_split_a_natural_corridor(monkeypatch):
+    """Spec test case: 5 stops evenly spaced along one natural corridor
+    must NOT be split just because the corridor's total span is large -
+    every stop here carries a similar, proportionate share of the route's
+    distance, so neither the fixed-threshold check nor the detour fallback
+    should find anything to peel off."""
+    from app.route_service import _smallest_disconnected_group, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES
+
+    _mock_real_road_distance(monkeypatch)
+    # ~2km apart, in a straight line - a textbook corridor, deliberately
+    # spanning almost 10km end-to-end (bigger than the real zigzag route's
+    # own weakest link above) to prove span alone isn't the criterion.
+    corridor = [
+        {"order_id": f"C{i}", "lat": 13.00 + i * 0.018, "lng": 80.20, "delivery_time": None}
+        for i in range(5)
+    ]
+
+    result = _smallest_disconnected_group(corridor, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES)
+
+    assert result is None
+
+
+def test_smallest_disconnected_group_still_catches_a_single_far_outlier(monkeypatch):
+    """Regression: the pre-existing fixed-threshold check (a lone stop far
+    from a tight cluster) must still work unchanged - this fallback only
+    ever engages when that check finds nothing."""
+    from app.route_service import _smallest_disconnected_group, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES
+
+    _mock_real_road_distance(monkeypatch)
+    cluster = [
+        {"order_id": "A", "lat": 13.000, "lng": 80.200, "delivery_time": None},
+        {"order_id": "B", "lat": 13.002, "lng": 80.201, "delivery_time": None},
+        {"order_id": "C", "lat": 13.001, "lng": 80.203, "delivery_time": None},
+        {"order_id": "X", "lat": 13.200, "lng": 80.400, "delivery_time": None},  # far outlier
+    ]
+
+    result = _smallest_disconnected_group(cluster, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES)
+
+    assert result is not None
+    indexes, _, _ = result
+    assert {cluster[i]["order_id"] for i in indexes} == {"X"}
+
+
+def test_smallest_disconnected_group_leaves_a_genuinely_tight_route_alone(monkeypatch):
+    """A route too small/tight to judge, or where every stop is close to
+    every other, must return None from both the fixed check and the
+    fallback - not every route needs splitting."""
+    from app.route_service import _smallest_disconnected_group, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES
+
+    _mock_real_road_distance(monkeypatch)
+    tight = [
+        {"order_id": "A", "lat": 13.000, "lng": 80.200, "delivery_time": None},
+        {"order_id": "B", "lat": 13.001, "lng": 80.201, "delivery_time": None},
+        {"order_id": "C", "lat": 13.002, "lng": 80.202, "delivery_time": None},
+    ]
+
+    assert _smallest_disconnected_group(tight, VELOCHERY_DEPOT, DEFAULT_ROUTE_START_MINUTES) is None
+
+
+def test_generate_routes_splits_the_real_zigzag_into_two_routes(monkeypatch):
+    """End-to-end (not just the unit-level check above): the exact
+    production scenario this session's investigation was based on, run
+    through the full generate_routes() pipeline - one car, capacity 6
+    (enough to hold all 6 stops on one route, which is exactly what used
+    to happen), confirmed to now produce two separate routes instead."""
+    from app.route_service import _haversine_km
+
+    def fake_road_distance_time(source, destination):
+        d = _haversine_km(source, destination)
+        return {"distance_km": d, "time_minutes": d * 2.0}
+
+    def fake_get_distances_from_point(origin, destinations):
+        return [fake_road_distance_time(origin, d) for d in destinations]
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+    monkeypatch.setattr("app.route_service.get_distances_from_point", fake_get_distances_from_point)
+    monkeypatch.setattr("app.route_service.prime_route_cache", lambda orders, depot: None)
+
+    orders = [
+        {"order_id": s["order_id"], "customer_name": f"Cust {s['order_id']}", "address": f"Addr {s['order_id']}",
+         "delivery_time": None, "lat": s["lat"], "lng": s["lng"]}
+        for s in _REAL_ZIGZAG_STOPS
+    ]
+
+    result = generate_routes(orders, available_cars=1, available_bikes=0)
+
+    assert result["route_count"] == 2
+    groups = [{o["order_id"] for o in route["orders"]} for route in result["routes"]]
+    assert {"5", "1", "23"} in groups
+    assert {"17", "22", "25"} in groups
+
+
+# Slot-vs-geography safety ("geography must never override an existing
+# delivery-slot rule") is already covered, unmodified, by this file's own
+# pre-existing test_generate_routes_never_delays_earlier_slot_for_closer_later_slot
+# above - this session's change never touches slot bucketing/feasibility at
+# all, only which existing route a geographically-flagged group gets
+# relocated to (still gated by the pre-existing _slot_order_preserved check
+# in _extract_geographic_outliers, itself untouched), so that test already
+# proves the requirement holds with this change in place.

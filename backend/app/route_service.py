@@ -91,6 +91,32 @@ MIN_OUTLIER_DETOUR_KM = 3.0
 # is spawned for it instead (see _extract_geographic_outliers).
 MAX_OUTLIER_RELOCATE_DETOUR_KM = 6.0
 
+# --- Detour-split fallback (_detour_split_candidate) - catches the one
+# shape the fixed-threshold single-linkage check above structurally can't:
+# a chain where every CONSECUTIVE gap is individually small enough to pass
+# that check (so the whole route reads as "one connected group"), but the
+# chain as a whole still zigzags across a wide area, spending a
+# disproportionate share of the route's real driving distance on one end
+# of it. See _detour_split_candidate's own docstring for the full
+# reasoning and a worked example. --------------------------------------
+
+# The MST's single largest edge (the "weakest link" holding the whole
+# route together) has to clear this before the fallback even considers
+# it - same floor MIN_OUTLIER_DETOUR_KM already uses: below this, it's an
+# ordinary gap in a normal-sized route, not a candidate worth a real
+# routing-cost check.
+MIN_DETOUR_SPLIT_GAP_KM = MIN_OUTLIER_DETOUR_KM
+# The candidate group's own real per-stop road-distance cost has to beat
+# the rest-of-route's per-stop cost by at least this multiple before the
+# split is confirmed. Deliberately smaller than OUTLIER_DISTANCE_FACTOR
+# (3.0) - that factor calibrates a straight-line GAP against a route's
+# typical spacing; this one calibrates a real ROUTING-COST ratio, a
+# different quantity on a different scale (validated against a real
+# 6-stop route this was written to fix: the genuine detour side scored
+# 1.78x, the wrong direction scored 0.43x - comfortable margin either
+# side of this cutoff).
+DETOUR_COST_RATIO_FACTOR = 1.5
+
 
 def parse_delivery_time(value: object) -> float:
     if value is None:
@@ -412,7 +438,11 @@ def _haversine_km(a: Dict[str, float], b: Dict[str, float]) -> float:
     return 2 * r_km * asin(sqrt(h))
 
 
-def _smallest_disconnected_group(route_orders: List[Dict[str, object]]) -> Optional[Tuple[List[int], float, float]]:
+def _smallest_disconnected_group(
+    route_orders: List[Dict[str, object]],
+    depot: Dict[str, float],
+    route_start_minutes: float,
+) -> Optional[Tuple[List[int], float, float]]:
     """Finds whether this route is actually more than one geographical
     group stitched together, and if so returns the smallest of those
     groups to peel off - (indexes, that group's nearest gap to the rest,
@@ -442,6 +472,11 @@ def _smallest_disconnected_group(route_orders: List[Dict[str, object]]) -> Optio
     time, across repeated passes, the same conservative one-at-a-time
     approach the single-outlier version used, rather than restructuring a
     whole route's grouping in one shot from a single scan.
+
+    `depot`/`route_start_minutes` are only used by the _detour_split_candidate
+    fallback below (real road-distance cost check) when THIS check finds
+    everything connected - the fixed-threshold check above never touches
+    them, unchanged from before that fallback existed.
     """
     n = len(route_orders)
     if n < MIN_ROUTE_SIZE_FOR_OUTLIER_CHECK or not all(has_coordinates(o) for o in route_orders):
@@ -481,12 +516,146 @@ def _smallest_disconnected_group(route_orders: List[Dict[str, object]]) -> Optio
         components.setdefault(find(i), []).append(i)
 
     if len(components) < 2:
-        return None  # one connected group - nothing to split
+        # Everything's connected under the fixed threshold above - but
+        # that only means every CONSECUTIVE gap was individually small
+        # enough; it says nothing about whether the route as a whole is
+        # still an efficient shape. See _detour_split_candidate for the
+        # shape this fixed threshold structurally can't see.
+        return _detour_split_candidate(route_orders, depot, route_start_minutes, pairwise_km, typical_spacing_km)
 
     smallest = min(components.values(), key=len)
     others = [idx for group in components.values() if group is not smallest for idx in group]
     gap_km = min(pairwise_km[i][j] for i in smallest for j in others)
     return smallest, gap_km, typical_spacing_km
+
+
+def _detour_split_candidate(
+    route_orders: List[Dict[str, object]],
+    depot: Dict[str, float],
+    route_start_minutes: float,
+    pairwise_km: List[List[float]],
+    typical_spacing_km: float,
+) -> Optional[Tuple[List[int], float, float]]:
+    """The fallback _smallest_disconnected_group calls when its own fixed-
+    threshold check finds the whole route "connected" - which a route can
+    satisfy while still being a real zigzag: a chain of hops each too
+    small on its own to trip that check, that still adds up to a large,
+    inefficient detour with no single gap big enough to flag.
+
+    Worked example this was written against - a real route that read as
+    "one connected group" above despite an obvious split on the map:
+        NW cluster: 17, 22, 25 (all within ~3km of each other)
+        Coastal group: 5, 1, 23 (all within ~3km of each other)
+        every CONSECUTIVE gap along the route's stitched-together
+        sequence: 2.8, 3.0, 3.6, 5.0, 2.4 km - each comfortably under the
+        fixed check's own threshold (computed at ~7.5-9km for this
+        route), so it never saw a single gap worth flagging.
+    Cutting the geographic minimum spanning tree's single weakest edge
+    (haversine, same cheap "candidate-finding" role the fixed check's own
+    threshold plays - no network call) always finds *some* bipartition,
+    which is exactly why it's only a CANDIDATE here, never acted on
+    directly: BOTH resulting sides are tested (which one is the actual
+    "detour" is a real-cost question, not a headcount one - not always the
+    smaller side, and a tie between two equal-size sides has no
+    headcount-based answer at all), and confirmed only if a side's real
+    per-stop road-distance cost (via _simulate_route - actual OSRM-backed
+    travel distance, not another straight-line guess) beats the OTHER
+    side's per-stop cost by DETOUR_COST_RATIO_FACTOR. On the worked
+    example above (a genuine tie, 3 stops each side), testing {5, 1, 23}
+    as the candidate scored a real 1.78x cost ratio against the NW side
+    (comfortably over the 1.5x cutoff) - while testing the cut in the
+    other direction (NW side as the candidate instead) scored only 0.43x,
+    correctly never confirmed. A genuine, evenly-spaced delivery
+    corridor (spec test case: A-B-C-D-E along one road) has no such
+    asymmetry - every stop along it carries a similar share of the
+    route's distance, so this never fires there, however long the
+    corridor's total span is.
+    """
+    n = len(route_orders)
+    edges = sorted(
+        (pairwise_km[i][j], i, j) for i in range(n) for j in range(i + 1, n)
+    )
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    mst_edges: List[Tuple[float, int, int]] = []
+    for d, i, j in edges:
+        root_i, root_j = find(i), find(j)
+        if root_i != root_j:
+            parent[root_i] = root_j
+            mst_edges.append((d, i, j))
+
+    if not mst_edges:
+        return None
+
+    weakest_km, wi, wj = max(mst_edges)
+    if weakest_km < MIN_DETOUR_SPLIT_GAP_KM:
+        return None  # even the widest connecting gap is an ordinary one
+
+    # Cut just that one MST edge (the tree's own "bridge") to bipartition
+    # the route - a second, independent union-find over every OTHER MST
+    # edge, since removing one edge from a tree always leaves exactly two
+    # components.
+    parent2 = list(range(n))
+
+    def find2(x: int) -> int:
+        while parent2[x] != x:
+            parent2[x] = parent2[parent2[x]]
+            x = parent2[x]
+        return x
+
+    for d, i, j in mst_edges:
+        if i == wi and j == wj:
+            continue
+        root_i, root_j = find2(i), find2(j)
+        if root_i != root_j:
+            parent2[root_i] = root_j
+
+    components: Dict[int, List[int]] = {}
+    for i in range(n):
+        components.setdefault(find2(i), []).append(i)
+    if len(components) < 2:
+        return None  # defensive only - cutting the MST's own bridge always splits it
+
+    # Exactly two sides once the bridge is cut - which one is actually the
+    # "detour" is a real-cost question, not a headcount one (a headcount-
+    # based smallest/rest split guesses wrong on a tie, and even off a tie
+    # the smaller side isn't always the expensive one), so both directions
+    # are tested and whichever confirms as the disproportionately costly
+    # side - if either does - is what gets returned.
+    sides = list(components.values())
+    _, full_dist, _, _ = _simulate_route(route_orders, depot, route_start_minutes)
+    if full_dist is None:
+        return None
+
+    best: Optional[Tuple[List[int], float]] = None  # (candidate indexes, its ratio)
+    for candidate, rest_side in ((sides[0], sides[1]), (sides[1], sides[0])):
+        rest = [route_orders[i] for i in rest_side]
+        _, rest_dist, _, rest_feasible = _simulate_route(rest, depot, route_start_minutes)
+        if rest_dist is None or not rest_feasible:
+            continue
+        group_cost_per_stop = (full_dist - rest_dist) / len(candidate)
+        rest_cost_per_stop = rest_dist / len(rest) if rest else 0.0
+        if rest_cost_per_stop <= 0:
+            continue
+        ratio = group_cost_per_stop / rest_cost_per_stop
+        if ratio >= DETOUR_COST_RATIO_FACTOR and (best is None or ratio > best[1]):
+            best = (candidate, ratio)
+
+    if best is None:
+        return None
+    candidate, ratio = best
+    group_ids = [route_orders[i].get("order_id") for i in candidate]
+    print(
+        f"[route-separation] detour-split candidate: order_ids={group_ids} "
+        f"weakest_link_km={weakest_km:.2f} cost_ratio={ratio:.2f}x (cutoff {DETOUR_COST_RATIO_FACTOR}x)"
+    )
+    return candidate, weakest_km, typical_spacing_km
 
 
 def _extract_geographic_outliers(
@@ -540,7 +709,7 @@ def _extract_geographic_outliers(
         for source in vehicles:
             if not source["orders"]:
                 continue
-            found = _smallest_disconnected_group(source["orders"])
+            found = _smallest_disconnected_group(source["orders"], depot, route_start_minutes)
             if found is None:
                 continue
             indexes, gap_km, typical_spacing_km = found

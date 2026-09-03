@@ -1877,10 +1877,22 @@ textarea:focus-visible, [tabindex]:focus-visible {
   font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s ease;
+  box-sizing: border-box;
 }
 .modal__input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
+}
+/* A <textarea> with this class (the manual-address form's Address field)
+   needs its own rule - box-sizing/line-height/min-height explicit, not
+   left to the `rows` attribute alone, since a couple of parent flex/grid
+   contexts in this app squeeze a bare textarea down to a single visible
+   line otherwise. resize: vertical keeps the native resize handle usable
+   without letting it get dragged narrower than the field. */
+textarea.modal__input {
+  min-height: 4.5rem;
+  line-height: 1.4;
+  resize: vertical;
 }
 .modal__static-value { font-size: 0.9rem; color: var(--ink); padding: 0.4rem 0; font-weight: 700; }
 .modal__static-hint { font-size: 0.78rem; color: var(--ink-soft); font-weight: 400; }
