@@ -197,6 +197,31 @@ STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP = 0.45
 # "Google matched a different house on the same street").
 STREET_NUMBER_MISMATCH_CONFIDENCE_CAP = 0.3
 
+# The customer named a specific street and NONE of Google's address
+# components mention it anywhere - real case this catches: a GEOMETRIC_
+# CENTER match against a named ESTABLISHMENT/POI (types include
+# "establishment"/"point_of_interest", already in _PRECISE_TYPES, so
+# _score_result alone scores it 0.5-0.65) where Google's fuzzy business-
+# name search landed on a real but different place - "No:16, GodhavariSt,
+# Bharathi Nagar" for a customer address naming "Bhavani St, Bharathi
+# Nagar". PIN and locality can both genuinely match (same postal code,
+# same neighbourhood) while the actual street is simply wrong - neither
+# of those checks would ever catch that on their own. Same tier as a
+# locality mismatch: everything else about the match can look fine, only
+# the street itself is wrong.
+STREET_NAME_MISMATCH_CONFIDENCE_CAP = 0.4
+# Common Indian street-type suffixes - the token immediately before one
+# of these in the customer's own text is treated as the street's
+# identifying name ("Bhavani" in "Bhavani St"). Deliberately excludes
+# "Nagar" - that overwhelmingly names an AREA in Indian addresses
+# ("Bharathi Nagar"), not a street, and is already covered by the
+# locality check above; treating it as a street suffix here would extract
+# the wrong word entirely and double up on (or contradict) that check.
+_STREET_SUFFIX_PATTERN = re.compile(
+    r"\b([A-Za-z]+)\s+(?:st|street|road|rd|salai|avenue|ave|lane|marg)\.?\b",
+    re.IGNORECASE,
+)
+
 # Common Indian house/door/plot-number prefixes, stripped before matching
 # the number itself - "Door No 15" and "15" both mean the same thing.
 _HOUSE_NUMBER_PREFIX = re.compile(
@@ -231,15 +256,44 @@ def _extract_house_number(address: str) -> Optional[str]:
     return None
 
 
+def _component_text_tokens(text: str) -> List[str]:
+    """Tokenizes Google's address_components text for the street-name
+    check specifically - NOT nominatim_geocoder._significant_tokens,
+    deliberately. That one is built for LOCALITY matching, where "Main",
+    "Road", "Street", "Nagar" are noise words that show up in a huge
+    fraction of Chennai locality names and would swamp any real signal
+    (see its own _GENERIC_LOCALITY_WORDS) - but a street-name check needs
+    exactly those words back: "Main" in "Main Road" is very often the
+    actual distinguishing street name, not filler, and filtering it out
+    here caused this check to wrongly flag "0 Main Street" as a street
+    mismatch against a component list that plainly contained "...Main
+    Road..." - the word was being stripped from BOTH sides before they
+    were ever compared."""
+    tokens = re.split(r"[,\s/#-]+", text.lower())
+    return [t for t in (tok.strip(".") for tok in tokens) if t and not t.isdigit()]
+
+
+def _extract_street_keyword(address: str) -> Optional[str]:
+    """The customer's stated street NAME, not its type-suffix - "bhavani"
+    out of "Bhavani St". Optional by nature (an address with no street-
+    type suffix at all - a locality/landmark-only address - simply has
+    none, and this correctly returns None rather than guessing at one).
+    First match wins - Indian addresses reliably name the actual street
+    once, early in the string; a later "St"/"Road" mention (inside a
+    locality or landmark phrase) is rare enough not to special-case."""
+    match = _STREET_SUFFIX_PATTERN.search(address)
+    return match.group(1).lower() if match else None
+
+
 def _score_component_match(original_address: str, address_components: List[Dict[str, object]]) -> Optional[float]:
     """Returns a confidence CAP (never a floor/boost) when a real mismatch
     is found, or None when nothing meaningful was found to flag - callers
     combine this with _score_result via min(), so None means "no opinion,
     defer entirely to the precision-based score" rather than "confirmed
-    fine". Checks PIN, locality, and house/door number independently and
-    returns the MOST restrictive (lowest) cap among whichever ones actually
-    found something to flag - a result can fail more than one check at
-    once."""
+    fine". Checks PIN, locality, street name, and house/door number
+    independently and returns the MOST restrictive (lowest) cap among
+    whichever ones actually found something to flag - a result can fail
+    more than one check at once."""
     caps: List[float] = []
 
     customer_pin = _extract_pincode(original_address)
@@ -276,6 +330,22 @@ def _score_component_match(original_address: str, address_components: List[Dict[
             caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
         elif google_house_number != customer_house_number:
             caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
+
+    # Street name - independent of house number, and independent of PIN/
+    # locality (both of THOSE can genuinely match while the street itself
+    # is still wrong - see this constant's own comment above for the real
+    # case that motivated it). Checked against every component's long_name
+    # joined together, not just route-typed ones - an establishment/POI
+    # match's most specific component often carries free text with no
+    # "route" type at all ("No:16, GodhavariSt", types: []), so requiring
+    # a structured route component here would just silently skip the
+    # exact case this needs to catch.
+    street_keyword = _extract_street_keyword(original_address)
+    if street_keyword:
+        all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
+        component_tokens = _component_text_tokens(all_component_text)
+        if component_tokens and not _fuzzy_token_match(street_keyword, component_tokens):
+            caps.append(STREET_NAME_MISMATCH_CONFIDENCE_CAP)
 
     return min(caps) if caps else None
 

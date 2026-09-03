@@ -8,12 +8,29 @@ from app.main import app
 client = TestClient(app)
 
 
+# Real, specific, house-numbered Chennai addresses that geocode cleanly to
+# STATUS_OK - NOT the "{i} Main Street, Chennai" template this used to be:
+# "Main Street"/"Main Road" repeats across dozens of unrelated Chennai
+# neighbourhoods, so Google's top match for it is itself ambiguous and
+# genuinely inconsistent about which one it picks - once geocoding
+# accuracy validation got strict enough to check the matched STREET NAME
+# itself (not just PIN/locality/house number), that ambiguity started
+# tripping the very check it exists to test, independent of anything
+# these tests are actually about (route-editing mechanics, not geocoding).
+_REAL_TEST_ADDRESSES = [
+    "21 TTK Road, Alwarpet, Chennai",
+    "15 Sardar Patel Road, Guindy, Chennai",
+    "20 Kutchery Road, Mylapore, Chennai",
+    "8 Bazaar Road, Mylapore, Chennai",
+]
+
+
 def _upload_batch(order_ids):
     workbook = Workbook()
     sheet = workbook.active
     sheet.append(["order_id", "customer_name", "address", "delivery_time"])
     for i, order_id in enumerate(order_ids):
-        sheet.append([order_id, f"Customer {order_id}", f"{i} Main Street, Chennai", "18:00"])
+        sheet.append([order_id, f"Customer {order_id}", _REAL_TEST_ADDRESSES[i % len(_REAL_TEST_ADDRESSES)], "18:00"])
     buffer = io.BytesIO()
     workbook.save(buffer)
     buffer.seek(0)

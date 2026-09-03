@@ -226,8 +226,8 @@ def test_places_fallback_never_accepts_a_match_in_the_wrong_locality():
 
 def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality():
     # The other half of the same fix: a Places match that DOES agree with
-    # the customer's stated PIN/locality must not be penalized just for
-    # having gone through Place Details - it still lands at the normal
+    # the customer's stated PIN/locality/street must not be penalized just
+    # for having gone through Place Details - it still lands at the normal
     # PLACES_FALLBACK_CONFIDENCE, same as before this change.
     responses = [
         _ok_response("GEOMETRIC_CENTER", ["route"]),
@@ -236,6 +236,7 @@ def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality
             12.9906, 80.2181,
             "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113, India",
             address_components=[
+                {"long_name": "Bhavani Street", "types": ["route"]},
                 {"long_name": "Bharathi Nagar", "types": ["sublocality", "sublocality_level_1"]},
                 {"long_name": "600113", "types": ["postal_code"]},
             ],
@@ -561,6 +562,68 @@ def test_score_component_match_does_not_invent_a_house_number_penalty_when_none_
     from app.geocoding.google_geocoder import _score_component_match
 
     assert _score_component_match("Velachery, Chennai", [
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+    ]) is None
+
+
+def test_extract_street_keyword_handles_common_suffixes():
+    from app.geocoding.google_geocoder import _extract_street_keyword
+
+    assert _extract_street_keyword("Bhavani St, Bharathi Nagar, Chennai") == "bhavani"
+    assert _extract_street_keyword("12 Example Street, Adyar, Chennai") == "example"
+    assert _extract_street_keyword("OMR Road, Perungudi, Chennai") == "omr"
+    assert _extract_street_keyword("Anna Salai, Chennai") == "anna"
+    # No street-type suffix anywhere - a locality/landmark-only address -
+    # must return None rather than guessing at one.
+    assert _extract_street_keyword("Bharathi Nagar, Velachery, Chennai") is None
+    assert _extract_street_keyword("ABC Apartments, Velachery, Chennai") is None
+
+
+def test_score_component_match_flags_a_different_street_even_when_pin_and_locality_match():
+    """THE reported bug: Google's Geocoding API matched a real ESTABLISHMENT
+    (types include "establishment"/"point_of_interest", already in
+    _PRECISE_TYPES - GEOMETRIC_CENTER + partial_match alone still scores
+    0.5, comfortably over the accept threshold) whose PIN and locality both
+    genuinely agree with the customer's own address, but the street itself
+    is simply different - "Bhavani St" asked for, "GodhavariSt" matched.
+    Neither the PIN nor the locality check has any way to catch this on
+    its own."""
+    from app.geocoding.google_geocoder import STREET_NAME_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    google_components = [
+        # An establishment match's most specific component is often free
+        # text with no "route" type at all - exactly this shape.
+        {"long_name": "No:16, GodhavariSt", "types": []},
+        {"long_name": "Bharathi Nagar", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "Tharamani", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600113", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) == STREET_NAME_MISMATCH_CONFIDENCE_CAP
+
+
+def test_score_component_match_accepts_a_confirmed_street_match():
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    google_components = [
+        {"long_name": "Bhavani Street", "types": ["route"]},
+        {"long_name": "Bharathi Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600113", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_does_not_invent_a_street_penalty_when_none_was_stated():
+    """A locality/landmark-only address (no street-type suffix anywhere in
+    the customer's text) must never get a manufactured street-mismatch
+    penalty - same principle as the house-number check's own equivalent
+    test."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    assert _score_component_match("ABC Apartments, Velachery, Chennai", [
         {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
     ]) is None
 
