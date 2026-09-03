@@ -149,6 +149,81 @@ def test_landmark_stripped_retry_rescues_a_match_the_raw_address_missed():
     assert client.call_count == 2  # stopped after the stripped retry - no Places call needed
 
 
+def test_strip_leading_name_segment_drops_an_unindexed_building_name():
+    from app.geocoding.google_geocoder import _strip_leading_name_segment
+
+    assert _strip_leading_name_segment(
+        "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    ) == "Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+
+
+def test_strip_leading_name_segment_leaves_a_house_numbered_address_alone():
+    # A leading house number means the structured parser already has a
+    # real number to anchor on - a building name is not the problem here,
+    # so there's nothing useful to strip.
+    from app.geocoding.google_geocoder import _strip_leading_name_segment
+
+    assert _strip_leading_name_segment("24 XYZ Street, Velachery, Chennai 600042") is None
+
+
+def test_strip_leading_name_segment_does_not_eat_a_real_street_with_no_name_in_front():
+    # No building/business name leads this address at all - the first
+    # segment already IS the street. Stripping it would remove the one
+    # thing the customer actually specified.
+    from app.geocoding.google_geocoder import _strip_leading_name_segment
+
+    assert _strip_leading_name_segment("Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113") is None
+
+
+def test_strip_leading_name_segment_needs_enough_left_over_to_be_worth_it():
+    from app.geocoding.google_geocoder import _strip_leading_name_segment
+
+    assert _strip_leading_name_segment("Sidharth Upscale Apartments, Porur") is None
+
+
+def test_name_stripped_places_retry_rescues_the_pg_case_end_to_end():
+    # THE FULL FIX: the customer's exact wording is kept and still
+    # succeeds - "can't enter the PG name" is no longer true. A wrong
+    # Places match on the ORIGINAL (named) text is retried against the
+    # name-stripped text, which resolves correctly.
+    wrong_place_details = _place_details_response(
+        12.9749, 80.2224,
+        "X6FC+XX2, Sarathy Nagar, Velachery, Chennai, Tamil Nadu 600042, India",
+        address_components=[
+            {"long_name": "Sarathy Nagar", "types": ["sublocality", "sublocality_level_1"]},
+            {"long_name": "600042", "types": ["postal_code"]},
+        ],
+    )
+    right_place_details = _place_details_response(
+        12.980685, 80.2336006,
+        "Bhavani St, Bharathi Nagar, Tharamani, Chennai, Tamil Nadu, India",
+        address_components=[
+            {"long_name": "Bhavani St", "types": ["route"]},
+            {"long_name": "Bharathi Nagar", "types": ["sublocality", "sublocality_level_1"]},
+            {"long_name": "600113", "types": ["postal_code"]},
+        ],
+    )
+    responses = [
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # raw geocode of the full (named) address
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # name-stripped retry - still only street-level
+        _find_place_response(),  # Find Place on the original (named) address
+        wrong_place_details,  # ...the wrong establishment, rejected
+        _find_place_response(),  # Find Place retried on the name-stripped address
+        right_place_details,  # ...the correct street this time - accepted
+    ]
+    client = _DummyClient(responses)
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode(
+        "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113"
+    )
+
+    assert result.status == "OK"
+    assert result.lat == 12.980685
+    assert result.confidence == PLACES_FALLBACK_CONFIDENCE
+    assert client.call_count == 6
+
+
 def _find_place_response(place_id="place123"):
     return {"status": "OK", "candidates": [{"place_id": place_id}]}
 
@@ -200,17 +275,21 @@ def test_places_fallback_never_accepts_a_match_in_the_wrong_locality():
     # through the same _score_component_match every Geocoding API result
     # already gets, so this must be capped below the accept threshold
     # instead of silently trusted.
+    wrong_place_details = _place_details_response(
+        12.9749, 80.2224,
+        "X6FC+XX2, Sarathy Nagar, Velachery, Chennai, Tamil Nadu 600042, India",
+        address_components=[
+            {"long_name": "Sarathy Nagar", "types": ["sublocality", "sublocality_level_1"]},
+            {"long_name": "600042", "types": ["postal_code"]},
+        ],
+    )
     responses = [
-        _ok_response("GEOMETRIC_CENTER", ["route"]),  # only the street matched, not the named PG
-        _find_place_response(),
-        _place_details_response(
-            12.9749, 80.2224,
-            "X6FC+XX2, Sarathy Nagar, Velachery, Chennai, Tamil Nadu 600042, India",
-            address_components=[
-                {"long_name": "Sarathy Nagar", "types": ["sublocality", "sublocality_level_1"]},
-                {"long_name": "600042", "types": ["postal_code"]},
-            ],
-        ),
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # raw geocode: only the street matched, not the named PG
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # name-stripped retry: still only street-level
+        _find_place_response(),  # Find Place on the original (named) address
+        wrong_place_details,  # ...resolves to the wrong place - rejected
+        _find_place_response(),  # Find Place retried on the name-stripped address
+        wrong_place_details,  # ...same wrong place either way - still rejected
     ]
     client = _DummyClient(responses)
     geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
@@ -221,7 +300,7 @@ def test_places_fallback_never_accepts_a_match_in_the_wrong_locality():
 
     assert result.status == "NEEDS_MANUAL_VERIFICATION"
     assert result.confidence < 0.5
-    assert client.call_count == 3
+    assert client.call_count == 6
 
 
 def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality():
@@ -230,8 +309,9 @@ def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality
     # for having gone through Place Details - it still lands at the normal
     # PLACES_FALLBACK_CONFIDENCE, same as before this change.
     responses = [
-        _ok_response("GEOMETRIC_CENTER", ["route"]),
-        _find_place_response(),
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # raw geocode: street only
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # name-stripped retry: still street only
+        _find_place_response(),  # Find Place on the original (named) address
         _place_details_response(
             12.9906, 80.2181,
             "Narayana Swami Men's PG, Bhavani St, Bharathi Nagar, Velachery, Chennai, Tamil Nadu 600113, India",
@@ -251,7 +331,10 @@ def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality
 
     assert result.status == "OK"
     assert result.confidence == PLACES_FALLBACK_CONFIDENCE
-    assert client.call_count == 3
+    # Succeeds via Places on the ORIGINAL (named) address, before the
+    # name-stripped Places retry is ever needed - confirms that retry is
+    # only reached when the first Places attempt didn't already work.
+    assert client.call_count == 4
 
 
 def test_geocode_returns_none_on_zero_results_after_places_fallback_also_empty():

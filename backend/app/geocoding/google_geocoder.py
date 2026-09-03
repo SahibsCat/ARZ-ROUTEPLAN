@@ -356,6 +356,39 @@ def _strip_landmark_phrase(address: str) -> str:
     return stripped
 
 
+def _strip_leading_name_segment(address: str) -> Optional[str]:
+    """Drops a leading building/business-name segment ("Narayana Swami
+    Men's PG, Bhavani St, Bharathi Nagar, ...") so the remaining street +
+    locality + city + PIN can be geocoded on its own - a name Google
+    doesn't have independently indexed doesn't just fail to help, it
+    actively drags the Geocoding API's own fuzzy establishment-matching
+    (and _find_place's) toward a wrong nearby business instead (the
+    GodhavariSt/Sarathy Nagar cases - see STREET_NAME_MISMATCH_CONFIDENCE_
+    CAP and PLACES_FALLBACK_CONFIDENCE's own comments). Stripping it and
+    asking again with just the structured part is what actually turns
+    that into a clean, confident street-level match.
+
+    Returns None (nothing to strip) whenever:
+      - the address already leads with a house number
+        (_extract_house_number found one - the exact case a building name
+        is NOT the problem, since the structured parser has a real number
+        to anchor on already), or
+      - the first segment already looks like a street reference itself
+        (_STREET_SUFFIX_PATTERN matches it - "Bhavani St, Bharathi Nagar,
+        ..." with no name in front at all would otherwise have its actual
+        street stripped as if it were a name), or
+      - fewer than 3 segments total, so there's not enough left after
+        stripping to form a real address."""
+    if _extract_house_number(address):
+        return None
+    segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+    if len(segments) < 3:
+        return None
+    if _STREET_SUFFIX_PATTERN.search(segments[0]):
+        return None
+    return ", ".join(segments[1:])
+
+
 def _rank(result: Optional[GeocodeResult]) -> float:
     """Comparable score for 'is this candidate better than that one' - a
     missing result never beats even the lowest real confidence."""
@@ -405,20 +438,37 @@ class GoogleGeocoder(GeocodingProvider):
         self.close()
 
     def geocode(self, address: str) -> Optional[GeocodeResult]:
-        """Up to three attempts, each only tried when the one before it
+        """Up to five attempts, each only tried when the one before it
         didn't already land a confident (STATUS_OK) match - cheapest first:
           1. The address as given, straight to the Geocoding API.
           2. The same address with landmark phrases ("near X", "opposite Y")
              stripped - free (same API), just a cleaner query. Skipped if
              there was no landmark phrase to strip.
-          3. Places API's fuzzy text search - for addresses that name a
-             specific apartment/building the structured Geocoding API isn't
-             built to recognize (see _find_place). Real added cost per call,
-             which is exactly why this is a last resort, not the first
-             attempt.
-        Whichever attempt scores highest wins; if none reach STATUS_OK, the
-        best (still-flagged) one found is returned rather than nothing -
-        never worse than a single plain attempt would have been."""
+          3. The same address with a leading building/business name
+             stripped (see _strip_leading_name_segment) - also free (same
+             API): a name Google has no independent listing for doesn't
+             just fail to help the structured parser, it actively confuses
+             it toward a wrong nearby match, so asking again with just the
+             street/locality/city/PIN often succeeds cleanly where the
+             full text didn't. Skipped when there's no real name segment
+             to strip (see that function's own docstring for exactly when).
+          4. Places API's fuzzy text search, against the ORIGINAL full
+             address (this is the one attempt actually built to recognize
+             a named establishment/apartment complex BY NAME - the
+             structured Geocoding API calls above never are).
+          5. Places API again, against the name-stripped text from step 3
+             (only if that stripping happened, and only if step 4 didn't
+             already succeed) - a named building Places has no listing for
+             can still resolve correctly once the confusing name is out of
+             the query: Places' own fuzzy matching gets dragged toward a
+             wrong nearby business by an unlisted name the exact same way
+             the structured API does in step 1, and clearing it here helps
+             for the exact same reason it helped in step 3.
+        Real added cost per call for attempts 4-5, which is exactly why
+        they're the last resort, not the first attempt. Whichever attempt
+        scores highest wins; if none reach STATUS_OK, the best (still-
+        flagged) one found is returned rather than nothing - never worse
+        than a single plain attempt would have been."""
         if not address or not self._api_key:
             return None
 
@@ -426,11 +476,20 @@ class GoogleGeocoder(GeocodingProvider):
         if best is not None and best.status == STATUS_OK:
             return best
 
-        stripped = _strip_landmark_phrase(address)
-        if stripped and stripped.lower() != address.lower():
-            variant = self._geocode_once(stripped)
+        stripped_landmark = _strip_landmark_phrase(address)
+        if stripped_landmark and stripped_landmark.lower() != address.lower():
+            variant = self._geocode_once(stripped_landmark)
             if _rank(variant) > _rank(best):
-                print(f"Google Geocoding: landmark-stripped retry '{address}' -> '{stripped}' improved the match")
+                print(f"Google Geocoding: landmark-stripped retry '{address}' -> '{stripped_landmark}' improved the match")
+                best = variant
+            if best is not None and best.status == STATUS_OK:
+                return best
+
+        stripped_name = _strip_leading_name_segment(address)
+        if stripped_name and stripped_name.lower() != address.lower():
+            variant = self._geocode_once(stripped_name)
+            if _rank(variant) > _rank(best):
+                print(f"Google Geocoding: name-stripped retry '{address}' -> '{stripped_name}' improved the match")
                 best = variant
             if best is not None and best.status == STATUS_OK:
                 return best
@@ -438,6 +497,14 @@ class GoogleGeocoder(GeocodingProvider):
         fallback = self._find_place(address)
         if _rank(fallback) > _rank(best):
             best = fallback
+        if best is not None and best.status == STATUS_OK:
+            return best
+
+        if stripped_name and stripped_name.lower() != address.lower():
+            fallback_stripped = self._find_place(stripped_name)
+            if _rank(fallback_stripped) > _rank(best):
+                print(f"Places API fallback: name-stripped retry '{address}' -> '{stripped_name}' improved the match")
+                best = fallback_stripped
 
         return best
 
