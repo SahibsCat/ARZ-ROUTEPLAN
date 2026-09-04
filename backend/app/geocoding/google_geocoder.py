@@ -276,7 +276,9 @@ _STREET_SUFFIX_PATTERN = re.compile(
 # original pattern) - "Door 2 Plot 107, ..." (no "No" at all) needs "door"
 # alone to strip just as cleanly as "Door No 2" does. "No" itself accepts
 # a colon as well as a period ("No: 202", not just "No. 202" - both are
-# common) before the number.
+# common) before the number. A period between the prefix word and "No" is
+# accepted too, not just whitespace ("Plot.no 11" - no space at all, a
+# real formatting variant - alongside the already-handled "Plot No 11").
 #
 # Deliberately does NOT include "Flat"/"Unit" - a flat/unit number is an
 # INTERNAL designator within a named building, not a street-level fact
@@ -290,15 +292,20 @@ _STREET_SUFFIX_PATTERN = re.compile(
 # was actually wrong. Confirmed by testing this addition against a real
 # address - it broke a previously-correct 0.8-confidence match.
 _HOUSE_NUMBER_PREFIX = re.compile(
-    r"^(?:door\s*(?:no[.:]?)?|d\.?\s*no[.:]?|plot\s*(?:no[.:]?)?|house\s*(?:no[.:]?)?|no[.:]?)\s*",
+    r"^(?:door[.\s]*(?:no[.:]?)?|d\.?\s*no[.:]?|plot[.\s]*(?:no[.:]?)?|house[.\s]*(?:no[.:]?)?|no[.:]?)\s*",
     re.IGNORECASE,
 )
-# A house number token - plain (24), letter-suffixed (12A), or with a
-# second part after a slash/dash that's itself a number+letter or a bare
-# letter (12/2, 12/2A, 12-B). Anchored to the START of whatever segment is
-# being checked - Indian addresses reliably lead each relevant segment
-# with the number, never bury it mid-sentence.
-_HOUSE_NUMBER_TOKEN = re.compile(r"^(\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
+# A house number token - plain (24), letter-suffixed (12A), letter-
+# PREFIXED (D1/5, A1C - a block/door-letter leading the number, common in
+# gated communities and government housing), or with a second part after
+# a slash/dash that's itself a number+letter or a bare letter (12/2,
+# 12/2A, 12-B). The leading letter is capped at exactly one - anything
+# longer is a word (a locality/building name), not a number - and still
+# requires a digit right after it, so a real word ("Sri", "New") can
+# never match. Anchored to the START of whatever segment is being checked
+# - Indian addresses reliably lead each relevant segment with the number,
+# never bury it mid-sentence.
+_HOUSE_NUMBER_TOKEN = re.compile(r"^([A-Za-z]?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
 
 
 def _extract_house_numbers(address: str) -> List[str]:
@@ -353,20 +360,25 @@ def _normalize_house_number(number: str) -> str:
 
 def _house_number_matches(google_number: str, customer_numbers: Iterable[str]) -> bool:
     """True when Google's confirmed street_number genuinely corresponds to
-    one of the customer's stated numbers - either an exact match (after
-    separator normalization - see _normalize_house_number), or Google's
-    number is just the BASE building/plot number while the customer's
-    also names a specific sub-unit Google's data doesn't carry down to
-    ("2" confirmed vs customer's "2/20" - the base "2" matching is still
-    strong confirmation of the same building, not a mismatch just because
-    Google lacks flat-level granularity). Never the other direction - a
-    customer who only gave a bare base number is never "confirmed" by a
-    MORE specific Google number, since that would be inventing precision
-    the customer never actually claimed."""
+    one of the customer's stated numbers - an exact match (after
+    separator normalization - see _normalize_house_number), or either
+    side is just the BASE building/plot number while the other names a
+    specific sub-unit ("2" confirmed vs customer's "2/20"; or, just as
+    real, customer's bare "77" vs Google's confirmed "77/28" - a
+    base/sub-unit number is frequently the single OFFICIAL premise
+    number for one property in Indian addressing, not "house 77, one of
+    several flats", so a customer citing just the base part is very
+    plausibly the same property abbreviated, not a different one).
+    Checked symmetrically in both directions - the base matching on
+    EITHER side is strong confirmation of the same building, not a
+    mismatch just because one side has less granularity than the other."""
     normalized_google = _normalize_house_number(google_number)
+    google_base = normalized_google.split("/")[0]
     for customer_number in customer_numbers:
         normalized_customer = _normalize_house_number(customer_number)
         if normalized_google == normalized_customer:
+            return True
+        if google_base == normalized_customer:
             return True
         if normalized_google == normalized_customer.split("/")[0]:
             return True
@@ -542,6 +554,16 @@ def _score_component_match(
 def _strip_landmark_phrase(address: str) -> str:
     stripped = _LANDMARK_PATTERN.sub("", address)
     stripped = re.sub(r"\s+", " ", stripped).strip().strip(",").strip()
+    # _LANDMARK_PATTERN consumes everything up to the next comma (or end
+    # of string) after "near"/"opposite"/etc - correct for "near X, rest
+    # of address", but when the landmark phrase is the LAST thing typed
+    # with nothing after it ("...Near Mylapore post office 600004"), that
+    # greedy match swallows the trailing PIN code too, since there's no
+    # comma to stop it. The PIN is real address data, never part of the
+    # landmark phrase itself - re-append it if stripping lost it.
+    original_pin = _extract_pincode(address)
+    if original_pin and original_pin not in stripped:
+        stripped = f"{stripped}, {original_pin}" if stripped else original_pin
     return stripped
 
 

@@ -210,6 +210,44 @@ def test_extract_house_numbers_ignores_a_flat_number_inside_a_named_building():
     assert _extract_house_numbers("Flat 2B, 12 XYZ Street, Chennai") == ["12"]
 
 
+def test_extract_house_numbers_handles_a_letter_prefixed_number():
+    # Block/door-letter leading the number - common in gated communities
+    # and government housing ("D1/5" - block D, unit 1/5).
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("D1/5 S3, NTECL Township, NCTPS Road, vallur, 600103") == ["D1/5"]
+    assert _extract_house_numbers("A1C BBCL Apartments, Ambattur, 600058") == ["A1C"]
+    # A single leading letter still requires a digit right after it - a
+    # real word must never be mistaken for a house number.
+    assert _extract_house_numbers("Sri Sai Apartments, Anna Nagar, Chennai") == []
+
+
+def test_extract_house_numbers_handles_a_period_between_the_prefix_and_no():
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("Plot.no 11, Sekar Villa, Injambakkam, 600115") == ["11"]
+
+
+def test_strip_landmark_phrase_preserves_a_trailing_pin_code():
+    # The landmark pattern consumes everything up to the next comma (or
+    # end of string) after "near"/etc - when the landmark phrase is the
+    # LAST thing in the address with nothing after it, that used to
+    # swallow the PIN code along with it since there was no comma to stop
+    # the match.
+    from app.geocoding.google_geocoder import _strip_landmark_phrase
+
+    assert _strip_landmark_phrase(
+        "77 Arundale street Mylapore Near Mylapore post office 600004"
+    ) == "77 Arundale street Mylapore, 600004"
+    # A landmark phrase with real address text AFTER it is unaffected -
+    # nothing was ever lost there in the first place (pre-existing stray
+    # space before the comma is a separate, harmless cosmetic quirk of
+    # the substitution, unrelated to this fix).
+    assert _strip_landmark_phrase(
+        "12 Example St near Big Mall, Chennai"
+    ) == "12 Example St , Chennai"
+
+
 def test_house_number_matches_treats_a_bare_base_number_as_confirmation():
     # Google's data often doesn't carry sub-unit granularity ("2" rather
     # than "2/20") - the base number still matching is strong confirmation
@@ -220,11 +258,15 @@ def test_house_number_matches_treats_a_bare_base_number_as_confirmation():
     assert _house_number_matches("2", ["2/20"]) is True
     assert _house_number_matches("17-10", ["17/10"]) is True  # separator-only difference
     assert _house_number_matches("2", ["172", "2/20"]) is True  # matches whichever candidate applies
-    # The other direction is NOT confirmation - a customer who only gave a
-    # bare base number was never claiming Google's more specific one.
-    assert _house_number_matches("2/20", ["2"]) is False
-    # A genuinely different base number is still a real mismatch.
+    # Checked symmetrically now - a customer citing just the base part
+    # ("77") is also confirmed by Google's more specific number ("77/28"),
+    # since a base/sub-unit number is frequently the single official
+    # premise number for one property, not several - see the function's
+    # own docstring for the real case this covers.
+    assert _house_number_matches("77/28", ["77"]) is True
+    # A genuinely different base number is still a real mismatch either way.
     assert _house_number_matches("231C", ["231B/1"]) is False
+    assert _house_number_matches("99/5", ["2"]) is False
 
 
 def test_reorder_house_number_to_street_moves_the_number_next_to_its_street():
