@@ -237,11 +237,24 @@ _STREET_SUFFIX_PATTERN = re.compile(
 # Common Indian house/door/plot-number prefixes, stripped before matching
 # the number itself - "Door No 15", "Door 15", and "15" all mean the same
 # thing. "No" is optional after every prefix word here (matching "plot"'s
-# existing pattern) - "Door 2 Plot 107, ..." (no "No" at all, real address
-# from this conversation) needs "door" alone to strip just as cleanly as
-# "Door No 2" does.
+# original pattern) - "Door 2 Plot 107, ..." (no "No" at all) needs "door"
+# alone to strip just as cleanly as "Door No 2" does. "No" itself accepts
+# a colon as well as a period ("No: 202", not just "No. 202" - both are
+# common) before the number.
+#
+# Deliberately does NOT include "Flat"/"Unit" - a flat/unit number is an
+# INTERNAL designator within a named building, not a street-level fact
+# Google's Geocoding API can ever confirm (apartment interiors aren't
+# individually geocoded) - extracting "202" out of "Flat No: 202" and then
+# checking it against street_number the same way a real door number is
+# checked doesn't add confidence, it manufactures a guaranteed miss: a
+# correct, precise BUILDING match ("Rwd Corniche, Pantheon Rd, Egmore")
+# has no reason to ever carry a "202" anywhere in its components, so the
+# check would cap it as "unconfirmed" even though nothing about the match
+# was actually wrong. Confirmed by testing this addition against a real
+# address - it broke a previously-correct 0.8-confidence match.
 _HOUSE_NUMBER_PREFIX = re.compile(
-    r"^(?:door\s*(?:no\.?)?|d\.?\s*no\.?|plot\s*(?:no\.?)?|house\s*(?:no\.?)?|no\.?)\s*",
+    r"^(?:door\s*(?:no[.:]?)?|d\.?\s*no[.:]?|plot\s*(?:no[.:]?)?|house\s*(?:no[.:]?)?|no[.:]?)\s*",
     re.IGNORECASE,
 )
 # A house number token - plain (24), letter-suffixed (12A), or with a
@@ -300,6 +313,28 @@ def _normalize_house_number(number: str) -> str:
     own data) - canonicalized before comparing so that difference alone
     never causes a false mismatch."""
     return number.replace("-", "/")
+
+
+def _house_number_matches(google_number: str, customer_numbers: Iterable[str]) -> bool:
+    """True when Google's confirmed street_number genuinely corresponds to
+    one of the customer's stated numbers - either an exact match (after
+    separator normalization - see _normalize_house_number), or Google's
+    number is just the BASE building/plot number while the customer's
+    also names a specific sub-unit Google's data doesn't carry down to
+    ("2" confirmed vs customer's "2/20" - the base "2" matching is still
+    strong confirmation of the same building, not a mismatch just because
+    Google lacks flat-level granularity). Never the other direction - a
+    customer who only gave a bare base number is never "confirmed" by a
+    MORE specific Google number, since that would be inventing precision
+    the customer never actually claimed."""
+    normalized_google = _normalize_house_number(google_number)
+    for customer_number in customer_numbers:
+        normalized_customer = _normalize_house_number(customer_number)
+        if normalized_google == normalized_customer:
+            return True
+        if normalized_google == normalized_customer.split("/")[0]:
+            return True
+    return False
 
 
 def _number_confirmed_in_text(number: str, text: str) -> bool:
@@ -381,7 +416,6 @@ def _score_component_match(original_address: str, address_components: List[Dict[
     # to know which one Google's data indexes against in advance).
     customer_house_numbers = _extract_house_numbers(original_address)
     if customer_house_numbers:
-        normalized_customer_numbers = {_normalize_house_number(n) for n in customer_house_numbers}
         google_house_number = next(
             (str(c.get("long_name") or "").upper() for c in address_components if "street_number" in (c.get("types") or [])),
             None,
@@ -398,7 +432,7 @@ def _score_component_match(original_address: str, address_components: List[Dict[
             all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
             if not any(_number_confirmed_in_text(n, all_component_text) for n in customer_house_numbers):
                 caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
-        elif _normalize_house_number(google_house_number) not in normalized_customer_numbers:
+        elif not _house_number_matches(google_house_number, customer_house_numbers):
             caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
 
     # Street name - independent of house number, and independent of PIN/

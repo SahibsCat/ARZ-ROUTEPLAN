@@ -192,6 +192,41 @@ def test_number_confirmed_in_text_matches_whole_tokens_only():
     assert _number_confirmed_in_text("17", "Bhavani St, Chennai, Tamil Nadu 600113") is False
 
 
+def test_extract_house_numbers_handles_colon_after_no():
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("Door No: 15, XYZ Street") == ["15"]
+    assert _extract_house_numbers("No: 12, XYZ Street") == ["12"]
+
+
+def test_extract_house_numbers_ignores_a_flat_number_inside_a_named_building():
+    # Deliberately NOT extracted - see _HOUSE_NUMBER_PREFIX's own comment
+    # for why a flat/unit number is the wrong kind of thing to validate
+    # against Google's street_number data at all. The real street number
+    # later in the address (if any) is still found normally.
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("RWD Corniche, A Block, Flat No: 202, 2nd floor, Pantheon Road") == []
+    assert _extract_house_numbers("Flat 2B, 12 XYZ Street, Chennai") == ["12"]
+
+
+def test_house_number_matches_treats_a_bare_base_number_as_confirmation():
+    # Google's data often doesn't carry sub-unit granularity ("2" rather
+    # than "2/20") - the base number still matching is strong confirmation
+    # of the same building, not a mismatch just because Google lacks
+    # flat-level detail the customer happened to include.
+    from app.geocoding.google_geocoder import _house_number_matches
+
+    assert _house_number_matches("2", ["2/20"]) is True
+    assert _house_number_matches("17-10", ["17/10"]) is True  # separator-only difference
+    assert _house_number_matches("2", ["172", "2/20"]) is True  # matches whichever candidate applies
+    # The other direction is NOT confirmation - a customer who only gave a
+    # bare base number was never claiming Google's more specific one.
+    assert _house_number_matches("2/20", ["2"]) is False
+    # A genuinely different base number is still a real mismatch.
+    assert _house_number_matches("231C", ["231B/1"]) is False
+
+
 def test_reorder_house_number_to_street_moves_the_number_next_to_its_street():
     # Conventional Indian order - house number, THEN a name, THEN the
     # street - that Google's parser doesn't recognize as-is.
@@ -601,6 +636,9 @@ def test_extract_house_number_handles_every_format_the_spec_lists():
     assert _extract_house_number("D.No 12, XYZ Street, Chennai") == "12"
     assert _extract_house_number("No. 12, XYZ Street, Chennai") == "12"
     # A flat/unit number can precede the house number - spec's own example.
+    # "Flat" is deliberately NOT a recognized prefix (see
+    # _HOUSE_NUMBER_PREFIX's own comment), so "Flat 2B" is correctly
+    # skipped in favor of the real street number that follows.
     assert _extract_house_number("Flat 2B, 12 XYZ Street, Chennai") == "12"
     # A building name can precede it too - Case 1 must keep working.
     assert _extract_house_number("ABC Apartments, 12 XYZ Street, Velachery, Chennai 600042") == "12"
