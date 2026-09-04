@@ -358,22 +358,44 @@ def _normalize_house_number(number: str) -> str:
     return number.replace("-", "/")
 
 
+def _numeric_core(number: str) -> str:
+    """The pure leading digit run of a house number, stripping any letter
+    suffix and any sub-unit after a separator - "231B", "231B/1", and
+    "231C" all reduce to "231". Used only to recognize "same base plot/
+    building, different specific letter-suffixed unit" - real case: a
+    customer's "231B/1" against Google's confirmed "231C" on the same
+    street. Different letter-suffixed units of the SAME base number are
+    almost always physically adjacent (the same plot/building subdivided
+    into lettered flats/blocks - "12A" through "12Z" spanning one
+    building is a completely normal Indian addressing pattern), which is
+    a fundamentally different, much lower-risk situation than a
+    DIFFERENT base number ("2" vs "4") - those can be anywhere along a
+    long street and stay a real mismatch."""
+    match = re.match(r"^(\d+)", number)
+    return match.group(1) if match else number
+
+
 def _house_number_matches(google_number: str, customer_numbers: Iterable[str]) -> bool:
     """True when Google's confirmed street_number genuinely corresponds to
-    one of the customer's stated numbers - an exact match (after
-    separator normalization - see _normalize_house_number), or either
-    side is just the BASE building/plot number while the other names a
-    specific sub-unit ("2" confirmed vs customer's "2/20"; or, just as
-    real, customer's bare "77" vs Google's confirmed "77/28" - a
-    base/sub-unit number is frequently the single OFFICIAL premise
-    number for one property in Indian addressing, not "house 77, one of
-    several flats", so a customer citing just the base part is very
-    plausibly the same property abbreviated, not a different one).
-    Checked symmetrically in both directions - the base matching on
-    EITHER side is strong confirmation of the same building, not a
-    mismatch just because one side has less granularity than the other."""
+    one of the customer's stated numbers:
+      - an exact match (after separator normalization - see
+        _normalize_house_number);
+      - either side is just the BASE building/plot number while the
+        other names a specific sub-unit ("2" confirmed vs customer's
+        "2/20"; or, just as real, customer's bare "77" vs Google's
+        confirmed "77/28" - a base/sub-unit number is frequently the
+        single OFFICIAL premise number for one property in Indian
+        addressing, not "house 77, one of several flats", so a customer
+        citing just the base part is very plausibly the same property
+        abbreviated, not a different one) - checked symmetrically, the
+        base matching on EITHER side is strong confirmation;
+      - the same leading numeric BASE with a different letter suffix on
+        either side ("231B/1" vs "231C" - see _numeric_core) - the same
+        plot/building, a different specific flat/block within it, not a
+        different address."""
     normalized_google = _normalize_house_number(google_number)
     google_base = normalized_google.split("/")[0]
+    google_core = _numeric_core(normalized_google)
     for customer_number in customer_numbers:
         normalized_customer = _normalize_house_number(customer_number)
         if normalized_google == normalized_customer:
@@ -381,6 +403,8 @@ def _house_number_matches(google_number: str, customer_numbers: Iterable[str]) -
         if google_base == normalized_customer:
             return True
         if normalized_google == normalized_customer.split("/")[0]:
+            return True
+        if google_core == _numeric_core(normalized_customer):
             return True
     return False
 

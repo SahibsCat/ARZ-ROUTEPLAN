@@ -248,6 +248,16 @@ def test_strip_landmark_phrase_preserves_a_trailing_pin_code():
     ) == "12 Example St , Chennai"
 
 
+def test_numeric_core_strips_letter_suffixes_and_sub_units():
+    from app.geocoding.google_geocoder import _numeric_core
+
+    assert _numeric_core("231B") == "231"
+    assert _numeric_core("231C") == "231"
+    assert _numeric_core("231B/1") == "231"
+    assert _numeric_core("12A") == "12"
+    assert _numeric_core("2/20") == "2"
+
+
 def test_house_number_matches_treats_a_bare_base_number_as_confirmation():
     # Google's data often doesn't carry sub-unit granularity ("2" rather
     # than "2/20") - the base number still matching is strong confirmation
@@ -264,9 +274,12 @@ def test_house_number_matches_treats_a_bare_base_number_as_confirmation():
     # premise number for one property, not several - see the function's
     # own docstring for the real case this covers.
     assert _house_number_matches("77/28", ["77"]) is True
-    # A genuinely different base number is still a real mismatch either way.
-    assert _house_number_matches("231C", ["231B/1"]) is False
+    # Same leading numeric base, different letter-suffixed unit - the
+    # same plot/building, not a different address (see _numeric_core).
+    assert _house_number_matches("231C", ["231B/1"]) is True
+    # A genuinely different base number is still a real mismatch.
     assert _house_number_matches("99/5", ["2"]) is False
+    assert _house_number_matches("4/2", ["2/20"]) is False
 
 
 def test_reorder_house_number_to_street_moves_the_number_next_to_its_street():
