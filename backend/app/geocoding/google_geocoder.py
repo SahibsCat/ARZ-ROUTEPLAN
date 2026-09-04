@@ -15,7 +15,7 @@ from app.geocoding.base import (
 # this class of comparison (PIN extraction, token-level fuzzy matching) to
 # validate ITS OWN candidates against the customer's original address text;
 # no reason for Google's geocoder to score component matches differently.
-from app.geocoding.nominatim_geocoder import _extract_pincode, _fuzzy_token_match, _significant_tokens
+from app.geocoding.nominatim_geocoder import _extract_pincode, _fuzzy_token_match
 
 GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 # Places API "Find Place From Text" - a fuzzy, named-establishment search,
@@ -435,6 +435,69 @@ def _component_text_tokens(text: str) -> List[str]:
     return [t for t in (tok.strip(".") for tok in tokens) if t and not t.isdigit()]
 
 
+# Generic STREET-type filler words - "Kumaran Nagar" and "Thirumalai
+# Nagar" sharing the word "Nagar" must never look like locality
+# AGREEMENT on its own, so these are stripped from both sides before the
+# locality check compares them - same filtering nominatim_geocoder's
+# _significant_tokens already does, deliberately kept separate rather
+# than reusing that function directly (see _locality_tokens' own
+# docstring for why).
+_LOCALITY_NOISE_WORDS = {"street", "road", "nagar", "main", "cross"}
+
+
+def _locality_tokens(text: str) -> List[str]:
+    """Tokenizes text for the locality-agreement check specifically -
+    strips the generic street-type filler words above, but - unlike
+    nominatim_geocoder._significant_tokens, which this check used to
+    reuse directly - deliberately KEEPS city/state/country words
+    ("chennai"/"tamil"/"nadu"/"tn"/"in"/"india"/"greater", stripped by
+    that function's own _GENERIC_LOCALITY_WORDS). Those were noise for a
+    DIFFERENT purpose (Nominatim's own candidate-ranking, where every
+    candidate already mentions Chennai, so it adds no signal there) -
+    here, a customer address that only names the CITY (no sublocality
+    at all - "..., Chennai, 600001", nothing more specific) and Google's
+    own locality-type match ALSO being just "Chennai" (no finer
+    sublocality data available) is completely legitimate agreement, but
+    stripping "chennai" from BOTH sides meant it could never be
+    recognized - real addresses were being flagged as a locality
+    mismatch for no actual disagreement at all."""
+    tokens = re.split(r"[,\s/#-]+", text.lower())
+    return [
+        t for t in (tok.strip(".") for tok in tokens)
+        if t and len(t) >= 3 and not t.isdigit() and t not in _LOCALITY_NOISE_WORDS
+    ]
+
+
+# Real case this catches: customer wrote "Noombal", Google's own data
+# says "Numbal" - the same place, transliterated with a different vowel
+# length/doubling, common across Tamil place names romanized into
+# English with no single standard spelling ("Koovur"/"Kovur",
+# "Poonamallee"/"Punamalle", etc). A plain SequenceMatcher ratio
+# penalizes the extra letter enough to fall under FUZZY_MATCH_THRESHOLD
+# even though these plainly name the same place - collapsing consecutive
+# vowels to a single instance on BOTH sides before comparing (a real
+# word with no such run is returned completely unchanged, so this never
+# weakens a comparison that didn't need it) normalizes exactly this kind
+# of variance without touching the shared nominatim_geocoder module
+# (used by a different provider) or loosening FUZZY_MATCH_THRESHOLD
+# itself, which would affect every other comparison too.
+_VOWEL_RUN = re.compile(r"([aeiou])\1+")
+
+
+def _collapse_vowel_runs(token: str) -> str:
+    return _VOWEL_RUN.sub(r"\1", token)
+
+
+def _transliteration_match(token: str, candidates: Iterable[str]) -> bool:
+    """_fuzzy_token_match, plus a second attempt on vowel-collapsed forms
+    of both sides - see this module's own comment above for why."""
+    if _fuzzy_token_match(token, candidates):
+        return True
+    normalized_token = _collapse_vowel_runs(token)
+    normalized_candidates = [_collapse_vowel_runs(c) for c in candidates]
+    return _fuzzy_token_match(normalized_token, normalized_candidates)
+
+
 def _extract_street_keyword(address: str) -> Optional[str]:
     """The customer's stated street NAME, not its type-suffix - "bhavani"
     out of "Bhavani St". Optional by nature (an address with no street-
@@ -489,12 +552,12 @@ def _score_component_match(
         str(c.get("long_name") or "") for c in address_components
         if set(c.get("types") or []) & _LOCALITY_COMPONENT_TYPES
     ]
-    customer_tokens = _significant_tokens(original_address)
+    customer_tokens = _locality_tokens(original_address)
     if google_localities and customer_tokens:
         locality_tokens: List[str] = []
         for locality in google_localities:
-            locality_tokens.extend(_significant_tokens(locality))
-        if locality_tokens and not any(_fuzzy_token_match(token, customer_tokens) for token in locality_tokens):
+            locality_tokens.extend(_locality_tokens(locality))
+        if locality_tokens and not any(_transliteration_match(token, customer_tokens) for token in locality_tokens):
             non_pin_flags.append((
                 LOCALITY_MISMATCH_CONFIDENCE_CAP,
                 f"Area/locality mismatch: none of the entered address matches Google's area "
@@ -509,6 +572,11 @@ def _score_component_match(
     # some addresses genuinely state more than one, e.g. a plot/survey
     # number alongside the actual door number, and there's no reliable way
     # to know which one Google's data indexes against in advance).
+    # Tracked separately from "no cap fired" - a STRUCTURED street_number
+    # component that positively matches is meaningfully stronger evidence
+    # than "nothing contradicted it", and is what the street-name trust
+    # override below leans on (see its own comment for why).
+    house_number_structurally_confirmed = False
     customer_house_numbers = _extract_house_numbers(original_address)
     if customer_house_numbers:
         google_house_number = next(
@@ -524,13 +592,28 @@ def _score_component_match(
             # name below). Confirmed via that free text is still confirmed
             # - only genuinely absent from every component counts as
             # unconfirmed.
+            # Checked against both the exact number AND its numeric base
+            # (see _numeric_core) - real case: customer's "43B" against
+            # free text reading "43/160, 2nd Cross St, ..." (an
+            # establishment match's number, embedded in an untyped name
+            # component rather than a structured street_number - see
+            # this branch's own comment above for why that happens at
+            # all). Same reasoning as _house_number_matches' own base-
+            # number handling: a different specific unit of the same
+            # base number is almost always the same plot/building.
             all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
-            if not any(_number_confirmed_in_text(n, all_component_text) for n in customer_house_numbers):
+            if not any(
+                _number_confirmed_in_text(n, all_component_text)
+                or _number_confirmed_in_text(_numeric_core(n), all_component_text)
+                for n in customer_house_numbers
+            ):
                 non_pin_flags.append((
                     STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP,
                     f"House/door number {'/'.join(customer_house_numbers)} could not be confirmed on this street",
                 ))
-        elif not _house_number_matches(google_house_number, customer_house_numbers):
+        elif _house_number_matches(google_house_number, customer_house_numbers):
+            house_number_structurally_confirmed = True
+        else:
             non_pin_flags.append((
                 STREET_NUMBER_MISMATCH_CONFIDENCE_CAP,
                 f"House/door number mismatch: you entered {'/'.join(customer_house_numbers)}, "
@@ -550,7 +633,24 @@ def _score_component_match(
     if street_keyword:
         all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
         component_tokens = _component_text_tokens(all_component_text)
-        if component_tokens and not _fuzzy_token_match(street_keyword, component_tokens):
+        street_name_mismatch = component_tokens and not _transliteration_match(street_keyword, component_tokens)
+        # A STRUCTURED house number match is strong, numeric, independent
+        # confirmation the street itself is right - Google can't confirm
+        # "4, Kalli Kuppam Rd" as house number 4 on a completely
+        # different street from the one the customer meant. Real cases:
+        # a customer's own street-name abbreviation ("KK Road" for
+        # "Kalli Kuppam Road") or an official road rename Chennai's own
+        # data has caught up with but locals still don't use ("4th Main
+        # Road" vs "B Ramachandra Adithanar Rd") - free-text fuzzy
+        # matching can never recognize either, but the house number
+        # landing on the exact same structured street_number does.
+        # Trusted only when the street name is the ONLY thing flagged -
+        # a real wrong-street match essentially never also happens to
+        # carry the exact same house number by coincidence.
+        trust_house_number_over_street_name = (
+            street_name_mismatch and house_number_structurally_confirmed and not non_pin_flags
+        )
+        if street_name_mismatch and not trust_house_number_over_street_name:
             non_pin_flags.append((
                 STREET_NAME_MISMATCH_CONFIDENCE_CAP,
                 f"Street name mismatch: '{street_keyword}' not found in Google's match",

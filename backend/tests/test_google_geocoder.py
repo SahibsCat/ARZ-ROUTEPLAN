@@ -258,6 +258,111 @@ def test_numeric_core_strips_letter_suffixes_and_sub_units():
     assert _numeric_core("2/20") == "2"
 
 
+def test_locality_tokens_keeps_city_state_country_words():
+    # Unlike nominatim_geocoder._significant_tokens (which this used to
+    # reuse), "chennai"/"tamil"/"nadu"/"tn"/"in" must survive - a
+    # customer who only names the CITY needs credit for agreeing with a
+    # Google locality match that's ALSO just the city.
+    from app.geocoding.google_geocoder import _locality_tokens
+
+    tokens = _locality_tokens("Taksh Traders, 48/58 Savari Muthu Sreet, Mannady Street, Chennai, Tamil Nadu, India")
+    assert "chennai" in tokens
+    assert "tamil" in tokens
+    assert "nadu" in tokens
+    # Generic STREET-type filler words are still stripped - "Kumaran
+    # Nagar" and "Thirumalai Nagar" sharing "Nagar" must never look like
+    # agreement on its own.
+    assert "street" not in tokens
+    assert "nagar" not in _locality_tokens("Kumaran Nagar")
+
+
+def test_score_component_match_confirms_locality_via_the_city_name_alone():
+    # Real case this fixes: customer's only locality-ish word is the CITY
+    # itself ("Chennai") with no distinct sublocality named. Google's
+    # match is also just the bare city. The OLD shared _significant_tokens
+    # (borrowed from nominatim) stripped "chennai" as generic noise on
+    # BOTH sides, leaving nothing to compare and forcing a locality-mismatch
+    # flag even though they plainly agree. House/street match cleanly so
+    # this isolates the locality signal.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "48/58, Mannady Street, Chennai, 600001"
+    google_components = [
+        {"long_name": "48/58", "types": ["street_number"]},
+        {"long_name": "Mannady Street", "types": ["route"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600001", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_transliteration_match_recognizes_a_doubled_vowel_variant():
+    # "Noombal" (customer) vs "Numbal" (Google) - the same place, common
+    # Tamil-to-English transliteration variance a plain fuzzy ratio
+    # rejects (0.77, just under FUZZY_MATCH_THRESHOLD's 0.82).
+    from app.geocoding.google_geocoder import _transliteration_match
+
+    assert _transliteration_match("noombal", ["numbal"]) is True
+    assert _transliteration_match("koovur", ["kovur"]) is True
+    # A genuinely different word must still be rejected - this isn't a
+    # blanket threshold loosening.
+    assert _transliteration_match("adyar", ["velachery"]) is False
+
+
+def test_score_component_match_trusts_house_number_over_an_abbreviated_street_name():
+    # Real case: customer wrote "KK Road" (a common local abbreviation),
+    # Google's structured match is "Kalli Kuppam Rd" - no fuzzy text
+    # match will ever recognize "kk" against "kalli"/"kuppam", but the
+    # house number landing on the exact same structured street_number is
+    # strong, independent, numeric confirmation it's the same street.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "No 4 Kk Road 3rd CROSS Street Ambattur 600053 Chennai TN"
+    google_components = [
+        {"long_name": "4", "types": ["street_number"]},
+        {"long_name": "Kalli Kuppam Rd", "types": ["route"]},
+        {"long_name": "Ambattur", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600053", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_does_not_trust_an_abbreviated_street_name_when_anything_else_is_off():
+    # The override only applies when the street name is the ONLY thing
+    # flagged - here the house number ALSO doesn't match, so it stays strict.
+    from app.geocoding.google_geocoder import STREET_NUMBER_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "No 4 Kk Road 3rd CROSS Street Ambattur 600053 Chennai TN"
+    google_components = [
+        {"long_name": "47", "types": ["street_number"]},
+        {"long_name": "Kalli Kuppam Rd", "types": ["route"]},
+        {"long_name": "Ambattur", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600053", "types": ["postal_code"]},
+    ]
+
+    cap, _reason = _score_component_match(customer, google_components)
+    assert cap == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
+
+
+def test_score_component_match_confirms_a_letter_suffixed_number_via_its_numeric_base_in_free_text():
+    # Real case: customer's "43B" against an establishment match's free-
+    # text name reading "43/160, 2nd Cross St, ..." - the exact token
+    # "43B" never appears, but the numeric base "43" does, and is strong
+    # confirmation of the same building (see _numeric_core).
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "43B, 2nd Cross Street, Kumaran Nagar 600092"
+    google_components = [
+        {"long_name": "43/160, 2nd Cross St", "types": []},
+        {"long_name": "Kumaran Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600092", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
 def test_house_number_matches_treats_a_bare_base_number_as_confirmation():
     # Google's data often doesn't carry sub-unit granularity ("2" rather
     # than "2/20") - the base number still matching is strong confirmation
