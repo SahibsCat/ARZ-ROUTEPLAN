@@ -444,6 +444,13 @@ def _component_text_tokens(text: str) -> List[str]:
 # docstring for why).
 _LOCALITY_NOISE_WORDS = {"street", "road", "nagar", "main", "cross"}
 
+# City/state/country words. Kept by _locality_tokens (a customer whose
+# ONLY locality word is the city still needs credit for agreeing with a
+# Google match that's also just the city) but tracked separately, because
+# agreement on these alone is not evidence of anything - see the locality
+# check in _score_component_match.
+_CITY_LEVEL_WORDS = {"chennai", "madras", "tamil", "nadu", "india"}
+
 
 def _locality_tokens(text: str) -> List[str]:
     """Tokenizes text for the locality-agreement check specifically -
@@ -557,7 +564,27 @@ def _score_component_match(
         locality_tokens: List[str] = []
         for locality in google_localities:
             locality_tokens.extend(_locality_tokens(locality))
-        if locality_tokens and not any(_transliteration_match(token, customer_tokens) for token in locality_tokens):
+
+        # The city name alone must NOT satisfy this check. Practically
+        # every Chennai address says "Chennai" and so does practically
+        # every Google response, so allowing that to count as agreement
+        # silently disables locality validation for the entire city -
+        # observed live accepting "Adyar 600020" as Thiruvanmiyur 600041
+        # and "Kilpauk 600010" as Purasaiwakkam 600012, both at 0.8
+        # confidence. When BOTH sides name something more specific than
+        # the city, agreement has to come from those specific names.
+        google_specific = [t for t in locality_tokens if t not in _CITY_LEVEL_WORDS]
+        customer_specific = [t for t in customer_tokens if t not in _CITY_LEVEL_WORDS]
+        if google_specific and customer_specific:
+            comparison_tokens, comparison_pool = google_specific, customer_specific
+        else:
+            # One side only ever named the city - city-level agreement is
+            # the most that can be asked for, and is genuine.
+            comparison_tokens, comparison_pool = locality_tokens, customer_tokens
+
+        if comparison_tokens and not any(
+            _transliteration_match(token, comparison_pool) for token in comparison_tokens
+        ):
             non_pin_flags.append((
                 LOCALITY_MISMATCH_CONFIDENCE_CAP,
                 f"Area/locality mismatch: none of the entered address matches Google's area "

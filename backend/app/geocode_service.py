@@ -6,6 +6,8 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app import crud
+from app.geocoding import address_parser
+from app.geocoding.chennai_localities import correct_locality_spelling
 from app.geocoding.base import (
     STATUS_OK,
     GeocodeResult,
@@ -26,17 +28,23 @@ GEOCODE_CONCURRENCY = 8
 
 def clean_address(address: str) -> str:
     """Normalize an address before sending it to any geocoding provider:
-    collapse line breaks/duplicate whitespace, fix comma spacing, trim, and
-    make sure the city/state is present so the query has enough context."""
+    repair the formatting damage real customer input arrives with (see
+    address_parser.normalize - glued words, missing spaces after a
+    house-number prefix, unambiguous abbreviations), then make sure the
+    city/state is present so the query has enough context.
+
+    Never mutates what the customer typed - Order.address keeps the
+    original; this is only ever the text handed to a provider."""
     if not address:
         return ""
 
-    address = address.replace("\r", " ").replace("\n", " ")
-    address = address.replace(",", ", ")
-    address = " ".join(address.split())
-    address = re.sub(r"\s+,\s+", ", ", address)
-    address = re.sub(r",\s*,+", ", ", address)  # duplicate commas
-    address = address.strip().strip(",").strip()
+    address = address_parser.normalize(address)
+    address = correct_locality_spelling(address)
+    if not address:
+        # Whitespace/punctuation-only input has nothing to geocode -
+        # appending the city below would turn it into ", Chennai, India"
+        # and send a query for the middle of the city.
+        return ""
 
     lower_address = address.lower()
     if "chennai" not in lower_address and "tamil nadu" not in lower_address:
@@ -106,7 +114,7 @@ def _lookup_or_geocode(
     return result
 
 
-def _verification_message(result: GeocodeResult) -> str:
+def _verification_message(result: GeocodeResult, address: Optional[str] = None) -> str:
     """The admin-facing reason a flagged order needs a look, shared by
     _interpret_result and geocode_address_detailed so Failed Orders and
     the retry flow never disagree on wording. Leads with WHAT specifically
@@ -119,12 +127,28 @@ def _verification_message(result: GeocodeResult) -> str:
     confidence_note = (
         f" (confidence: {result.confidence:.2f})" if result.confidence is not None else ""
     )
+    # What the system actually READ out of the address, appended so the
+    # operator can see which component is the problem without going back
+    # and re-parsing the raw string in their head. "House: 12A | Street:
+    # Gandhi Road | Area: Velachery - missing: PIN code" turns a bare
+    # confidence number into something immediately actionable.
+    breakdown = ""
+    if address:
+        # Normalized first: "12A,LakshmiApts,GandhiRd" only yields
+        # sensible components once the glued words are separated.
+        parsed = address_parser.parse(address_parser.normalize(address))
+        described = parsed.describe()
+        if described:
+            breakdown = f" — We read: {described}"
+
     if result.mismatch_reason:
-        return f"Needs Manual Verification - {result.mismatch_reason}{confidence_note}"
-    return f"Needs Manual Verification - low confidence match{confidence_note}"
+        return f"Needs Manual Verification - {result.mismatch_reason}{confidence_note}{breakdown}"
+    return f"Needs Manual Verification - low confidence match{confidence_note}{breakdown}"
 
 
-def _interpret_result(result: Optional[GeocodeResult]) -> Dict[str, object]:
+def _interpret_result(
+    result: Optional[GeocodeResult], address: Optional[str] = None
+) -> Dict[str, object]:
     """Turn a provider-agnostic GeocodeResult into the fields geocode_orders/
     geocode_address attach to an order. A low-confidence match (any provider
     that sets a non-OK status - Nominatim's locality-only fallback or a weak
@@ -149,7 +173,7 @@ def _interpret_result(result: Optional[GeocodeResult]) -> Dict[str, object]:
         return {
             "lat": None,
             "lng": None,
-            "geocode_error": _verification_message(result),
+            "geocode_error": _verification_message(result, address),
             "suggested_lat": result.lat,
             "suggested_lng": result.lng,
             "confidence": result.confidence,
@@ -229,7 +253,7 @@ def geocode_address_detailed(
             "address": cleaned,
             "lat": None,
             "lng": None,
-            "geocode_error": _verification_message(result),
+            "geocode_error": _verification_message(result, address),
             "suggested_lat": result.lat,
             "suggested_lng": result.lng,
             "confidence": result.confidence,
@@ -373,7 +397,13 @@ def geocode_orders(
                 merged["lng"] = None
                 merged["geocode_error"] = provider_error_message
             else:
-                merged.update(_interpret_result(resolved.get(cache_key)))
+                # Parsed from the CUSTOMER'S original text, not the
+                # normalized query - the breakdown is there to help an
+                # operator reconcile what we read against what they
+                # actually typed.
+                merged.update(
+                    _interpret_result(resolved.get(cache_key), str(merged.get("address", "")))
+                )
             print(f"   ✅ Success" if merged.get("lat") is not None else f"   ❌ {merged.get('geocode_error')}")
         geocoded_orders.append(merged)
 

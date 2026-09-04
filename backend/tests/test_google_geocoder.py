@@ -297,6 +297,52 @@ def test_score_component_match_confirms_locality_via_the_city_name_alone():
     assert _score_component_match(customer, google_components) is None
 
 
+def test_score_component_match_does_not_let_the_city_name_alone_confirm_the_locality():
+    # LOAD-BEARING. Practically every Chennai address says "Chennai" and
+    # so does practically every Google response. If that counts as
+    # locality agreement, locality validation is silently switched off
+    # for the whole city. Observed live before this was fixed: "Adyar
+    # 600020" accepted as Thiruvanmiyur 600041, and "Kilpauk 600010"
+    # accepted as Purasaiwakkam 600012, both at 0.8 confidence - two
+    # confidently wrong pins.
+    from app.geocoding.google_geocoder import LOCALITY_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "12, Main Road, Adyar, Chennai 600020"
+    google_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Main Road", "types": ["route"]},
+        {"long_name": "Kamaraj Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Thiruvanmiyur", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600020", "types": ["postal_code"]},
+    ]
+
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap == LOCALITY_MISMATCH_CONFIDENCE_CAP
+    assert "Thiruvanmiyur" in reason
+
+
+def test_score_component_match_still_confirms_a_locality_google_states_more_precisely():
+    # The flip side, and just as important: Google routinely answers with
+    # a MORE specific sublocality than the customer named ("Karunabigai
+    # Colony, Velachery" for a customer who wrote "Velachery"). The
+    # customer's word appearing anywhere in Google's locality set is
+    # genuine agreement and must not be flagged.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "12, Gandhi Road, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Gandhi Road", "types": ["route"]},
+        {"long_name": "Karunabigai Colony", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
 def test_transliteration_match_recognizes_a_doubled_vowel_variant():
     # "Noombal" (customer) vs "Numbal" (Google) - the same place, common
     # Tamil-to-English transliteration variance a plain fuzzy ratio
