@@ -982,7 +982,14 @@ def set_manual_location(
     reasoning for the same thing this session already established).
 
     Callers must never auto-re-geocode an order once location_source is
-    "manual" - see the guard in main.py's retry_single_geocode."""
+    "manual" - see the guard in main.py's retry_single_geocode.
+
+    Also resolves this order's FailedAddress tracking row, if it has one
+    (real gap this closes: confirming a pin here previously fixed the
+    Order row - location_source="manual", real lat/lng - but never
+    touched FailedAddress at all, so a manually-corrected order kept
+    showing up in the Failed Addresses queue indefinitely, a stale entry
+    for an order that had, in fact, already been resolved)."""
     order = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == str(order_id)).first()
     if order is None:
         raise OrderNotFoundError(f"Order {order_id} not found in the current session")
@@ -996,6 +1003,10 @@ def set_manual_location(
     order.suggested_lng = None
     if order.status == "failed":
         order.status = "pending"
+
+    failed = get_failed_address(db, batch_id, order_id)
+    if failed is not None and failed.status != "resolved":
+        failed.status = "resolved"
 
     if order.route_id is not None:
         stop = (

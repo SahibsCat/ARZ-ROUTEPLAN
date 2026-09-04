@@ -384,6 +384,26 @@ def test_set_manual_location_promotes_a_failed_order_to_pending(db_session):
     assert order.status == "pending"
 
 
+def test_set_manual_location_resolves_the_failed_address_tracking_row(db_session):
+    # Real bug this closes: confirming a pin here fixed the Order row
+    # (location_source="manual", real lat/lng) but never touched
+    # FailedAddress at all - a manually-corrected order kept showing up
+    # in the Failed Addresses queue indefinitely, a stale entry for an
+    # order that had, in fact, already been resolved.
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "bad address", "delivery_time": "10:00",
+         "lat": None, "lng": None, "geocode_error": "Address could not be geocoded"},
+    ])
+    failed = crud.get_failed_address(db_session, batch.id, "1")
+    assert failed is not None
+    assert failed.status == "pending"
+
+    crud.set_manual_location(db_session, batch.id, "1", lat=13.05, lng=80.25)
+
+    db_session.refresh(failed)
+    assert failed.status == "resolved"
+
+
 def test_set_manual_location_patches_the_live_route_stop_snapshot(db_session):
     """The order is already on a route when corrected - the route's own
     stop snapshot (what the map/driver app actually reads) must reflect
