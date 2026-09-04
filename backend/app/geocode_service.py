@@ -106,6 +106,24 @@ def _lookup_or_geocode(
     return result
 
 
+def _verification_message(result: GeocodeResult) -> str:
+    """The admin-facing reason a flagged order needs a look, shared by
+    _interpret_result and geocode_address_detailed so Failed Orders and
+    the retry flow never disagree on wording. Leads with WHAT specifically
+    looked wrong (result.mismatch_reason - "PIN code mismatch: you
+    entered 600007, Google found 600021", say - see
+    google_geocoder._score_component_match) when the provider set one,
+    falling back to the bare confidence number for a provider/path with
+    no such detail (Mapbox, Nominatim - only Google's Geocoding API
+    currently sets mismatch_reason)."""
+    confidence_note = (
+        f" (confidence: {result.confidence:.2f})" if result.confidence is not None else ""
+    )
+    if result.mismatch_reason:
+        return f"Needs Manual Verification - {result.mismatch_reason}{confidence_note}"
+    return f"Needs Manual Verification - low confidence match{confidence_note}"
+
+
 def _interpret_result(result: Optional[GeocodeResult]) -> Dict[str, object]:
     """Turn a provider-agnostic GeocodeResult into the fields geocode_orders/
     geocode_address attach to an order. A low-confidence match (any provider
@@ -128,13 +146,10 @@ def _interpret_result(result: Optional[GeocodeResult]) -> Dict[str, object]:
         return {"lat": None, "lng": None, "geocode_error": "Address could not be geocoded"}
 
     if result.status != STATUS_OK:
-        confidence_note = (
-            f" (confidence: {result.confidence:.2f})" if result.confidence is not None else ""
-        )
         return {
             "lat": None,
             "lng": None,
-            "geocode_error": f"Needs Manual Verification - low confidence match{confidence_note}",
+            "geocode_error": _verification_message(result),
             "suggested_lat": result.lat,
             "suggested_lng": result.lng,
             "confidence": result.confidence,
@@ -214,8 +229,7 @@ def geocode_address_detailed(
             "address": cleaned,
             "lat": None,
             "lng": None,
-            "geocode_error": f"Needs Manual Verification - low confidence match"
-            + (f" (confidence: {result.confidence:.2f})" if result.confidence is not None else ""),
+            "geocode_error": _verification_message(result),
             "suggested_lat": result.lat,
             "suggested_lng": result.lng,
             "confidence": result.confidence,

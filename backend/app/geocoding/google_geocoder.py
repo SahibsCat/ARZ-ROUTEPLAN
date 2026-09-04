@@ -1,6 +1,6 @@
 import re
 import time
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import httpx
 
@@ -156,6 +156,26 @@ def _score_result(location_type: Optional[str], types: Iterable[str], partial_ma
         score = max(0.05, score - 0.15)
 
     return round(score, 2)
+
+
+def _precision_reason(location_type: Optional[str], types: Iterable[str], partial_match: bool) -> str:
+    """Plain-English version of the same three signals _score_result
+    weighs, for the case a match is flagged on precision ALONE - Google's
+    own address_components didn't contradict anything the customer typed
+    (_score_component_match found nothing to flag), but its match still
+    wasn't a specific, confident building/house-level point. Surfaced to
+    the admin the same way a component mismatch's reason is (see
+    GeocodeResult.mismatch_reason)."""
+    types_set = set(types or [])
+    if types_set and not (types_set & _PRECISE_TYPES) and not (types_set - _AREA_ONLY_TYPES):
+        base = "Google could only place this address at street/area level, not a specific building or house"
+    elif location_type in ("GEOMETRIC_CENTER", "APPROXIMATE"):
+        base = "Google's match is only an approximate area-level guess, not house-level precise"
+    else:
+        base = "Google's match precision is too low to trust automatically"
+    if partial_match:
+        base += " (Google could not match every part of the address you entered)"
+    return base
 
 
 # --- Address-component validation (_score_component_match) - a SECOND,
@@ -395,15 +415,18 @@ def _score_component_match(
     original_address: str,
     address_components: List[Dict[str, object]],
     precision_confidence: Optional[float] = None,
-) -> Optional[float]:
-    """Returns a confidence CAP (never a floor/boost) when a real mismatch
+) -> Optional[Tuple[float, str]]:
+    """Returns (confidence CAP, plain-English reason) when a real mismatch
     is found, or None when nothing meaningful was found to flag - callers
-    combine this with _score_result via min(), so None means "no opinion,
-    defer entirely to the precision-based score" rather than "confirmed
-    fine". Checks PIN, locality, street name, and house/door number
-    independently and returns the MOST restrictive (lowest) cap among
-    whichever ones actually found something to flag - a result can fail
-    more than one check at once.
+    combine the cap with _score_result via min(), so None means "no
+    opinion, defer entirely to the precision-based score" rather than
+    "confirmed fine". The reason string is surfaced all the way out to
+    the admin (see GeocodeResult.mismatch_reason) so a flagged order
+    shows WHAT specifically looked wrong, not just a bare confidence
+    number. Checks PIN, locality, street name, and house/door number
+    independently; a result can fail more than one at once, in which case
+    every reason that fired is included, joined together, even though
+    only the single MOST restrictive cap among them is actually applied.
 
     `precision_confidence` (Google's OWN location_type-based score - see
     _score_result - passed in by _geocode_once, never by the Places path,
@@ -417,7 +440,7 @@ def _score_component_match(
     file only ever downgrades, never overrides what the customer typed -
     PIN mismatch is the one deliberate exception, and only when every
     other independent signal already confirms the match on its own."""
-    non_pin_caps: List[float] = []
+    non_pin_flags: List[Tuple[float, str]] = []
 
     customer_pin = _extract_pincode(original_address)
     google_pin = next(
@@ -436,7 +459,11 @@ def _score_component_match(
         for locality in google_localities:
             locality_tokens.extend(_significant_tokens(locality))
         if locality_tokens and not any(_fuzzy_token_match(token, customer_tokens) for token in locality_tokens):
-            non_pin_caps.append(LOCALITY_MISMATCH_CONFIDENCE_CAP)
+            non_pin_flags.append((
+                LOCALITY_MISMATCH_CONFIDENCE_CAP,
+                f"Area/locality mismatch: none of the entered address matches Google's area "
+                f"({', '.join(google_localities)})",
+            ))
 
     # House/door number - the spec's central "street found, house not
     # confirmed" case. Building name is never required (see
@@ -463,9 +490,16 @@ def _score_component_match(
             # unconfirmed.
             all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
             if not any(_number_confirmed_in_text(n, all_component_text) for n in customer_house_numbers):
-                non_pin_caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
+                non_pin_flags.append((
+                    STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP,
+                    f"House/door number {'/'.join(customer_house_numbers)} could not be confirmed on this street",
+                ))
         elif not _house_number_matches(google_house_number, customer_house_numbers):
-            non_pin_caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
+            non_pin_flags.append((
+                STREET_NUMBER_MISMATCH_CONFIDENCE_CAP,
+                f"House/door number mismatch: you entered {'/'.join(customer_house_numbers)}, "
+                f"Google found {google_house_number} on this street",
+            ))
 
     # Street name - independent of house number, and independent of PIN/
     # locality (both of THOSE can genuinely match while the street itself
@@ -481,18 +515,28 @@ def _score_component_match(
         all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
         component_tokens = _component_text_tokens(all_component_text)
         if component_tokens and not _fuzzy_token_match(street_keyword, component_tokens):
-            non_pin_caps.append(STREET_NAME_MISMATCH_CONFIDENCE_CAP)
+            non_pin_flags.append((
+                STREET_NAME_MISMATCH_CONFIDENCE_CAP,
+                f"Street name mismatch: '{street_keyword}' not found in Google's match",
+            ))
 
     if pin_mismatch:
         trust_precision_over_pin = (
-            not non_pin_caps
+            not non_pin_flags
             and precision_confidence is not None
             and precision_confidence >= PIN_MISMATCH_TRUST_OVERRIDE_MIN_PRECISION
         )
         if not trust_precision_over_pin:
-            non_pin_caps.append(PIN_MISMATCH_CONFIDENCE_CAP)
+            non_pin_flags.append((
+                PIN_MISMATCH_CONFIDENCE_CAP,
+                f"PIN code mismatch: you entered {customer_pin}, Google found {google_pin}",
+            ))
 
-    return min(non_pin_caps) if non_pin_caps else None
+    if not non_pin_flags:
+        return None
+    cap = min(flag[0] for flag in non_pin_flags)
+    reason = "; ".join(flag[1] for flag in non_pin_flags)
+    return cap, reason
 
 
 def _strip_landmark_phrase(address: str) -> str:
@@ -786,7 +830,8 @@ class GoogleGeocoder(GeocodingProvider):
             return None
 
         address_components = result.get("address_components") or []
-        component_cap = _score_component_match(original_address, address_components)
+        match = _score_component_match(original_address, address_components)
+        component_cap, mismatch_reason = match if match is not None else (None, None)
         confidence = PLACES_FALLBACK_CONFIDENCE if component_cap is None else min(PLACES_FALLBACK_CONFIDENCE, component_cap)
         result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION
         formatted = result.get("formatted_address") or result.get("name") or original_address
@@ -806,6 +851,7 @@ class GoogleGeocoder(GeocodingProvider):
             status=result_status,
             provider="google-places",
             confidence=confidence,
+            mismatch_reason=mismatch_reason if result_status != STATUS_OK else None,
         )
 
     def _geocode_once(self, address: str) -> Optional[GeocodeResult]:
@@ -851,19 +897,27 @@ class GoogleGeocoder(GeocodingProvider):
                 partial_match = bool(result.get("partial_match", False))
                 address_components = result.get("address_components") or []
                 precision_confidence = _score_result(location_type, result_types, partial_match)
-                component_cap = _score_component_match(address, address_components, precision_confidence)
+                match = _score_component_match(address, address_components, precision_confidence)
+                component_cap, component_reason = match if match is not None else (None, None)
                 confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
                 result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION
 
+                mismatch_reason = None
                 if result_status != STATUS_OK:
-                    reason = (
-                        f"address component mismatch (capped at {component_cap:.2f})"
-                        if component_cap is not None and component_cap < precision_confidence
-                        else f"location_type={location_type}, types={result_types}, partial_match={partial_match}"
+                    # A component mismatch is the more specific, more
+                    # useful reason whenever it's the thing actually
+                    # driving the low confidence; otherwise Google's own
+                    # match just wasn't precise enough on its own, even
+                    # though nothing it returned contradicted what the
+                    # customer typed.
+                    mismatch_reason = (
+                        component_reason
+                        if component_cap is not None and component_cap <= precision_confidence
+                        else _precision_reason(location_type, result_types, partial_match)
                     )
                     print(
                         f"Google Geocoding: '{address}' -> low-precision match "
-                        f"({reason}, confidence={confidence:.2f}) - flagged for manual verification"
+                        f"({mismatch_reason}, confidence={confidence:.2f}) - flagged for manual verification"
                     )
 
                 return GeocodeResult(
@@ -873,6 +927,7 @@ class GoogleGeocoder(GeocodingProvider):
                     status=result_status,
                     provider="google",
                     confidence=confidence,
+                    mismatch_reason=mismatch_reason,
                 )
 
             if status == "REQUEST_DENIED":

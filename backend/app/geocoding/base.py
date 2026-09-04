@@ -23,6 +23,18 @@ class GeocodeResult:
     # derives one from geometry.location_type + result types + partial_match
     # instead (see google_geocoder._score_result) - never None in practice.
     confidence: Optional[float] = None
+    # Plain-English reason(s) a match was flagged - "PIN mismatch: you
+    # entered 600007, Google found 600021", "House number mismatch: you
+    # entered 231B/1, the street only has 231C" - joined into one string
+    # when more than one check fired. None for a clean STATUS_OK match, or
+    # for a provider/path with no component-level validation at all (see
+    # google_geocoder._score_component_match, the only thing that
+    # currently sets this). Surfaced to the admin (geocode_service.
+    # _interpret_result folds it into geocode_error) so Failed Orders
+    # shows WHAT specifically looked wrong, not just a bare confidence
+    # number - the admin can then tell in one glance whether it's their
+    # own typo or a geocoding gap.
+    mismatch_reason: Optional[str] = None
 
 
 class GeocodingProvider(ABC):

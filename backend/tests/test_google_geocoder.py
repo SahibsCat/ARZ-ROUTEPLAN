@@ -536,7 +536,7 @@ def test_score_component_match_catches_wrong_locality_despite_rooftop_precision(
     ]
 
     assert _score_component_match(customer, google_components) is not None
-    assert _score_component_match(customer, google_components) < 0.5
+    assert _score_component_match(customer, google_components)[0] < 0.5
 
 
 def test_score_component_match_finds_no_issue_with_a_correct_match():
@@ -680,9 +680,10 @@ def test_score_component_match_flags_street_found_but_house_number_unconfirmed()
         {"long_name": "600042", "types": ["postal_code"]},
     ]
 
-    cap = _score_component_match(customer, google_components)
+    cap, reason = _score_component_match(customer, google_components)
     assert cap == STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP
     assert cap < 0.5
+    assert "24" in reason
 
 
 def test_score_component_match_confirms_a_house_number_embedded_in_free_text():
@@ -719,7 +720,9 @@ def test_score_component_match_flags_a_different_house_number_on_the_same_street
         {"long_name": "600042", "types": ["postal_code"]},
     ]
 
-    assert _score_component_match(customer, google_components) == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
+    assert "24" in reason and "22" in reason
 
 
 def test_extract_house_numbers_finds_every_candidate_not_just_the_first():
@@ -811,7 +814,9 @@ def test_score_component_match_never_trusts_a_pin_typo_without_precision_passed(
         {"long_name": "600021", "types": ["postal_code"]},
     ]
 
-    assert _score_component_match(customer, google_components) == PIN_MISMATCH_CONFIDENCE_CAP
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap == PIN_MISMATCH_CONFIDENCE_CAP
+    assert "600007" in reason and "600021" in reason
 
 
 def test_score_component_match_does_not_trust_a_pin_typo_when_anything_else_is_off():
@@ -829,9 +834,10 @@ def test_score_component_match_does_not_trust_a_pin_typo_when_anything_else_is_o
         {"long_name": "600021", "types": ["postal_code"]},
     ]
 
-    assert _score_component_match(
+    cap, _reason = _score_component_match(
         customer, google_components, precision_confidence=0.95
-    ) == PIN_MISMATCH_CONFIDENCE_CAP
+    )
+    assert cap == PIN_MISMATCH_CONFIDENCE_CAP
 
 
 def test_score_component_match_does_not_trust_a_pin_typo_at_low_precision():
@@ -849,9 +855,10 @@ def test_score_component_match_does_not_trust_a_pin_typo_at_low_precision():
         {"long_name": "600021", "types": ["postal_code"]},
     ]
 
-    assert _score_component_match(
+    cap, _reason = _score_component_match(
         customer, google_components, precision_confidence=0.65
-    ) == PIN_MISMATCH_CONFIDENCE_CAP
+    )
+    assert cap == PIN_MISMATCH_CONFIDENCE_CAP
 
 
 def test_score_component_match_never_requires_a_building_name():
@@ -920,7 +927,9 @@ def test_score_component_match_flags_a_different_street_even_when_pin_and_locali
         {"long_name": "600113", "types": ["postal_code"]},
     ]
 
-    assert _score_component_match(customer, google_components) == STREET_NAME_MISMATCH_CONFIDENCE_CAP
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap == STREET_NAME_MISMATCH_CONFIDENCE_CAP
+    assert "bhavani" in reason.lower()
 
 
 def test_score_component_match_accepts_a_confirmed_street_match():
