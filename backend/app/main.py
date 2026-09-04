@@ -874,10 +874,22 @@ def assign_orders_endpoint(payload: AssignOrdersRequest = Body(...), db: Session
 
 
 @app.get("/api/debug/geocode")
-def debug_geocode():
-    from app.geocode_service import geocode_address
+def debug_geocode(address: Optional[str] = None):
+    """Diagnose one address end to end, live.
 
-    test_address = "123 MG Road, Bangalore"
+    Open in a browser with any address:
+      /api/debug/geocode?address=12A, Gandhi Road, Velachary, Chennai
+
+    Shows the query the system actually sends after normalization and
+    spelling correction, the components it read out of the text, and the
+    result it got back - which is everything needed to tell "we
+    misread the address" apart from "Google has no data for this
+    house". See docs/ADDRESS_RESOLUTION.md."""
+    from app.geocode_service import clean_address, geocode_address
+    from app.geocoding.address_parser import normalize, parse
+
+    test_address = address or "123 MG Road, Bangalore"
+    parsed = parse(normalize(test_address))
     with httpx.Client(
         timeout=15,
         headers={
@@ -893,7 +905,12 @@ def debug_geocode():
 
     return {
         "loaded": True,
+        "address_pipeline": "v2",
         "test_address": test_address,
+        "normalized_query": clean_address(test_address),
+        "components": parsed.as_dict(),
+        "components_summary": parsed.describe(),
+        "missing_components": parsed.missing(),
         "result": result,
     }
 

@@ -92,7 +92,28 @@ inside a building; Google's geocoder cannot confirm it and never will,
 so validating against it turns correct matches into failures. This was
 tried and reverted — the comment in the code says so, and it stays.
 
-### 3c. Too many addresses need verification
+### 3c. Diagnosing one specific address
+
+Open this in a browser, with the address that's misbehaving:
+
+```
+https://rootplan-backend.onrender.com/api/debug/geocode?address=12A, Gandhi Road, Velachary, Chennai
+```
+
+It returns:
+
+- `normalized_query` — what the system actually sends to Google after
+  formatting repair and spelling correction
+- `components` / `components_summary` — what it read out of the text
+- `missing_components` — what it couldn't find
+- `result` — what came back, with confidence
+
+That distinguishes the two causes that look identical from the admin
+screen: **we misread the address** (fix the parser or the gazetteer) vs
+**Google has no data for that house** (a genuine verification case, no
+code change will help).
+
+### 3d. Too many addresses need verification
 
 Work from the real data, never from invented examples:
 
