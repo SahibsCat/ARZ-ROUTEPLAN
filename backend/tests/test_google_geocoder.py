@@ -775,6 +775,85 @@ def test_score_component_match_confirms_a_locality_nested_three_levels_deep():
     assert _score_component_match(customer, google_components) is None
 
 
+def test_score_component_match_trusts_precision_over_a_lone_pin_typo():
+    # Real case: the customer's PIN doesn't exist for this street at all,
+    # but street/house-number/locality all confirm cleanly AND the match
+    # is genuinely precise (ROOFTOP) - trusted as a customer-side typo
+    # rather than a wrong address, when explicitly given precision_confidence.
+    from app.geocoding.google_geocoder import PIN_MISMATCH_TRUST_OVERRIDE_MIN_PRECISION, _score_component_match
+
+    customer = "2/20 New Thandavarayan Street, Purasaiwakkam, Chennai 600007"
+    google_components = [
+        {"long_name": "2", "types": ["street_number"]},
+        {"long_name": "New Thandavarayan Street", "types": ["route"]},
+        {"long_name": "Purasaiwakkam", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600021", "types": ["postal_code"]},  # different from customer's 600007
+    ]
+
+    assert _score_component_match(
+        customer, google_components, precision_confidence=0.95
+    ) is None
+    # Sanity: the constant this depends on is what's documented.
+    assert PIN_MISMATCH_TRUST_OVERRIDE_MIN_PRECISION == 0.8
+
+
+def test_score_component_match_never_trusts_a_pin_typo_without_precision_passed():
+    # The Places fallback path never passes precision_confidence (no
+    # location_type signal exists there) - a PIN mismatch must stay fully
+    # strict when the caller doesn't explicitly vouch for match precision.
+    from app.geocoding.google_geocoder import PIN_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "2/20 New Thandavarayan Street, Purasaiwakkam, Chennai 600007"
+    google_components = [
+        {"long_name": "2", "types": ["street_number"]},
+        {"long_name": "New Thandavarayan Street", "types": ["route"]},
+        {"long_name": "Purasaiwakkam", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600021", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) == PIN_MISMATCH_CONFIDENCE_CAP
+
+
+def test_score_component_match_does_not_trust_a_pin_typo_when_anything_else_is_off():
+    # Even with high precision_confidence, a PIN mismatch stays strict if
+    # ANYTHING else about the match also looks wrong (here: the locality
+    # doesn't match either) - the override only applies when the PIN is
+    # the ONLY thing standing between the match and full confidence.
+    from app.geocoding.google_geocoder import PIN_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "2/20 New Thandavarayan Street, Purasaiwakkam, Chennai 600007"
+    google_components = [
+        {"long_name": "2", "types": ["street_number"]},
+        {"long_name": "New Thandavarayan Street", "types": ["route"]},
+        {"long_name": "Some Unrelated Area", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600021", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(
+        customer, google_components, precision_confidence=0.95
+    ) == PIN_MISMATCH_CONFIDENCE_CAP
+
+
+def test_score_component_match_does_not_trust_a_pin_typo_at_low_precision():
+    # Same clean street/house-number/locality match, but precision itself
+    # is only a GEOMETRIC_CENTER-level guess (below the override
+    # threshold) - not confident enough to override what the customer
+    # actually typed.
+    from app.geocoding.google_geocoder import PIN_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "2/20 New Thandavarayan Street, Purasaiwakkam, Chennai 600007"
+    google_components = [
+        {"long_name": "2", "types": ["street_number"]},
+        {"long_name": "New Thandavarayan Street", "types": ["route"]},
+        {"long_name": "Purasaiwakkam", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600021", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(
+        customer, google_components, precision_confidence=0.65
+    ) == PIN_MISMATCH_CONFIDENCE_CAP
+
+
 def test_score_component_match_never_requires_a_building_name():
     """Spec's most-repeated non-negotiable rule: an address with no
     building name (just house number + street + locality + city + PIN) is

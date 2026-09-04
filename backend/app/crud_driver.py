@@ -495,13 +495,35 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * r_km * asin(sqrt(a))
 
 
+
+# The driver app pings every 5 seconds REGARDLESS of whether the phone
+# actually moved (locationTask.js's timeInterval - distanceInterval only
+# fires it sooner, never suppresses it) - so a driver stopped for a
+# 10-minute delivery, waiting at a signal, or stuck in traffic still
+# generates ~120 pings, and consecutive fixes from an otherwise-
+# stationary phone still drift a few metres apart purely from ordinary
+# GPS receiver noise (multipath, satellite geometry), not real movement.
+# Summed with no filter at all, that noise accumulates into a real,
+# visibly-wrong inflation of "km travelled" over a full day of stops -
+# this is what was actually being reported as "wrong". Set just above
+# the app's own 10m distanceInterval (its own definition of "this counts
+# as having moved"), so a hop the app itself would call real movement is
+# essentially always still counted, while sub-threshold jitter is not.
+_MIN_MOVEMENT_KM = 0.015  # 15 metres
+
+
 def _sum_haversine_km(pings: List[DriverLocationPing]) -> float:
     """pings must already be in chronological order (oldest first) -
     callers pass a reversed slice of the newest-first lists _run_pings
-    returns."""
+    returns. Each hop under _MIN_MOVEMENT_KM is dropped - GPS jitter from
+    an otherwise-stationary phone (see that constant's own comment), not
+    genuine travel - so the running total only advances on real movement
+    instead of accumulating noise every 5 seconds a driver isn't moving."""
     total = 0.0
     for a, b in zip(pings, pings[1:]):
-        total += _haversine_km(a.lat, a.lng, b.lat, b.lng)
+        hop = _haversine_km(a.lat, a.lng, b.lat, b.lng)
+        if hop >= _MIN_MOVEMENT_KM:
+            total += hop
     return total
 
 

@@ -527,6 +527,42 @@ def test_haversine_km_matches_a_known_distance():
     assert km == pytest.approx(111.19, abs=0.5)
 
 
+def test_sum_haversine_km_ignores_gps_jitter_from_a_stationary_phone():
+    # The driver app pings every 5 seconds regardless of movement - a
+    # driver stopped for a delivery still generates many pings, each a
+    # few metres apart purely from GPS receiver noise. Real bug this
+    # guards: that noise summing into a visibly-inflated distance figure
+    # over a full day of stops.
+    class _FakePing:
+        def __init__(self, lat, lng):
+            self.lat = lat
+            self.lng = lng
+
+    # ~5m apart (well under the 15m floor) - simulates 5 pings from a
+    # phone that never actually moved.
+    stationary = [
+        _FakePing(13.00000, 80.20000),
+        _FakePing(13.00003, 80.20002),
+        _FakePing(13.00001, 80.20004),
+        _FakePing(13.00004, 80.20001),
+        _FakePing(13.00002, 80.20003),
+    ]
+    assert crud_driver._sum_haversine_km(stationary) == 0.0
+
+
+def test_sum_haversine_km_still_counts_genuine_movement():
+    class _FakePing:
+        def __init__(self, lat, lng):
+            self.lat = lat
+            self.lng = lng
+
+    # Real ~1.11km hops must be counted in full, same as before this fix -
+    # the floor only ever drops sub-threshold noise, never real distance.
+    moving = [_FakePing(13.00, 80.20), _FakePing(13.01, 80.20), _FakePing(13.02, 80.20)]
+    expected = crud_driver._haversine_km(13.00, 80.20, 13.01, 80.20) + crud_driver._haversine_km(13.01, 80.20, 13.02, 80.20)
+    assert crud_driver._sum_haversine_km(moving) == pytest.approx(expected, abs=1e-9)
+
+
 def test_route_progress_sums_distance_from_the_pings_actually_recorded(db_session):
     driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
     route = _route(db_session)

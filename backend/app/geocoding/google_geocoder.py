@@ -174,6 +174,22 @@ def _score_result(location_type: Optional[str], types: Iterable[str], partial_ma
 # automatic hard reject (data sources can genuinely disagree at a PIN
 # boundary), but real cause to require verification.
 PIN_MISMATCH_CONFIDENCE_CAP = 0.3
+# The ONE deliberate exception to "a cap only ever downgrades, never
+# overrides what the customer typed" (explicitly confirmed as an
+# accepted trade-off): when a PIN mismatch is the ONLY thing wrong -
+# street name, house number, and locality all confirm cleanly on their
+# own - and Google's own match precision is at least this good, it's
+# trusted as a likely customer-side PIN typo instead of capping. Set at
+# RANGE_INTERPOLATED-or-better (see _score_result) WITHOUT the
+# partial_match penalty already applied - excludes every GEOMETRIC_CENTER
+# guess (even a "precise-type" one, capped at 0.65) and excludes a
+# partial-matched RANGE_INTERPOLATED (drops to 0.65) - only a genuinely
+# confident, complete structural match qualifies, real case: "New
+# Thandavarayan Street" resolves to the exact same ROOFTOP point (0.95)
+# whether or not the customer's stated PIN is even included in the query
+# at all - strong evidence the STREET is right and the PIN was mistyped,
+# not that the match itself is uncertain.
+PIN_MISMATCH_TRUST_OVERRIDE_MIN_PRECISION = 0.8
 # Google names a specific locality/sublocality and NONE of its words show
 # up anywhere in the customer's own address text - the "ABC Apartments,
 # XYZ Street, Velachery" vs "ABC Apartments, XYZ Street, Thiruvanmiyur"
@@ -375,7 +391,11 @@ def _extract_street_keyword(address: str) -> Optional[str]:
     return match.group(1).lower() if match else None
 
 
-def _score_component_match(original_address: str, address_components: List[Dict[str, object]]) -> Optional[float]:
+def _score_component_match(
+    original_address: str,
+    address_components: List[Dict[str, object]],
+    precision_confidence: Optional[float] = None,
+) -> Optional[float]:
     """Returns a confidence CAP (never a floor/boost) when a real mismatch
     is found, or None when nothing meaningful was found to flag - callers
     combine this with _score_result via min(), so None means "no opinion,
@@ -383,16 +403,28 @@ def _score_component_match(original_address: str, address_components: List[Dict[
     fine". Checks PIN, locality, street name, and house/door number
     independently and returns the MOST restrictive (lowest) cap among
     whichever ones actually found something to flag - a result can fail
-    more than one check at once."""
-    caps: List[float] = []
+    more than one check at once.
+
+    `precision_confidence` (Google's OWN location_type-based score - see
+    _score_result - passed in by _geocode_once, never by the Places path,
+    which has no such signal) enables ONE deliberate exception: a PIN
+    mismatch that stands entirely alone - street, house number, and
+    locality all confirm cleanly, and Google's own match is genuinely
+    precise (ROOFTOP/RANGE_INTERPOLATED, not just an area-level guess) -
+    is trusted as a likely customer-side PIN typo rather than a wrong
+    address, and does not cap confidence on its own. This is a real,
+    explicit trade-off (confirmed with the user): every OTHER cap in this
+    file only ever downgrades, never overrides what the customer typed -
+    PIN mismatch is the one deliberate exception, and only when every
+    other independent signal already confirms the match on its own."""
+    non_pin_caps: List[float] = []
 
     customer_pin = _extract_pincode(original_address)
     google_pin = next(
         (c.get("long_name") for c in address_components if "postal_code" in (c.get("types") or [])),
         None,
     )
-    if customer_pin and google_pin and customer_pin != str(google_pin):
-        caps.append(PIN_MISMATCH_CONFIDENCE_CAP)
+    pin_mismatch = bool(customer_pin and google_pin and customer_pin != str(google_pin))
 
     google_localities = [
         str(c.get("long_name") or "") for c in address_components
@@ -404,7 +436,7 @@ def _score_component_match(original_address: str, address_components: List[Dict[
         for locality in google_localities:
             locality_tokens.extend(_significant_tokens(locality))
         if locality_tokens and not any(_fuzzy_token_match(token, customer_tokens) for token in locality_tokens):
-            caps.append(LOCALITY_MISMATCH_CONFIDENCE_CAP)
+            non_pin_caps.append(LOCALITY_MISMATCH_CONFIDENCE_CAP)
 
     # House/door number - the spec's central "street found, house not
     # confirmed" case. Building name is never required (see
@@ -431,9 +463,9 @@ def _score_component_match(original_address: str, address_components: List[Dict[
             # unconfirmed.
             all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
             if not any(_number_confirmed_in_text(n, all_component_text) for n in customer_house_numbers):
-                caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
+                non_pin_caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
         elif not _house_number_matches(google_house_number, customer_house_numbers):
-            caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
+            non_pin_caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
 
     # Street name - independent of house number, and independent of PIN/
     # locality (both of THOSE can genuinely match while the street itself
@@ -449,9 +481,18 @@ def _score_component_match(original_address: str, address_components: List[Dict[
         all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
         component_tokens = _component_text_tokens(all_component_text)
         if component_tokens and not _fuzzy_token_match(street_keyword, component_tokens):
-            caps.append(STREET_NAME_MISMATCH_CONFIDENCE_CAP)
+            non_pin_caps.append(STREET_NAME_MISMATCH_CONFIDENCE_CAP)
 
-    return min(caps) if caps else None
+    if pin_mismatch:
+        trust_precision_over_pin = (
+            not non_pin_caps
+            and precision_confidence is not None
+            and precision_confidence >= PIN_MISMATCH_TRUST_OVERRIDE_MIN_PRECISION
+        )
+        if not trust_precision_over_pin:
+            non_pin_caps.append(PIN_MISMATCH_CONFIDENCE_CAP)
+
+    return min(non_pin_caps) if non_pin_caps else None
 
 
 def _strip_landmark_phrase(address: str) -> str:
@@ -810,7 +851,7 @@ class GoogleGeocoder(GeocodingProvider):
                 partial_match = bool(result.get("partial_match", False))
                 address_components = result.get("address_components") or []
                 precision_confidence = _score_result(location_type, result_types, partial_match)
-                component_cap = _score_component_match(address, address_components)
+                component_cap = _score_component_match(address, address_components, precision_confidence)
                 confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
                 result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION
 
