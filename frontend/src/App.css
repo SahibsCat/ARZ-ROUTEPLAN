@@ -1582,13 +1582,51 @@ textarea:focus-visible, [tabindex]:focus-visible {
   cursor: pointer;
   text-align: left;
   transition: border-color 0.15s ease, background 0.15s ease;
+  /* A flex child's default min-width is its content's own min-content
+     size, not 0 - for a long unbroken reason string that can push the
+     whole row (and its .failed-split__list parent) wider than intended
+     instead of wrapping. This is what actually lets width:100% below
+     take effect. */
+  min-width: 0;
+  width: 100%;
 }
 .failed-row:hover, .failed-row--active {
   border-color: var(--critical);
   background: var(--critical-soft);
 }
 .failed-row__name { font-weight: 700; color: var(--ink); font-size: 0.9rem; }
-.failed-row__reason { font-size: 0.78rem; color: var(--critical); }
+.failed-row__reason {
+  font-size: 0.78rem;
+  color: var(--critical);
+  /* Specific mismatch reasons ("House/door number mismatch: you entered
+     231B/1, Google found 231C on this street") run much longer than the
+     generic "low confidence match" text this row was first built for -
+     wrap onto multiple lines instead of overflowing the row's fixed-
+     width list. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* The specific reason a Failed Order needs review (geocode_error) - a
+   full sentence now (see geocode_service._verification_message), not a
+   short label, so it gets its own wrapping banner instead of being
+   crammed into the .tag pill (built for one-word labels and set to
+   white-space: nowrap - forcing a whole sentence in there is what
+   pushed the text out past the panel's edge). */
+.failed-detail__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--critical-soft);
+  color: var(--critical);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.failed-detail__reason svg { flex: none; margin-top: 0.15rem; }
+.failed-detail__reason span { overflow-wrap: break-word; word-break: break-word; min-width: 0; }
 
 .failed-split__detail {
   flex: 1;
@@ -1616,7 +1654,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
 }
 .detail-field {
@@ -1624,7 +1662,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
   padding: 0.85rem 1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--rule);
+  /* A grid track sized 1fr still won't shrink below its content's own
+     min-content width by default (same underlying issue as flex items) -
+     a long Google-suggested address with no natural break point could
+     force this column wider than the grid's own track, pushing the
+     panel's edge out. minmax(0, 1fr) above plus wrapping the actual text
+     here is what makes a long address wrap instead. */
+  min-width: 0;
 }
+.detail-field p { overflow-wrap: break-word; word-break: break-word; }
 
 .ticket__field {
   width: 100%;

@@ -3447,10 +3447,18 @@ function App() {
                             <span className="stop__id">#{selectedFailedOrder.order_id}</span>
                             <h3>{selectedFailedOrder.customer_name}</h3>
                           </div>
-                          <span className="tag tag--late">
-                            <IconAlert width={11} height={11} />
-                            {selectedFailedOrder.geocode_error || 'Geocoding failed'}
-                          </span>
+                        </div>
+
+                        {/* The specific reason this address was flagged (see
+                            geocode_service._verification_message) - a full
+                            sentence now, not a short label, so it needs its
+                            own wrapping banner rather than the .tag pill
+                            (built for one-word labels like "Delayed" -
+                            forcing a whole sentence into that nowrap pill is
+                            what pushed the text out past its container). */}
+                        <div className="failed-detail__reason">
+                          <IconAlert width={13} height={13} />
+                          <span>{selectedFailedOrder.geocode_error || 'Geocoding failed'}</span>
                         </div>
 
                         <div className="detail-map">
