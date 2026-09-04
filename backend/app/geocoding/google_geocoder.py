@@ -180,7 +180,19 @@ PIN_MISMATCH_CONFIDENCE_CAP = 0.3
 # scenario: everything else about the match can look fine, only the area
 # itself is wrong.
 LOCALITY_MISMATCH_CONFIDENCE_CAP = 0.4
-_LOCALITY_COMPONENT_TYPES = {"locality", "sublocality", "sublocality_level_1", "sublocality_level_2"}
+# Every sublocality depth Google actually returns (level_1 through
+# level_5 - see the module-level _AREA_ONLY_TYPES set above, which
+# already covers all five for the SEPARATE precision check) - a real
+# Chennai address routinely nests 3-4 deep ("Yeswanth Nagar" inside
+# "Madambakkam" inside "Tambaram", say), and the customer's own named
+# area can legitimately be the deeper one, not the top-level locality.
+# Only checking level_1/level_2 silently skipped every match that could
+# only be confirmed at level_3 or beyond.
+_LOCALITY_COMPONENT_TYPES = {
+    "locality", "sublocality",
+    "sublocality_level_1", "sublocality_level_2", "sublocality_level_3",
+    "sublocality_level_4", "sublocality_level_5",
+}
 
 # The customer gave a house/door number and Google's result has NO
 # street_number component at all - "the street was found, the house was
@@ -223,9 +235,13 @@ _STREET_SUFFIX_PATTERN = re.compile(
 )
 
 # Common Indian house/door/plot-number prefixes, stripped before matching
-# the number itself - "Door No 15" and "15" both mean the same thing.
+# the number itself - "Door No 15", "Door 15", and "15" all mean the same
+# thing. "No" is optional after every prefix word here (matching "plot"'s
+# existing pattern) - "Door 2 Plot 107, ..." (no "No" at all, real address
+# from this conversation) needs "door" alone to strip just as cleanly as
+# "Door No 2" does.
 _HOUSE_NUMBER_PREFIX = re.compile(
-    r"^(?:door\s*no\.?|d\.?\s*no\.?|plot\s*(?:no\.?)?|house\s*no\.?|no\.?)\s*",
+    r"^(?:door\s*(?:no\.?)?|d\.?\s*no\.?|plot\s*(?:no\.?)?|house\s*(?:no\.?)?|no\.?)\s*",
     re.IGNORECASE,
 )
 # A house number token - plain (24), letter-suffixed (12A), or with a
@@ -236,24 +252,54 @@ _HOUSE_NUMBER_PREFIX = re.compile(
 _HOUSE_NUMBER_TOKEN = re.compile(r"^(\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
 
 
-def _extract_house_number(address: str) -> Optional[str]:
-    """The customer's house/door/plot number - never required to be
-    present (a building-name-only or locality-only address simply has
-    none, and this correctly returns None for those rather than guessing).
-    Checked against the first few COMMA-SEPARATED segments, not just the
-    very first one, since a flat/unit number can precede it ("Flat 2B, 12
-    XYZ Street" - the spec's own listed format) or a building name can
-    ("ABC Apartments, 12 XYZ Street"). A bare 6-digit run is explicitly
-    rejected - that's a PIN code, not a house number (see
+def _extract_house_numbers(address: str) -> List[str]:
+    """Every house/door/plot-number-shaped token found in the first few
+    COMMA-SEPARATED segments, not just the first one found - real case
+    that motivated this: "Plot No 172, 17/10, Vinobaji Street, ..." states
+    TWO numbers (a plot/survey number AND the actual postal door number,
+    both genuine), and Google's data only ever confirms whichever one is
+    actually indexed - there's no reliable way to know in advance which,
+    so matching ANY of them is enough; requiring a SPECIFIC one (the
+    first-found only) rejected a precise ROOFTOP match over a number the
+    customer had, in fact, also stated, just second.
+
+    A flat/unit number can precede the real one ("Flat 2B, 12 XYZ Street"
+    - the spec's own listed format) or a building name can ("ABC
+    Apartments, 12 XYZ Street"), which is why every one of the first 3
+    segments is checked, not just the very first. A bare 6-digit run is
+    explicitly rejected - that's a PIN code, not a house number (see
     _extract_pincode, the actual PIN check, reused from nominatim_geocoder
-    same as this function's sibling checks)."""
+    same as this function's sibling checks). Returns [] when the address
+    has none at all - never required to be present."""
     segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
+    numbers: List[str] = []
     for segment in segments[:3]:
         candidate = _HOUSE_NUMBER_PREFIX.sub("", segment).strip()
         match = _HOUSE_NUMBER_TOKEN.match(candidate)
         if match and not re.fullmatch(r"\d{6}", match.group(1)):
-            return match.group(1).upper()
-    return None
+            number = match.group(1).upper()
+            if number not in numbers:
+                numbers.append(number)
+    return numbers
+
+
+def _extract_house_number(address: str) -> Optional[str]:
+    """The single leading house/door/plot number, if any - used only where
+    a specific ONE number matters (does this address lead with a real
+    number at all, for _strip_leading_name_segment/
+    _reorder_house_number_to_street's own structural checks). Component
+    validation against Google's result uses _extract_house_numbers
+    (plural) instead, since more than one candidate can be genuine there."""
+    numbers = _extract_house_numbers(address)
+    return numbers[0] if numbers else None
+
+
+def _normalize_house_number(number: str) -> str:
+    """"17/10" and "17-10" are the same flat/plot notation, written with
+    either separator interchangeably in real addresses (and in Google's
+    own data) - canonicalized before comparing so that difference alone
+    never causes a false mismatch."""
+    return number.replace("-", "/")
 
 
 def _number_confirmed_in_text(number: str, text: str) -> bool:
@@ -327,10 +373,15 @@ def _score_component_match(original_address: str, address_components: List[Dict[
 
     # House/door number - the spec's central "street found, house not
     # confirmed" case. Building name is never required (see
-    # _extract_house_number's own docstring) - only whether the customer's
+    # _extract_house_numbers' own docstring) - only whether the customer's
     # address happened to include a number, independent of anything else.
-    customer_house_number = _extract_house_number(original_address)
-    if customer_house_number:
+    # Matching ANY stated number is enough (see _extract_house_numbers -
+    # some addresses genuinely state more than one, e.g. a plot/survey
+    # number alongside the actual door number, and there's no reliable way
+    # to know which one Google's data indexes against in advance).
+    customer_house_numbers = _extract_house_numbers(original_address)
+    if customer_house_numbers:
+        normalized_customer_numbers = {_normalize_house_number(n) for n in customer_house_numbers}
         google_house_number = next(
             (str(c.get("long_name") or "").upper() for c in address_components if "street_number" in (c.get("types") or [])),
             None,
@@ -345,9 +396,9 @@ def _score_component_match(original_address: str, address_components: List[Dict[
             # - only genuinely absent from every component counts as
             # unconfirmed.
             all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
-            if not _number_confirmed_in_text(customer_house_number, all_component_text):
+            if not any(_number_confirmed_in_text(n, all_component_text) for n in customer_house_numbers):
                 caps.append(STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP)
-        elif google_house_number != customer_house_number:
+        elif _normalize_house_number(google_house_number) not in normalized_customer_numbers:
             caps.append(STREET_NUMBER_MISMATCH_CONFIDENCE_CAP)
 
     # Street name - independent of house number, and independent of PIN/

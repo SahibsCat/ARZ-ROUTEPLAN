@@ -684,6 +684,59 @@ def test_score_component_match_flags_a_different_house_number_on_the_same_street
     assert _score_component_match(customer, google_components) == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
 
 
+def test_extract_house_numbers_finds_every_candidate_not_just_the_first():
+    # Real case: a plot/survey number AND the actual postal door number,
+    # both genuinely stated, in that order.
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers(
+        "Plot No 172, 17/10, Vinobaji Street, Kamarajar Nagar, Choolaimedu 600094"
+    ) == ["172", "17/10"]
+
+
+def test_extract_house_numbers_handles_a_bare_door_prefix_with_no_no():
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("Door 2 Plot 107 Yeshwanth nagar link street Madambakkam") == ["2"]
+
+
+def test_score_component_match_confirms_against_any_stated_house_number():
+    """The exact bug this fixes: Google's confirmed street_number ("17-10")
+    matches the customer's SECOND stated number ("17/10"), not the first
+    ("172", a separate plot/survey reference) - must not be capped just
+    because the first-found number doesn't match. Also confirms "-" and
+    "/" are treated as the same separator."""
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Plot No 172, 17/10, Vinobaji Street, Kamarajar Nagar, Choolaimedu 600094"
+    google_components = [
+        {"long_name": "17-10", "types": ["street_number"]},
+        {"long_name": "Vinobaji Street", "types": ["route"]},
+        {"long_name": "Choolaimedu", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600094", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_confirms_a_locality_nested_three_levels_deep():
+    # "Yeswanth Nagar" only appears as a sublocality_level_2/3+ component
+    # (nested inside "Madambakkam") - a real Chennai address shape, and
+    # the customer's stated area can legitimately be the deeper one.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Door 2, Yeswanth Nagar, Madambakkam, Chennai 600126"
+    google_components = [
+        {"long_name": "2", "types": ["subpremise"]},
+        {"long_name": "Padamavathy Nagar", "types": ["sublocality", "sublocality_level_3"]},
+        {"long_name": "Yeswanth Nagar", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "Madambakkam", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600126", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
 def test_score_component_match_never_requires_a_building_name():
     """Spec's most-repeated non-negotiable rule: an address with no
     building name (just house number + street + locality + city + PIN) is
