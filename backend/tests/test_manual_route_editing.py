@@ -101,6 +101,62 @@ def test_add_orders_to_route_rejects_unknown_order(db_session):
         crud.add_orders_to_route(db_session, route.id, ["does-not-exist"])
 
 
+def test_add_orders_to_route_without_override_still_enforces_base_capacity(db_session):
+    # allow_override defaults to False - every existing caller (ordinary
+    # Assign) keeps rejecting a batch over base capacity, exactly as
+    # before this flag existed.
+    batch = _batch(db_session, 5)  # BIKE_CAPACITY == 3
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "bike")
+
+    with pytest.raises(crud.CapacityError):
+        crud.add_orders_to_route(db_session, route.id, ["1", "2", "3", "4"])
+
+
+def test_add_orders_to_route_allow_override_lets_a_car_flex_exactly_one_past_base(db_session):
+    # "Add Address from Another Route"'s exact same one-time exception,
+    # here sourced from the Unassigned pool instead of another route.
+    batch = _batch(db_session, 7)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])  # 6/6, base-full
+
+    updated = crud.add_orders_to_route(db_session, route.id, ["7"], allow_override=True)
+
+    assert len(updated.stops) == 7  # base (6) + exactly one admin override
+    stop_ids = {stop.order_id for stop in updated.stops}
+    assert stop_ids == {"1", "2", "3", "4", "5", "6", "7"}
+    assert updated.manual_extra_order_id == "7"
+
+    order7 = db_session.query(crud.Order).filter_by(batch_id=batch.id, order_id="7").first()
+    assert order7.status == "assigned"
+    assert order7.route_id == route.id
+
+
+def test_add_orders_to_route_allow_override_rejects_more_than_one_point_past_base(db_session):
+    batch = _batch(db_session, 8)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
+
+    with pytest.raises(crud.RootplanError):
+        crud.add_orders_to_route(db_session, route.id, ["7", "8"], allow_override=True)
+
+    # Nothing was written - the failed batch must not partially apply.
+    route_after = db_session.query(crud.Route).filter_by(id=route.id).first()
+    assert len(route_after.stops) == 6
+    assert route_after.manual_extra_order_id is None
+
+
+def test_add_orders_to_route_allow_override_rejects_a_second_override_on_the_same_route(db_session):
+    batch = _batch(db_session, 8)
+    plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
+    route = crud.create_route(db_session, plan.id, "car", order_ids=[str(i) for i in range(1, 7)])
+
+    crud.add_orders_to_route(db_session, route.id, ["7"], allow_override=True)  # uses the one override -> 7/6
+
+    with pytest.raises(crud.CapacityError):
+        crud.add_orders_to_route(db_session, route.id, ["8"], allow_override=True)
+
+
 def test_remove_order_from_route_returns_it_to_unassigned_with_history(db_session):
     batch = _batch(db_session, 2)
     plan = crud.get_or_create_draft_route_plan(db_session, batch.id)

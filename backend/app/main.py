@@ -759,7 +759,7 @@ def add_orders_to_route_endpoint(
     route_id: int, payload: AddOrdersRequest = Body(...), db: Session = Depends(get_db),
 ):
     try:
-        route = crud.add_orders_to_route(db, route_id, payload.order_ids)
+        route = crud.add_orders_to_route(db, route_id, payload.order_ids, allow_override=payload.allow_override)
     except crud.RootplanError as e:
         _raise_for_crud_error(e)
     batch_id = route.route_plan.batch_id if route.route_plan else None
@@ -863,7 +863,7 @@ def change_route_vehicle_endpoint(
 @app.post("/api/orders/assign")
 def assign_orders_endpoint(payload: AssignOrdersRequest = Body(...), db: Session = Depends(get_db)):
     try:
-        route = crud.add_orders_to_route(db, payload.route_id, payload.order_ids)
+        route = crud.add_orders_to_route(db, payload.route_id, payload.order_ids, allow_override=payload.allow_override)
     except crud.RootplanError as e:
         _raise_for_crud_error(e)
     batch_id = route.route_plan.batch_id if route.route_plan else None

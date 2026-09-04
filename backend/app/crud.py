@@ -803,12 +803,21 @@ def create_route(
     return route
 
 
-def add_orders_to_route(db: Session, route_id: int, order_ids: List[str]) -> Route:
+def add_orders_to_route(db: Session, route_id: int, order_ids: List[str], allow_override: bool = False) -> Route:
     """Adds one or more currently-unassigned orders to an existing route -
     powers both the single-order "Assign" action and bulk assignment.
     Capacity is validated for the whole batch before anything is written,
     so a batch that doesn't fit is rejected atomically rather than
-    partially applied."""
+    partially applied.
+
+    `allow_override` extends "Add Address from Another Route"'s one-time
+    past-base-capacity exception (see move_orders_between_routes' own
+    docstring for the full reasoning) to the Unassigned Orders pool too -
+    the same single deliberate override, exactly one stop, tracked the
+    same way (Route.manual_extra_order_id), just sourced from Unassigned
+    instead of another route's stops. False (the default) keeps every
+    existing caller's behavior - a batch over base capacity is rejected -
+    exactly as before."""
     route = db.query(Route).filter(Route.id == route_id).first()
     if route is None:
         raise RouteNotFoundError("Route not found")
@@ -820,7 +829,19 @@ def add_orders_to_route(db: Session, route_id: int, order_ids: List[str]) -> Rou
     existing_stops = sorted(route.stops, key=lambda s: s.sequence)
     capacity = vehicle_capacity(route.vehicle_type)
     available = capacity - len(existing_stops)
-    if len(order_ids) > available:
+    uses_override = allow_override and len(order_ids) > available
+    if uses_override:
+        max_capacity = vehicle_max_capacity(route.vehicle_type)
+        if route.manual_extra_order_id is not None:
+            raise CapacityError(capacity=capacity, available=0, requested=len(order_ids))
+        if len(order_ids) != 1:
+            raise RootplanError(
+                "Only one delivery point can be added past this route's normal capacity at a time - "
+                "select just one, or select up to its normal capacity."
+            )
+        if len(existing_stops) + len(order_ids) > max_capacity:
+            raise CapacityError(capacity=max_capacity, available=max(max_capacity - len(existing_stops), 0), requested=len(order_ids))
+    elif len(order_ids) > available:
         raise CapacityError(capacity=capacity, available=max(available, 0), requested=len(order_ids))
 
     orders_to_add: List[Order] = []
@@ -839,10 +860,20 @@ def add_orders_to_route(db: Session, route_id: int, order_ids: List[str]) -> Rou
 
     existing_order_dicts = [dict(stop.order_snapshot or {}) for stop in existing_stops]
     new_order_dicts = [order_summary(order) for order in orders_to_add]
-    full_orders = existing_order_dicts + new_order_dicts
+    # An override stop still deserves a sensible position in the route,
+    # same as every automatically-placed one - matches how
+    # move_orders_between_routes positions its own override stop, rather
+    # than just appending it to the end.
+    full_orders = (
+        insert_orders_into_route(existing_order_dicts, new_order_dicts, route.vehicle_type)
+        if uses_override
+        else existing_order_dicts + new_order_dicts
+    )
 
     metrics = recompute_route_metrics(full_orders, route.vehicle_type)
     _apply_route_metrics(route, metrics)
+    if uses_override:
+        route.manual_extra_order_id = orders_to_add[0].order_id
     _persist_route_stops(db, route, batch_id, metrics)
 
     db.commit()

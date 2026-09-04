@@ -2130,12 +2130,17 @@ function App() {
   // Capacity is validated atomically server-side for the whole batch - see
   // add_orders_to_route in crud.py - so a batch that doesn't fit is
   // rejected as a whole, never partially applied.
-  const handleAssignUnassignedOrders = async (orderIds, targetRouteName) => {
+  // allowOverride: true is "Add Address from Another Route"'s same one-
+  // time past-base-capacity exception, sourced from Unassigned here
+  // instead of another route (see crud.add_orders_to_route). False (the
+  // default) is the ordinary Assign action - a batch over base capacity
+  // is rejected server-side, unchanged from before this flag existed.
+  const handleAssignUnassignedOrders = async (orderIds, targetRouteName, allowOverride = false) => {
     const targetRoute = routes.find((r) => r.route_name === targetRouteName);
-    if (!targetRoute) return;
+    if (!targetRoute) return false;
     const ids = orderIds.map(String);
     try {
-      const res = await postJson(`/api/routes/${targetRoute.route_id}/orders`, 'POST', { order_ids: ids });
+      const res = await postJson(`/api/routes/${targetRoute.route_id}/orders`, 'POST', { order_ids: ids, allow_override: allowOverride });
       if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to assign these orders. Please try again.'));
       const data = await res.json();
       patchRouteInState(data.route);
@@ -2143,9 +2148,11 @@ function App() {
       setStatus(ids.length === 1
         ? `Assigned order #${ids[0]} to ${targetRouteName}.`
         : `Assigned ${ids.length} orders to ${targetRouteName}.`);
+      return true;
     } catch (err) {
       console.error('Assign failed:', err);
       setWarnings([err.message || 'Unable to assign these orders. Please try again.']);
+      return false;
     }
   };
   const handleAssignUnassignedOrder = (orderId, targetRouteName) => handleAssignUnassignedOrders([orderId], targetRouteName);

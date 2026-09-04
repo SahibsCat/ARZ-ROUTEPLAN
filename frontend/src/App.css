@@ -1044,6 +1044,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--accent);
   flex: none;
 }
+.dash-link > div {
+  /* A flex child's default min-width is its content's own min-content
+     size, not 0 - a long uploaded filename ("converted_customer_
+     orders_4th_sep_2026.xlsx") could refuse to shrink and push the
+     card wider than its grid track, spilling text out past the edge
+     instead of truncating. */
+  min-width: 0;
+  flex: 1;
+}
 /* Each shortcut gets the same accent as its own destination page, and
    Routes (the primary "go do something" card, not just a status check)
    gets a subtle indigo border to read as first among equals. */
@@ -1063,7 +1072,13 @@ textarea:focus-visible, [tabindex]:focus-visible {
   font-size: 0.78rem;
   color: var(--ink-soft);
   margin-top: 0.1rem;
+  /* Truncate a long filename cleanly with an ellipsis instead of
+     spilling past the card's edge. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.dash-link div strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Toolbar */
 .toolbar {

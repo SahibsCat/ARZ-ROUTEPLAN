@@ -146,6 +146,10 @@ class ManualAddressRequest(BaseModel):
 
 class AddOrdersRequest(BaseModel):
     order_ids: List[str]
+    # See AssignOrdersRequest.allow_override - same one-time past-base-
+    # capacity exception, same default (unchanged behavior for every
+    # existing caller).
+    allow_override: bool = False
 
 
 class ReorderRouteRequest(BaseModel):
@@ -155,6 +159,12 @@ class ReorderRouteRequest(BaseModel):
 class AssignOrdersRequest(BaseModel):
     order_ids: List[str]
     route_id: int
+    # "Add Address from Another Route"'s one-time past-base-capacity
+    # exception, sourced from Unassigned instead - see
+    # crud.add_orders_to_route's own docstring. False (default) keeps the
+    # ordinary Assign action's behavior unchanged - a batch over base
+    # capacity is rejected.
+    allow_override: bool = False
 
 
 class ChangeVehicleTypeRequest(BaseModel):

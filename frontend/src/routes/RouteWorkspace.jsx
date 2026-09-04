@@ -1254,12 +1254,28 @@ function RouteOverviewStrip({ route, capacity, maxCapacity }) {
 // canFlexAddresses/isFull gate), so what it's actually offering here is
 // always the one manual capacity override - exactly one address, never
 // more (backend-enforced too, see crud.move_orders_between_routes).
-function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor, onConfirm, onClose, isSubmitting }) {
+// Sentinel value for the source-route <select> meaning "pull from
+// Unassigned Orders" rather than from another route - kept distinct from
+// any real route_name so it can never collide with one.
+const UNASSIGNED_SOURCE = '__unassigned__';
+
+function AddAddressModal({
+  destinationRoute, routes, pendingOrders, capacityFor, maxCapacityFor,
+  onConfirm, onConfirmFromUnassigned, onClose, isSubmitting,
+}) {
   const eligibleSourceRoutes = routes.filter((r) => r.route_name !== destinationRoute.route_name && r.orders.length > 0);
-  const [sourceRouteName, setSourceRouteName] = useState(eligibleSourceRoutes[0]?.route_name || '');
+  // Unassigned Orders is offered as a source whenever there's anything in
+  // it, listed first since it's usually the more likely place an admin
+  // wants to pull one more delivery from.
+  const hasUnassigned = pendingOrders.length > 0;
+  const [sourceRouteName, setSourceRouteName] = useState(
+    hasUnassigned ? UNASSIGNED_SOURCE : (eligibleSourceRoutes[0]?.route_name || '')
+  );
   const [selectedId, setSelectedId] = useState(null);
 
-  const sourceRoute = eligibleSourceRoutes.find((r) => r.route_name === sourceRouteName) || null;
+  const fromUnassigned = sourceRouteName === UNASSIGNED_SOURCE;
+  const sourceRoute = fromUnassigned ? null : eligibleSourceRoutes.find((r) => r.route_name === sourceRouteName) || null;
+  const sourceOrders = fromUnassigned ? pendingOrders : (sourceRoute?.orders || []);
   const maxCapacity = maxCapacityFor(destinationRoute.vehicle_type);
   const baseCapacity = capacityFor(destinationRoute.vehicle_type);
   const destinationCount = destinationRoute.orders.length;
@@ -1268,7 +1284,13 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
   const changeSource = (name) => { setSourceRouteName(name); setSelectedId(null); };
 
   const handleConfirm = async () => {
-    if (!sourceRoute || !selectedId || remainingSlots < 1) return;
+    if (!selectedId || remainingSlots < 1) return;
+    if (fromUnassigned) {
+      const ok = await onConfirmFromUnassigned([selectedId]);
+      if (ok) onClose();
+      return;
+    }
+    if (!sourceRoute) return;
     const ok = await onConfirm(sourceRoute.route_id, [selectedId]);
     if (ok) onClose();
   };
@@ -1289,12 +1311,14 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
 
         <div className="modal__body">
           <p className="modal__hint">
-            This route is at its normal capacity ({baseCapacity}). Select exactly one delivery point from another
-            route to add here as a manual override - only one is allowed per route.
+            {destinationCount >= baseCapacity
+              ? `This route is at its normal capacity (${baseCapacity}). Select exactly one delivery point from `
+                + 'Unassigned Orders or another route to add here as a manual override - only one is allowed per route.'
+              : 'Select one specific delivery point from Unassigned Orders or another route to add to this route.'}
           </p>
-          <label className="modal__field-label" htmlFor="add-address-source">Select Source Route</label>
-          {eligibleSourceRoutes.length === 0 ? (
-            <div className="empty-state">No other routes have addresses available to move.</div>
+          <label className="modal__field-label" htmlFor="add-address-source">Select Source</label>
+          {!hasUnassigned && eligibleSourceRoutes.length === 0 ? (
+            <div className="empty-state">No unassigned orders or other routes have addresses available to move.</div>
           ) : (
             <>
               <select
@@ -1303,6 +1327,9 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
                 value={sourceRouteName}
                 onChange={(e) => changeSource(e.target.value)}
               >
+                {hasUnassigned && (
+                  <option value={UNASSIGNED_SOURCE}>Unassigned Orders ({pendingOrders.length} waiting)</option>
+                )}
                 {eligibleSourceRoutes.map((r) => (
                   <option key={r.route_name} value={r.route_name}>
                     {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)} · {r.vehicle_type === 'car' ? 'Car' : 'Bike'})
@@ -1311,7 +1338,7 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
               </select>
 
               <div className="modal__address-list">
-                {sourceRoute?.orders.map((order) => (
+                {sourceOrders.map((order) => (
                   <label key={order.order_id} className="address-pick-row">
                     <input
                       type="radio"
@@ -1328,7 +1355,8 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
                       {order.area && <span className="route-stop__area">{order.area}</span>}
                       <span className="address-pick-row__address">{order.address}</span>
                       <span className="address-pick-row__meta">
-                        Current route: {sourceRoute.route_name} · Slot {order.delivery_time}
+                        {fromUnassigned ? 'Currently: Unassigned' : `Current route: ${sourceRoute.route_name}`}
+                        {order.delivery_time ? ` · Slot ${order.delivery_time}` : ''}
                       </span>
                     </div>
                   </label>
@@ -1338,7 +1366,7 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
           )}
         </div>
 
-        {eligibleSourceRoutes.length > 0 && (
+        {(hasUnassigned || eligibleSourceRoutes.length > 0) && (
           <div className="modal__summary">
             <span>Selected: <strong className="mono-num">{selectedId ? '1 address' : 'none yet'}</strong></span>
             <span>Destination Route after adding: <strong className="mono-num">{destinationCount + (selectedId ? 1 : 0)} / {maxCapacity}</strong></span>
@@ -1356,7 +1384,7 @@ function AddAddressModal({ destinationRoute, routes, capacityFor, maxCapacityFor
           <button
             type="button"
             className="btn btn--primary"
-            disabled={!sourceRoute || !selectedId || remainingSlots < 1 || isSubmitting}
+            disabled={(!fromUnassigned && !sourceRoute) || !selectedId || remainingSlots < 1 || isSubmitting}
             onClick={handleConfirm}
           >
             {isSubmitting ? 'Adding…' : 'Add to Route'}
@@ -2340,22 +2368,31 @@ function RouteDetail({
               </option>
             ))}
           </select>
-          {canFlexAddresses && isFull && (
-            <button
-              type="button"
-              className="btn btn--outline"
-              disabled={isAtMaxCapacity}
-              title={
-                isAtMaxCapacity
-                  ? `This route already used its one manual override (normal capacity ${capacity} + 1). Undo it below to free the override up again.`
-                  : `Normal capacity (${capacity}) reached - one manual override is available to add exactly one more.`
-              }
-              onClick={() => setShowAddAddressModal(true)}
-            >
-              <IconPlus width={14} height={14} />
-              {isAtMaxCapacity ? 'Manual override used' : 'Add Address from Another Route'}
-            </button>
-          )}
+          {/* Available on every route, not just a full one - the one way
+              to pull a SPECIFIC known stop straight from Unassigned
+              Orders or another route by name, rather than scrolling the
+              ordinary "+ Add Delivery" dropdown above (which only lists
+              Unassigned, one at a time). Only actually CONSUMES the
+              one-time past-capacity override (canFlexAddresses) when the
+              route is genuinely full when confirmed - see crud.
+              add_orders_to_route's allow_override, which only engages if
+              capacity is actually exceeded. */}
+          <button
+            type="button"
+            className="btn btn--outline"
+            disabled={canFlexAddresses && isAtMaxCapacity}
+            title={
+              canFlexAddresses && isAtMaxCapacity
+                ? `This route already used its one manual override (normal capacity ${capacity} + 1). Undo it below to free the override up again.`
+                : isFull
+                ? `Normal capacity (${capacity}) reached - one manual override is available to add exactly one more.`
+                : 'Add one specific delivery point from Unassigned Orders or another route.'
+            }
+            onClick={() => setShowAddAddressModal(true)}
+          >
+            <IconPlus width={14} height={14} />
+            {canFlexAddresses && isAtMaxCapacity ? 'Manual override used' : 'Add Specific Address'}
+          </button>
           <button type="button" className="btn btn--secondary" onClick={() => onDownload(route)}>
             <IconDownload width={14} height={14} />
             Download sheet
@@ -2535,11 +2572,13 @@ function RouteDetail({
         <AddAddressModal
           destinationRoute={route}
           routes={routes}
+          pendingOrders={pendingOrders}
           capacityFor={capacityFor}
           maxCapacityFor={maxCapacityFor}
           isSubmitting={isMovingAddresses}
           onClose={() => setShowAddAddressModal(false)}
           onConfirm={(sourceRouteId, orderIds) => onMoveOrders(sourceRouteId, route.route_id, orderIds)}
+          onConfirmFromUnassigned={(orderIds) => onAssignOrders(orderIds, route.route_name, true)}
         />
       )}
     </div>
