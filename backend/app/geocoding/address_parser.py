@@ -77,6 +77,30 @@ _ABBREVIATIONS = {
 
 _PIN_PATTERN = re.compile(r"\b(\d{6})\b")
 
+# Chennai's near-universal informal shorthand: "Chennai 41" or
+# "chennai-78" meaning PIN 600041 / 600078 - the city name plus just the
+# district digits, everyone locally understands it, Google's geocoder
+# does not. Requires the number directly after "chennai"/"madras" (not
+# glued into a street-suffix ordinal like "Chennai 2nd Street" - the
+# lookahead rules out a following letter) and not already 6 digits
+# itself (that's a real PIN already, handled by _PIN_PATTERN).
+_SHORT_PINCODE_PATTERN = re.compile(
+    r"\b(?:chennai|madras)\b\s*[-,]?\s*(\d{1,3})\b(?!\d)(?![a-zA-Z])", re.IGNORECASE
+)
+
+
+def _expand_short_pincode(address: str) -> str:
+    """Appends the full 6-digit PIN when the short "Chennai NN" form is
+    present and no real 6-digit PIN already exists anywhere in the
+    address - never replaces or removes anything the customer wrote."""
+    if _PIN_PATTERN.search(address):
+        return address
+    match = _SHORT_PINCODE_PATTERN.search(address)
+    if not match:
+        return address
+    full_pin = f"600{int(match.group(1)):03d}"
+    return f"{address}, {full_pin}"
+
 _LANDMARK_PATTERN = re.compile(
     r"\b(?:near|nr|opp(?:osite)?|behind|beside|next\s+to|above|below|back\s+side)\b",
     re.IGNORECASE,
@@ -174,6 +198,13 @@ def _split_number_prefix(token: str) -> str:
     return token
 
 
+def _split_glued_pincode(token: str) -> str:
+    """"Madambakkam600126" -> "Madambakkam 600126". A 6-digit run stuck
+    to the end of a word is always a PIN code that lost its separator -
+    left glued, neither the locality nor the PIN is findable."""
+    return re.sub(r"^([A-Za-z]{3,})(\d{6})$", r"\1 \2", token)
+
+
 def _split_ordinal(token: str) -> str:
     """"2ndstreet" -> "2nd street", "3rdcross" -> "3rd cross"."""
     return re.sub(r"^(\d+(?:st|nd|rd|th))([A-Za-z]{3,})$", r"\1 \2", token, flags=re.IGNORECASE)
@@ -217,6 +248,11 @@ def normalize(address: str) -> str:
         # periods - "D.No12" is the same prefix as "DNo12".
         if any(ch.isdigit() for ch in token) and not re.match(r"(?i)^[a-z][a-z.]*\d", token):
             token = _split_ordinal(token)
+        elif _split_glued_pincode(token) != token:
+            # A word with a PIN stuck to it looks like a prefix+number
+            # token, but splitting it as one would give "Madambakkam
+            # 600126" the wrong treatment below - handle it here.
+            token = _split_glued_pincode(token)
         else:
             token = _split_number_prefix(token)
             token = _split_camel_case(token)
@@ -229,7 +265,8 @@ def normalize(address: str) -> str:
     text = " ".join(part for part in repaired if part)
     text = re.sub(r"\s+([,.])", r"\1", text)
     text = re.sub(r",\s*(?:,\s*)+", ", ", text)
-    return text.strip().strip(",").strip()
+    text = text.strip().strip(",").strip()
+    return _expand_short_pincode(text)
 
 
 @dataclass

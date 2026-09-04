@@ -912,10 +912,104 @@ def test_score_component_match_confirms_a_house_number_embedded_in_free_text():
     assert _score_component_match(customer, google_components) is None
 
 
-def test_score_component_match_flags_a_different_house_number_on_the_same_street():
-    """Spec section 8: customer says 24, Google's result is for 22 - a
-    stronger, more specific mismatch than merely "unconfirmed"."""
-    from app.geocoding.google_geocoder import STREET_NUMBER_MISMATCH_CONFIDENCE_CAP, _score_component_match
+def test_score_component_match_still_flags_an_unconfirmed_house_number_even_with_street_and_area_confirmed():
+    # The trust override is for a specific MISMATCH only. When Google has
+    # NO house-level data at all (no street_number component, and the
+    # number doesn't appear anywhere in the response's free text), that
+    # proves only that the street exists - on a range-interpolated match
+    # the actual pin could be anywhere along it. This must keep flagging.
+    from app.geocoding.google_geocoder import STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP, _score_component_match
+
+    customer = "24 XYZ Street, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "XYZ Street", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    cap, _reason = _score_component_match(customer, google_components)
+    assert cap == STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP
+
+
+def test_score_component_match_does_not_block_on_a_flat_or_block_number_alone():
+    # "A103" is a unit designator inside a named building, not a street
+    # door number - Google's data indexes street numbers, never
+    # apartment interiors, so this can never be structurally confirmed
+    # and must not block on its own when nothing else disagrees.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "A103, Urbantree Fantastic, Survey No 106, Vanagaram, Chennai 600077"
+    google_components = [
+        {"long_name": "106", "types": ["premise"]},
+        {"long_name": "Urbantree Fantastic", "types": ["point_of_interest", "establishment"]},
+        {"long_name": "Vanagaram", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600077", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_extract_street_keyword_ignores_a_purely_positional_street_name():
+    # "1st Cross Street" and "16th cross Street" identify a street by its
+    # number within a grid, not by a proper name - there is nothing to
+    # fuzzy-match against, and treating "cross"/"main" as the name being
+    # tested fails constantly since Google routinely writes the same
+    # street differently or omits the ordinal.
+    from app.geocoding.google_geocoder import _extract_street_keyword
+
+    assert _extract_street_keyword("D15, 16th cross Street, Hindu colony") is None
+    assert _extract_street_keyword("White Petals, 1st Cross Street, MAC Nagar") is None
+    # A real named street after a positional one is still found.
+    assert _extract_street_keyword("12, 1st Cross Street, Bhavani Road, Adyar") == "bhavani"
+
+
+def test_score_component_match_recognizes_a_local_road_alias():
+    # "Mount Road" and "Anna Salai" are two names locals use for the same
+    # road - they share no letters, so no fuzzy matcher bridges them
+    # without an explicit alias table.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "12, Mount Road, Chennai 600002"
+    google_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Anna Salai", "types": ["route"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600002", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_locality_token_matches_a_run_together_acronym():
+    # Real case: customer wrote "w.k.k.nagar" (a run-together local
+    # abbreviation for "West K.K. Nagar"), Google answered "KK Nagar
+    # West" - no fuzzy ratio recognizes "wkknagar" against "kk", but the
+    # acronym appearing inside the customer's own token is real evidence.
+    from app.geocoding.google_geocoder import _locality_token_matches
+
+    assert _locality_token_matches("kk", ["wkknagar"]) is True
+    # A genuinely unrelated locality - no substring relationship, no
+    # fuzzy similarity - must not match.
+    assert _locality_token_matches("chennai", ["thiruvanmiyur"]) is False
+    # The acronym-containment path itself is restricted to short tokens
+    # (2-4 chars); a long token falls through to plain fuzzy matching,
+    # which correctly rejects two unrelated locality names of similar
+    # length rather than finding a coincidental one-way substring.
+    assert _locality_token_matches("velachery", ["thiruvanmiyur"]) is False
+
+
+def test_score_component_match_trusts_a_nearby_house_number_when_street_and_area_both_confirm():
+    # Explicit product decision (confirmed with the user): "you entered
+    # 24, Google found 22" on a street and locality we've independently
+    # confirmed describes two doors a few metres apart on the correct
+    # road - a categorically smaller, lower-risk error than a wrong
+    # street or wrong locality, and not worth sending an otherwise-good
+    # address to a human for. The mismatch stays visible in the accepted
+    # match (Google's own house number is what gets used), it just stops
+    # being a BLOCKER. This case previously flagged; that was superseded.
+    from app.geocoding.google_geocoder import _score_component_match
 
     customer = "24 XYZ Street, Velachery, Chennai 600042"
     google_components = [
@@ -926,8 +1020,32 @@ def test_score_component_match_flags_a_different_house_number_on_the_same_street
         {"long_name": "600042", "types": ["postal_code"]},
     ]
 
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_still_flags_a_house_number_mismatch_when_the_street_is_not_confirmed():
+    # The trust above is conditional, not a general amnesty for house-
+    # number mismatches - it requires the STREET to be independently
+    # confirmed too. Here the street name itself doesn't match anything
+    # in Google's response, so the same numeric mismatch stays blocking:
+    # a wrong number on an unverified street is exactly the "confidently
+    # wrong pin" case this file exists to prevent.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "24 XYZ Street, Velachery, Chennai 600042"
+    google_components = [
+        {"long_name": "22", "types": ["street_number"]},
+        {"long_name": "ABC Road", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    # Two things are wrong here (street AND number) - the returned cap is
+    # whichever is most restrictive, but the point of this test is that
+    # it is flagged at all (cap is not None), not which specific cap wins.
     cap, reason = _score_component_match(customer, google_components)
-    assert cap == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
+    assert cap is not None
     assert "24" in reason and "22" in reason
 
 

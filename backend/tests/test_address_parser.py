@@ -63,6 +63,33 @@ def test_normalize_expands_only_unambiguous_abbreviations():
     assert normalize("St Marys Rd") == "St Marys Road"
 
 
+def test_normalize_splits_a_pincode_glued_to_the_locality_name():
+    assert normalize("79A, 4th ST Ambika Nagar, Madambakkam600126") == (
+        "79A, 4th ST Ambika Nagar, Madambakkam 600126"
+    )
+
+
+def test_normalize_expands_the_short_chennai_pincode_shorthand():
+    # "Chennai 41" / "chennai-78" is Tamil Nadu's near-universal informal
+    # shorthand for PIN 600041/600078 - locally understood, not
+    # understood by the geocoder unless spelled out.
+    assert "600078" in normalize("W.K.K.Nagar, Chennai - 78")
+    assert "600041" in normalize("ECR Pallavakam Chennai 41 Behind Star Bucks")
+
+
+def test_normalize_does_not_add_a_short_pincode_when_a_real_one_is_already_present():
+    result = normalize("12, Gandhi Road, Chennai 600042")
+    assert result.count("600042") == 1
+    assert "600000" not in result
+
+
+def test_normalize_does_not_mistake_a_street_ordinal_for_the_short_pincode_shorthand():
+    # "Chennai 2nd Street" must not become "Chennai, 600002".
+    result = normalize("12, Chennai 2nd Street, Adyar")
+    assert "600002" not in result
+    assert "600" not in result
+
+
 def test_normalize_handles_empty_input():
     assert normalize("") == ""
     assert normalize("   ") == ""

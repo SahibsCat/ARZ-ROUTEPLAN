@@ -442,7 +442,14 @@ def _component_text_tokens(text: str) -> List[str]:
 # _significant_tokens already does, deliberately kept separate rather
 # than reusing that function directly (see _locality_tokens' own
 # docstring for why).
-_LOCALITY_NOISE_WORDS = {"street", "road", "nagar", "main", "cross"}
+_LOCALITY_NOISE_WORDS = {
+    "street", "road", "nagar", "main", "cross",
+    # Short abbreviations, excluded by name now that the length floor
+    # below is low enough to admit real short acronyms (see
+    # _locality_token_matches) - without this, "st"/"rd"/"no" would
+    # start being treated as locality-identifying tokens too.
+    "st", "rd", "dt", "no", "dr", "ph", "fl",
+}
 
 # City/state/country words. Kept by _locality_tokens (a customer whose
 # ONLY locality word is the city still needs credit for agreeing with a
@@ -468,10 +475,16 @@ def _locality_tokens(text: str) -> List[str]:
     stripping "chennai" from BOTH sides meant it could never be
     recognized - real addresses were being flagged as a locality
     mismatch for no actual disagreement at all."""
-    tokens = re.split(r"[,\s/#-]+", text.lower())
+    # Periods removed everywhere, not just at each token's ends - a
+    # run-together local abbreviation like "w.k.k.nagar" (real case: "KK
+    # Nagar" written as "W.K.K.Nagar") keeps its internal dots through a
+    # plain .strip("."), which leaves "kk" unreachable as a substring of
+    # anything. Removing them here turns it into "wkknagar", which the
+    # short-acronym containment check in _locality_token_matches can see.
+    tokens = re.split(r"[,\s/#-]+", text.lower().replace(".", ""))
     return [
-        t for t in (tok.strip(".") for tok in tokens)
-        if t and len(t) >= 3 and not t.isdigit() and t not in _LOCALITY_NOISE_WORDS
+        t for t in tokens
+        if t and len(t) >= 2 and not t.isdigit() and t not in _LOCALITY_NOISE_WORDS
     ]
 
 
@@ -505,16 +518,78 @@ def _transliteration_match(token: str, candidates: Iterable[str]) -> bool:
     return _fuzzy_token_match(normalized_token, normalized_candidates)
 
 
+# Words that occupy the street-NAME position without naming anything.
+# "1st Cross Street" and "4th Main Road" identify a street by its number
+# within a grid, not by a name - there is no proper name to match, so
+# checking Google's response for the word "cross" or "main" tests
+# nothing and fails constantly (Google writes the same street as "1st
+# Cross St" or drops the ordinal entirely). Real cases: "1st Cross
+# Street, MAC Nagar, Kattupakkam" and "16th cross Street, Hindu colony,
+# Nanganallur" were both flagged for a missing "cross".
+_UNNAMED_STREET_WORDS = {"cross", "main", "new", "old", "north", "south", "east", "west"}
+
+
+def _locality_token_matches(token: str, candidates: Iterable[str]) -> bool:
+    """_transliteration_match, plus containment for short acronym-style
+    names. Real case: a customer's "w.k.k.nagar" against Google's "KK
+    Nagar West" - the same place, written as a run-together abbreviation.
+    Fuzzy matching can't see it ("kk" vs "w.k.k.nagar" scores far too
+    low), but the acronym appearing INSIDE the customer's token is real
+    evidence. Restricted to short tokens (2-4 characters), since a longer
+    substring coincidence between two different place names is a genuine
+    risk while a 2-4 character acronym landing inside the customer's own
+    locality word essentially isn't."""
+    if _transliteration_match(token, candidates):
+        return True
+    if not 2 <= len(token) <= 4:
+        return False
+    return any(token in candidate.replace(".", "") for candidate in candidates)
+
+
+# Chennai roads with an official name and a universally-used local name.
+# Customers write one, Google answers with the other, and no amount of
+# fuzzy string matching bridges them - they share no letters. Real cases:
+# "mount road" against Google's "Anna Salai", and an ECR address against
+# "East Coast Road". Each entry maps a name the customer might write to
+# every other name for the SAME road.
+_ROAD_ALIASES = {
+    "mount": ("anna", "salai"),
+    "anna": ("mount",),
+    "ecr": ("east", "coast"),
+    "coast": ("ecr",),
+    "omr": ("rajiv", "gandhi", "mahabalipuram"),
+    "rajiv": ("omr",),
+    "mahabalipuram": ("omr",),
+    "gst": ("grand", "southern", "trunk"),
+    "poonamallee": ("nh4", "nh-4"),
+}
+
+
+def _street_alias_matches(street_keyword: str, component_tokens: Iterable[str]) -> bool:
+    """True when the customer's street name and Google's are two known
+    names for the same road (see _ROAD_ALIASES)."""
+    aliases = _ROAD_ALIASES.get(street_keyword)
+    if not aliases:
+        return False
+    tokens = {t.lower() for t in component_tokens}
+    return any(alias in tokens for alias in aliases)
+
+
 def _extract_street_keyword(address: str) -> Optional[str]:
     """The customer's stated street NAME, not its type-suffix - "bhavani"
     out of "Bhavani St". Optional by nature (an address with no street-
     type suffix at all - a locality/landmark-only address - simply has
-    none, and this correctly returns None rather than guessing at one).
+    none, and this correctly returns None rather than guessing at one),
+    and equally None when the only word in the name position is a
+    positional one (see _UNNAMED_STREET_WORDS) rather than a real name.
     First match wins - Indian addresses reliably name the actual street
     once, early in the string; a later "St"/"Road" mention (inside a
     locality or landmark phrase) is rare enough not to special-case."""
-    match = _STREET_SUFFIX_PATTERN.search(address)
-    return match.group(1).lower() if match else None
+    for match in _STREET_SUFFIX_PATTERN.finditer(address):
+        keyword = match.group(1).lower()
+        if keyword not in _UNNAMED_STREET_WORDS:
+            return keyword
+    return None
 
 
 def _score_component_match(
@@ -555,10 +630,21 @@ def _score_component_match(
     )
     pin_mismatch = bool(customer_pin and google_pin and customer_pin != str(google_pin))
 
+    # NOTE: a matching PIN is deliberately NOT treated as locality
+    # confirmation. A PIN covers several square kilometres and commonly
+    # spans multiple named sublocalities in Chennai - the exact bug this
+    # file exists to prevent shared a PIN on both sides (customer's
+    # "Adyar 600020" vs Google's actual match "Thiruvanmiyur 600020"; see
+    # test_score_component_match_does_not_let_the_city_name_alone_confirm_
+    # the_locality, which uses that PIN specifically to prove agreement
+    # must come from the locality NAME, not the postal area alone). A
+    # tried-and-reverted version of this function once let PIN agreement
+    # substitute for locality agreement here - it does not, and must not.
     google_localities = [
         str(c.get("long_name") or "") for c in address_components
         if set(c.get("types") or []) & _LOCALITY_COMPONENT_TYPES
     ]
+    locality_confirmed = False
     customer_tokens = _locality_tokens(original_address)
     if google_localities and customer_tokens:
         locality_tokens: List[str] = []
@@ -582,9 +668,11 @@ def _score_component_match(
             # the most that can be asked for, and is genuine.
             comparison_tokens, comparison_pool = locality_tokens, customer_tokens
 
-        if comparison_tokens and not any(
-            _transliteration_match(token, comparison_pool) for token in comparison_tokens
+        if comparison_tokens and any(
+            _locality_token_matches(token, comparison_pool) for token in comparison_tokens
         ):
+            locality_confirmed = True
+        elif comparison_tokens:
             non_pin_flags.append((
                 LOCALITY_MISMATCH_CONFIDENCE_CAP,
                 f"Area/locality mismatch: none of the entered address matches Google's area "
@@ -604,7 +692,29 @@ def _score_component_match(
     # than "nothing contradicted it", and is what the street-name trust
     # override below leans on (see its own comment for why).
     house_number_structurally_confirmed = False
+    house_number_flag: Optional[Tuple[float, str]] = None
+    # Whether house_number_flag is a genuine MISMATCH (Google positively
+    # found a *different*, specific number on this exact street) as
+    # opposed to UNCONFIRMED (Google has no house-level data here at
+    # all). The two are not equally trustworthy: a mismatch still proves
+    # the street is correct and names a real, specific, nearby door
+    # ("you said 78, Google found 79" - a few metres apart). Unconfirmed
+    # proves nothing beyond the street existing - the match could be a
+    # street-level guess anywhere along a long road. Only a genuine
+    # mismatch is eligible for the street+locality trust override below.
+    house_number_is_specific_mismatch = False
     customer_house_numbers = _extract_house_numbers(original_address)
+    # A letter-PREFIXED number ("A103", "B311", "S1", "F1") is a block/
+    # flat designator inside a building, not a street door number -
+    # Google's data indexes street numbers, never apartment interiors, so
+    # validating one against street_number manufactures a guaranteed miss.
+    # (Same reasoning already documented on _HOUSE_NUMBER_PREFIX for
+    # "Flat No: 202".) A slash form like "D1/5" is excluded from this -
+    # that pairs a block letter WITH a door number and is genuinely
+    # street-level.
+    house_number_is_unit_designator = bool(customer_house_numbers) and all(
+        re.match(r"^[A-Za-z]\d", n) and "/" not in n for n in customer_house_numbers
+    )
     if customer_house_numbers:
         google_house_number = next(
             (str(c.get("long_name") or "").upper() for c in address_components if "street_number" in (c.get("types") or [])),
@@ -634,18 +744,19 @@ def _score_component_match(
                 or _number_confirmed_in_text(_numeric_core(n), all_component_text)
                 for n in customer_house_numbers
             ):
-                non_pin_flags.append((
+                house_number_flag = (
                     STREET_NUMBER_UNCONFIRMED_CONFIDENCE_CAP,
                     f"House/door number {'/'.join(customer_house_numbers)} could not be confirmed on this street",
-                ))
+                )
         elif _house_number_matches(google_house_number, customer_house_numbers):
             house_number_structurally_confirmed = True
         else:
-            non_pin_flags.append((
+            house_number_is_specific_mismatch = True
+            house_number_flag = (
                 STREET_NUMBER_MISMATCH_CONFIDENCE_CAP,
                 f"House/door number mismatch: you entered {'/'.join(customer_house_numbers)}, "
                 f"Google found {google_house_number} on this street",
-            ))
+            )
 
     # Street name - independent of house number, and independent of PIN/
     # locality (both of THOSE can genuinely match while the street itself
@@ -656,11 +767,16 @@ def _score_component_match(
     # "route" type at all ("No:16, GodhavariSt", types: []), so requiring
     # a structured route component here would just silently skip the
     # exact case this needs to catch.
+    street_name_confirmed = False
     street_keyword = _extract_street_keyword(original_address)
     if street_keyword:
         all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
         component_tokens = _component_text_tokens(all_component_text)
-        street_name_mismatch = component_tokens and not _transliteration_match(street_keyword, component_tokens)
+        street_name_matched = _transliteration_match(street_keyword, component_tokens) or (
+            _street_alias_matches(street_keyword, component_tokens)
+        )
+        street_name_confirmed = bool(component_tokens) and street_name_matched
+        street_name_mismatch = component_tokens and not street_name_matched
         # A STRUCTURED house number match is strong, numeric, independent
         # confirmation the street itself is right - Google can't confirm
         # "4, Kalli Kuppam Rd" as house number 4 on a completely
@@ -675,13 +791,55 @@ def _score_component_match(
         # a real wrong-street match essentially never also happens to
         # carry the exact same house number by coincidence.
         trust_house_number_over_street_name = (
-            street_name_mismatch and house_number_structurally_confirmed and not non_pin_flags
+            street_name_mismatch
+            and house_number_structurally_confirmed
+            and not non_pin_flags
+            and house_number_flag is None
         )
         if street_name_mismatch and not trust_house_number_over_street_name:
             non_pin_flags.append((
                 STREET_NAME_MISMATCH_CONFIDENCE_CAP,
                 f"Street name mismatch: '{street_keyword}' not found in Google's match",
             ))
+
+    # The house/door number, decided last because it depends on what the
+    # street and locality checks concluded.
+    #
+    # An explicit product decision: when the STREET and the AREA are both
+    # confirmed, a house-number difference no longer blocks the address.
+    # "You entered 78, Google found 79 on this street" describes two doors
+    # a few metres apart on a street we have positively identified - the
+    # driver is on the right road looking at the right stretch of it. That
+    # is a categorically smaller error than a wrong locality (a different
+    # part of the city entirely), which is what these checks exist to
+    # catch, and it is not worth sending an otherwise-good address to a
+    # human. The number and Google's version of it stay visible in the
+    # match itself; nothing is hidden, it just stops being a blocker.
+    #
+    # Still blocks whenever the street or the area is NOT confirmed - a
+    # house-number mismatch on an unverified street is exactly the
+    # "confidently wrong pin" case, and nothing here weakens that.
+    #
+    # Restricted to a genuine MISMATCH (house_number_is_specific_mismatch -
+    # Google positively found a different, specific, nearby door number).
+    # Deliberately does NOT extend to UNCONFIRMED (Google has no house-
+    # level data on this street at all) - that proves only that the
+    # street exists, which on a RANGE_INTERPOLATED/street-level match
+    # could be anywhere along it. "Found the street, not the house" stays
+    # a verification case, exactly as it always has.
+    if house_number_flag is not None:
+        trust_street_and_locality_over_house_number = (
+            house_number_is_specific_mismatch
+            and street_name_confirmed
+            and locality_confirmed
+            and not non_pin_flags
+        )
+        # A flat/block designator can never be confirmed against street-
+        # level data, so it must not block on its own either (see
+        # house_number_is_unit_designator above).
+        trust_unit_designator = house_number_is_unit_designator and not non_pin_flags
+        if not (trust_street_and_locality_over_house_number or trust_unit_designator):
+            non_pin_flags.append(house_number_flag)
 
     if pin_mismatch:
         trust_precision_over_pin = (

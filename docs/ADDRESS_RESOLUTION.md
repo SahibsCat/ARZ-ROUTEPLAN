@@ -149,6 +149,31 @@ version was rejecting genuinely correct matches.
    "231B/1" and "231C" are units of one subdivided plot, physically
    adjacent. A different *base* number ("2" vs "4") stays a mismatch.
 
+4. **Nearby house number when street + locality both confirm**
+   (`house_number_is_specific_mismatch`, explicit product decision) —
+   "you entered 78, Google found 79" on a street and area we've
+   independently confirmed describes two doors a few metres apart, not
+   a wrong address. Restricted to a *specific* mismatch (Google
+   positively found a different, real number) — never extended to
+   "unconfirmed" (Google has no house-level data at all), which stays
+   flagged, since that proves only the street exists and could be a
+   range-interpolated guess anywhere along it.
+
+5. **Flat/block designator never blocks alone**
+   (`house_number_is_unit_designator`) — "A103", "B311", "S1", "F1" name
+   a unit *inside* a building, not a street door number. Google's data
+   never indexes apartment interiors, so validating one against
+   `street_number` manufactures a guaranteed miss regardless of whether
+   the address is correct.
+
+A matching PIN is deliberately **never** treated as locality
+confirmation on its own — a PIN spans several square kilometres and
+commonly covers multiple named Chennai sublocalities. This was tried
+and reverted after it reintroduced the exact wrong-pin bug these
+exceptions exist to avoid (see `google_geocoder.py`'s own comment at
+the locality check, and
+`test_score_component_match_does_not_let_the_city_name_alone_confirm_the_locality`).
+
 If you're tempted to add a fourth, the bar is: it must be impossible
 for the exception to fire when the address is genuinely different.
 
