@@ -886,29 +886,24 @@ def debug_geocode(address: Optional[str] = None, db: Session = Depends(get_db)):
     misread the address" apart from "Google has no data for this
     house". See docs/ADDRESS_RESOLUTION.md.
 
+    Uses geocode_address_detailed, not geocode_address - the plain
+    version collapses ANY flagged result down to a bare `null`, which
+    made this endpoint useless for the one thing it exists to answer:
+    WHY something didn't resolve. The detailed version keeps
+    geocode_error/confidence/suggested_lat/lng on a flagged match.
+
     Runs against the real geocoding_cache/verified_locations tables
     (`db` is passed through, same as the real upload path) - a hit from
     either shows up here exactly as it would for a real order, which is
     what makes this useful for checking whether a building the admin
     manually fixed once now resolves automatically for a different
     order naming the same complex."""
-    from app.geocode_service import clean_address, geocode_address
+    from app.geocode_service import clean_address, geocode_address_detailed
     from app.geocoding.address_parser import normalize, parse
 
     test_address = address or "123 MG Road, Bangalore"
     parsed = parse(normalize(test_address))
-    with httpx.Client(
-        timeout=15,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://localhost/",
-            "From": "rootplan@example.com",
-        },
-        follow_redirects=True,
-    ) as client:
-        result = geocode_address(test_address, client, db=db)
+    result = geocode_address_detailed(test_address, db=db)
 
     return {
         "loaded": True,
