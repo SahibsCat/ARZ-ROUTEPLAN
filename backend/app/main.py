@@ -874,7 +874,7 @@ def assign_orders_endpoint(payload: AssignOrdersRequest = Body(...), db: Session
 
 
 @app.get("/api/debug/geocode")
-def debug_geocode(address: Optional[str] = None):
+def debug_geocode(address: Optional[str] = None, db: Session = Depends(get_db)):
     """Diagnose one address end to end, live.
 
     Open in a browser with any address:
@@ -884,7 +884,14 @@ def debug_geocode(address: Optional[str] = None):
     spelling correction, the components it read out of the text, and the
     result it got back - which is everything needed to tell "we
     misread the address" apart from "Google has no data for this
-    house". See docs/ADDRESS_RESOLUTION.md."""
+    house". See docs/ADDRESS_RESOLUTION.md.
+
+    Runs against the real geocoding_cache/verified_locations tables
+    (`db` is passed through, same as the real upload path) - a hit from
+    either shows up here exactly as it would for a real order, which is
+    what makes this useful for checking whether a building the admin
+    manually fixed once now resolves automatically for a different
+    order naming the same complex."""
     from app.geocode_service import clean_address, geocode_address
     from app.geocoding.address_parser import normalize, parse
 
@@ -901,7 +908,7 @@ def debug_geocode(address: Optional[str] = None):
         },
         follow_redirects=True,
     ) as client:
-        result = geocode_address(test_address, client)
+        result = geocode_address(test_address, client, db=db)
 
     return {
         "loaded": True,
