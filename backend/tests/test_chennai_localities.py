@@ -35,6 +35,17 @@ def test_never_swaps_one_real_locality_for_a_different_real_one():
     assert correct_locality_word("Kovilambakkam") is None
 
 
+def test_refuses_to_guess_on_a_genuine_tie_between_two_real_localities():
+    # LOAD-BEARING. Real production bug: "Pallavakam" (customer's typo)
+    # scores an EXACT 0.9 against BOTH "Palavakkam" (an ECR-area
+    # locality, the intended target) and "Pallavaram" (a real, different
+    # locality near the airport - nowhere close). candidates is iterated
+    # from a set, so which one "won" was arbitrary across runs - live,
+    # it picked "Pallavaram" and would have moved the order across the
+    # city. An ambiguous tie must refuse to correct, not coin-flip.
+    assert correct_locality_word("Pallavakam") is None
+
+
 def test_never_corrects_across_a_different_first_letter():
     # A wrong first letter is a different place, not a typo.
     assert correct_locality_word("Adyar") is None

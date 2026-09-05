@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.geocoding import address_parser
-from app.geocoding.chennai_localities import correct_locality_spelling
 from app.geocoding.base import (
     STATUS_OK,
     GeocodeResult,
@@ -38,8 +37,19 @@ def clean_address(address: str) -> str:
     if not address:
         return ""
 
+    # Deliberately does NOT also apply correct_locality_spelling here.
+    # That correction can occasionally be WRONG (real production case:
+    # "Pallavakam" corrected to "Pallavaram" - a different, distant real
+    # locality, before a tie-break fix closed that specific case) -
+    # applying it here would make it the text EVERY validation check
+    # downstream compares Google's answer against, so a wrong correction
+    # could self-confirm. GoogleGeocoder.geocode() instead tries the
+    # spelling-corrected form as one additional QUERY attempt while
+    # always validating against the customer's true original text - see
+    # its own docstring. Other providers (Mapbox/Nominatim) don't get
+    # this benefit; they also don't have equivalent validation depth to
+    # safely house a correction that can occasionally misfire.
     address = address_parser.normalize(address)
-    address = correct_locality_spelling(address)
     if not address:
         # Whitespace/punctuation-only input has nothing to geocode -
         # appending the city below would turn it into ", Chennai, India"

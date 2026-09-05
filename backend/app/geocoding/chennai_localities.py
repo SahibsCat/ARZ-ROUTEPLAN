@@ -72,6 +72,14 @@ CHENNAI_LOCALITIES: List[str] = [
 # Madambakkam, 0.79) stay below it and are left alone.
 LOCALITY_CORRECTION_THRESHOLD = 0.86
 
+# How much better the best candidate must score than the runner-up to be
+# trusted at all. Real case that forced this: "Pallavakam" scored an
+# EXACT tie (0.9) against "palavakkam" (correct) and "pallavaram" (a
+# real, different, distant locality) - below this margin, the input is
+# ambiguous between two genuinely different places and is left
+# uncorrected rather than guessed at.
+AMBIGUOUS_CORRECTION_MARGIN = 0.03
+
 _VOWEL_RUN = re.compile(r"([aeiou])\1+")
 
 _KNOWN_LOWER: Set[str] = {name.lower() for name in CHENNAI_LOCALITIES}
@@ -114,6 +122,15 @@ def correct_locality_word(word: str, known_words: Optional[Iterable[str]] = None
     canonical_input = _canonical(lowered)
     best: Optional[str] = None
     best_score = 0.0
+    # Real bug this closes: "Pallavakam" (customer typo) scored EXACTLY
+    # 0.9 against BOTH "palavakkam" (an ECR-area locality, the intended
+    # target) and "pallavaram" (a real, different locality near the
+    # airport, nowhere close). candidates is a set - iteration order is
+    # not guaranteed - so which one won was arbitrary from one run to the
+    # next, and a wrong pick here silently moves an order to a genuinely
+    # different part of the city. runner_up_score tracks the second-best
+    # distinct candidate's score so a near-tie can be detected below.
+    runner_up_score = 0.0
 
     for candidate in candidates:
         if candidate in _STOPWORDS or len(candidate) < 5:
@@ -124,10 +141,18 @@ def correct_locality_word(word: str, known_words: Optional[Iterable[str]] = None
             continue
         score = max(_similarity(lowered, candidate), _similarity(canonical_input, _canonical(candidate)))
         if score > best_score:
+            runner_up_score = best_score
             best_score = score
             best = candidate
+        elif score > runner_up_score:
+            runner_up_score = score
 
     if best is None or best_score < LOCALITY_CORRECTION_THRESHOLD:
+        return None
+    # A close second candidate means the input is genuinely ambiguous
+    # between two real, different places - refusing to correct here is
+    # far safer than a coin-flip that can silently relocate an order.
+    if best_score - runner_up_score < AMBIGUOUS_CORRECTION_MARGIN:
         return None
     if best == lowered:
         return None

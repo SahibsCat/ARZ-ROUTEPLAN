@@ -82,6 +82,73 @@ def test_rooftop_street_address_is_high_confidence_ok():
     assert result.confidence >= 0.9
 
 
+def test_geocode_once_validates_against_validate_against_not_the_queried_text():
+    # LOAD-BEARING - the actual mechanism behind the Pallavakam/Pallavaram
+    # fix. A wrong query-shaping correction must never be able to
+    # validate ITSELF: what got SENT to Google (`address`) and what the
+    # response is JUDGED against (`validate_against`) have to be able to
+    # disagree. Here the queried text names a locality Google's response
+    # doesn't contain at all - if validation used the queried text, this
+    # would be flagged as a locality mismatch. It doesn't, because
+    # validate_against names the locality the response DOES contain.
+    components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Gandhi Road", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+    ]
+    client = _DummyClient([_ok_response("ROOFTOP", ["premise"], address_components=components)])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder._geocode_once(
+        "12, Gandhi Road, Random Distant District, Chennai",
+        validate_against="12, Gandhi Road, Velachery, Chennai",
+    )
+
+    assert result.status == "OK"
+
+
+def test_geocode_once_without_validate_against_still_validates_the_queried_text():
+    # The default (no override) behaves exactly as before this split -
+    # every EXISTING call site keeps validating against what it queried
+    # with.
+    components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Gandhi Road", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+    ]
+    client = _DummyClient([_ok_response("ROOFTOP", ["premise"], address_components=components)])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder._geocode_once("12, Gandhi Road, Random Distant District, Chennai")
+
+    assert result.status == "NEEDS_MANUAL_VERIFICATION"
+
+
+def test_geocode_tries_a_spelling_corrected_query_when_the_plain_one_fails():
+    # End-to-end through geocode()'s own orchestration: the plain query
+    # finds nothing at all, the spelling-corrected retry succeeds.
+    zero_results = {"status": "ZERO_RESULTS", "results": []}
+    corrected_hit = _ok_response(
+        "ROOFTOP", ["premise"],
+        address_components=[
+            {"long_name": "12", "types": ["street_number"]},
+            {"long_name": "Gandhi Road", "types": ["route"]},
+            {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+            {"long_name": "Chennai", "types": ["locality"]},
+        ],
+    )
+    client = _DummyClient([zero_results, corrected_hit])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode("12, Gandhi Road, Velachary, Chennai")
+
+    assert result is not None
+    assert result.status == "OK"
+    assert client.call_count == 2
+
+
 def test_approximate_locality_only_match_is_flagged_not_trusted():
     # THE BUG CASE: Google fell all the way back to a city/neighbourhood
     # centroid - before this fix, this was accepted as a fully-precise pin.

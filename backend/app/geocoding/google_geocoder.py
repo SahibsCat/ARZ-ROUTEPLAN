@@ -15,6 +15,7 @@ from app.geocoding.base import (
 # this class of comparison (PIN extraction, token-level fuzzy matching) to
 # validate ITS OWN candidates against the customer's original address text;
 # no reason for Google's geocoder to score component matches differently.
+from app.geocoding.chennai_localities import correct_locality_spelling
 from app.geocoding.nominatim_geocoder import _extract_pincode, _fuzzy_token_match
 
 GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -1019,13 +1020,20 @@ class GoogleGeocoder(GeocodingProvider):
         self.close()
 
     def geocode(self, address: str) -> Optional[GeocodeResult]:
-        """Up to six attempts, each only tried when the one before it
+        """Up to seven attempts, each only tried when the one before it
         didn't already land a confident (STATUS_OK) match - cheapest first:
           1. The address as given, straight to the Geocoding API.
-          2. The same address with landmark phrases ("near X", "opposite Y")
+          2. The same address with a known locality misspelling corrected
+             ("Velachary" -> "Velachery") - see chennai_localities.py.
+             Sent to Google as the query ONLY; the response is still
+             validated against the TRUE original text, never the
+             correction (see _geocode_once's own docstring for why that
+             split has to exist - a wrong correction must never be able
+             to confirm itself). Skipped when nothing was correctable.
+          3. The same address with landmark phrases ("near X", "opposite Y")
              stripped - free (same API), just a cleaner query. Skipped if
              there was no landmark phrase to strip.
-          3. The same address with a leading building/business name
+          4. The same address with a leading building/business name
              stripped (see _strip_leading_name_segment) - also free (same
              API): a name Google has no independent listing for doesn't
              just fail to help the structured parser, it actively confuses
@@ -1033,27 +1041,27 @@ class GoogleGeocoder(GeocodingProvider):
              street/locality/city/PIN often succeeds cleanly where the
              full text didn't. Skipped when there's no real name segment
              to strip (see that function's own docstring for exactly when).
-          4. The same address with the house number moved next to its
+          5. The same address with the house number moved next to its
              street (see _reorder_house_number_to_street) - the OTHER
              shape a name in the way breaks: "17, [Name], Bhavani St,
              ..." (house number, then name, then street - the
              conventional Indian order) instead of "[Name], 17 Bhavani
              St, ...". Google only recognizes the number when it's
-             adjacent to the street, so this fixes exactly the case step 3
+             adjacent to the street, so this fixes exactly the case step 4
              correctly declines to touch (a real house number already
-             leads the address). Mutually exclusive with step 3 by
+             leads the address). Mutually exclusive with step 4 by
              construction - only ever one of them has something to do.
-          5. Places API's fuzzy text search, against the ORIGINAL full
+          6. Places API's fuzzy text search, against the ORIGINAL full
              address (this is the one attempt actually built to recognize
              a named establishment/apartment complex BY NAME - the
              structured Geocoding API calls above never are).
-          6. Places API again, against whichever cleaned-up variant from
-             steps 3-4 actually applied (only if step 5 didn't already
+          7. Places API again, against whichever cleaned-up variant from
+             steps 4-5 actually applied (only if step 6 didn't already
              succeed) - a named building Places has no listing for
              confuses ITS fuzzy matching the exact same way it confuses
              the structured API, and clearing it out helps here for the
              same reason it helped there.
-        Real added cost per call for attempts 5-6, which is exactly why
+        Real added cost per call for attempts 6-7, which is exactly why
         they're the last resort, not the first attempt. Whichever attempt
         scores highest wins; if none reach STATUS_OK, the best (still-
         flagged) one found is returned rather than nothing - never worse
@@ -1064,6 +1072,22 @@ class GoogleGeocoder(GeocodingProvider):
         best = self._geocode_once(address)
         if best is not None and best.status == STATUS_OK:
             return best
+
+        # A locality spelling correction ("Velachary" -> "Velachery") sent
+        # to Google ONLY as the query, never as what the response gets
+        # validated against - see _geocode_once's own docstring for why
+        # that split matters (a wrong correction must never be able to
+        # validate itself). correct_locality_spelling is deliberately
+        # conservative (see chennai_localities.py) so this rarely fires
+        # and, when it does fire wrong, still can't silently succeed.
+        corrected_spelling = correct_locality_spelling(address)
+        if corrected_spelling and corrected_spelling.lower() != address.lower():
+            variant = self._geocode_once(corrected_spelling, validate_against=address)
+            if _rank(variant) > _rank(best):
+                print(f"Google Geocoding: spelling-corrected retry '{address}' -> '{corrected_spelling}' improved the match")
+                best = variant
+            if best is not None and best.status == STATUS_OK:
+                return best
 
         stripped_landmark = _strip_landmark_phrase(address)
         if stripped_landmark and stripped_landmark.lower() != address.lower():
@@ -1211,11 +1235,26 @@ class GoogleGeocoder(GeocodingProvider):
             mismatch_reason=mismatch_reason if result_status != STATUS_OK else None,
         )
 
-    def _geocode_once(self, address: str) -> Optional[GeocodeResult]:
+    def _geocode_once(self, address: str, validate_against: Optional[str] = None) -> Optional[GeocodeResult]:
         """One Geocoding API call for one exact address string - no retries
         across query variants, that's geocode()'s job. Still retries on
         transient failures (network errors, OVER_QUERY_LIMIT) for this one
-        call, same as before this method was split out of geocode()."""
+        call, same as before this method was split out of geocode().
+
+        `validate_against` decouples what's SENT from what the response is
+        JUDGED against - defaults to `address` itself (every existing call
+        site keeps validating against exactly what it queried with, as
+        before). The one caller that passes something different is the
+        spelling-corrected retry in geocode(): it sends the corrected text
+        to Google (to help it find the right place) but validates the
+        response against the customer's TRUE original text, never the
+        correction. Without this split, a wrong correction could self-
+        confirm - the response would be judged against the very text that
+        was substituted in, rather than what the customer actually wrote.
+        Real production case this closes: "Pallavakam" corrected to
+        "Pallavaram" (a different, distant real locality) would have been
+        validated against "Pallavaram" too, instead of catching the
+        disagreement with what the customer actually typed."""
         params = {
             "address": address,
             "key": self._api_key,
@@ -1254,7 +1293,8 @@ class GoogleGeocoder(GeocodingProvider):
                 partial_match = bool(result.get("partial_match", False))
                 address_components = result.get("address_components") or []
                 precision_confidence = _score_result(location_type, result_types, partial_match)
-                match = _score_component_match(address, address_components, precision_confidence)
+                validation_text = validate_against or address
+                match = _score_component_match(validation_text, address_components, precision_confidence)
                 component_cap, component_reason = match if match is not None else (None, None)
                 confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
                 result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION

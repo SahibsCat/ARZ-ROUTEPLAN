@@ -110,18 +110,20 @@ def test_glued_ordinal_street_is_repaired():
 
 
 @pytest.mark.parametrize(
-    "misspelled,expected",
-    [
-        ("Velachary", "Velachery"),
-        ("Velacherri", "Velachery"),
-        ("Adyarr", "Adyar"),
-        ("Thiruvanmiyoor", "Thiruvanmiyur"),
-    ],
+    "misspelled",
+    ["Velachary", "Velacherri", "Adyarr", "Thiruvanmiyoor"],
 )
-def test_locality_spelling_is_corrected_in_the_query(misspelled, expected):
+def test_clean_address_leaves_locality_spelling_alone(misspelled):
+    # clean_address() deliberately does NOT correct spelling - see its
+    # own comment for why (a wrong correction must never become the text
+    # every downstream check validates against). The correction is
+    # applied by GoogleGeocoder.geocode() itself, as one additional QUERY
+    # attempt that still validates against the customer's true original
+    # text - see test_google_geocoder.py's own coverage of that split,
+    # and test_chennai_localities.py for the correction function itself.
     query, _parsed = resolve(f"12, Gandhi Road, {misspelled}, Chennai")
 
-    assert expected in query
+    assert misspelled in query
 
 
 def test_a_correctly_spelled_locality_is_never_altered():
