@@ -1049,6 +1049,48 @@ def test_score_component_match_still_flags_a_house_number_mismatch_when_the_stre
     assert "24" in reason and "22" in reason
 
 
+def test_extract_house_numbers_finds_a_second_number_joined_by_a_connector():
+    # Real production case (batch 112, Kedarvignesh P): "No.78 And 79A,
+    # 4th ST Ambika Nagar, Madambakkam 600126" states BOTH numbers side by
+    # side - a plot re-numbered, or shared between two families, is a
+    # real Chennai addressing pattern. Missing "79A" entirely meant
+    # Google's confirmed "79" (base-matching the customer's own "79A")
+    # was never even considered a candidate - it looked like a plain,
+    # blocking mismatch against "78" instead of the safe, expected
+    # nearby-number case it actually is.
+    from app.geocoding.google_geocoder import _extract_house_numbers, _house_number_matches
+
+    numbers = _extract_house_numbers("No.78 And 79A, 4th ST Ambika Nagar,Madambakkam 600126")
+    assert numbers == ["78", "79A"]
+    assert _house_number_matches("79", numbers) is True
+
+
+def test_extract_house_numbers_handles_the_ampersand_and_slash_connectors_too():
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("12 & 14, Gandhi Road") == ["12", "14"]
+    assert _extract_house_numbers("12 / 14A, Gandhi Road") == ["12", "14A"]
+
+
+def test_score_component_match_resolves_a_dual_stated_house_number_via_the_second_one():
+    # End-to-end: the customer's SECOND stated number is the one Google
+    # actually confirms, on a street/area that both check out - the
+    # street+locality trust decision applies here exactly as it would
+    # for a single-number address.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "No.78 And 79A, 4th ST Ambika Nagar, Madambakkam 600126"
+    google_components = [
+        {"long_name": "79", "types": ["street_number"]},
+        {"long_name": "4th St", "types": ["route"]},
+        {"long_name": "Ambika Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Madambakkam", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "600126", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
 def test_extract_house_numbers_finds_every_candidate_not_just_the_first():
     # Real case: a plot/survey number AND the actual postal door number,
     # both genuinely stated, in that order.

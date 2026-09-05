@@ -307,6 +307,12 @@ _HOUSE_NUMBER_PREFIX = re.compile(
 # never bury it mid-sentence.
 _HOUSE_NUMBER_TOKEN = re.compile(r"^([A-Za-z]?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
 
+# Joins two house numbers stated together in one segment - "78 And 79A",
+# "78 & 79A", "78-79A" (already handled by _HOUSE_NUMBER_TOKEN's own
+# slash/dash form when the second part is short, but a full second
+# number like "79A" needs this instead), "78 / 79A".
+_HOUSE_NUMBER_CONNECTOR = re.compile(r"^\s*(?:and|&|/|-)\s*", re.IGNORECASE)
+
 
 def _extract_house_numbers(address: str) -> List[str]:
     """Every house/door/plot-number-shaped token found in the first few
@@ -326,16 +332,36 @@ def _extract_house_numbers(address: str) -> List[str]:
     explicitly rejected - that's a PIN code, not a house number (see
     _extract_pincode, the actual PIN check, reused from nominatim_geocoder
     same as this function's sibling checks). Returns [] when the address
-    has none at all - never required to be present."""
+    has none at all - never required to be present.
+
+    Also catches a SECOND number joined to the first by a connector
+    within the SAME segment - real case: "No.78 And 79A, 4th ST Ambika
+    Nagar..." literally states two door numbers side by side (a common
+    Chennai pattern for a plot re-numbered or shared between two
+    families). The old/new number is exactly the kind of thing Google's
+    data might index as EITHER one, and missing the second one entirely
+    meant a customer-stated, Google-confirmed number ("79" matching the
+    customer's own "79A") was never even considered a candidate - it
+    looked like a plain mismatch against "78" instead."""
     segments = [s.strip() for s in re.split(r"[,\n]", address) if s.strip()]
     numbers: List[str] = []
     for segment in segments[:3]:
         candidate = _HOUSE_NUMBER_PREFIX.sub("", segment).strip()
         match = _HOUSE_NUMBER_TOKEN.match(candidate)
-        if match and not re.fullmatch(r"\d{6}", match.group(1)):
-            number = match.group(1).upper()
-            if number not in numbers:
-                numbers.append(number)
+        if not match or re.fullmatch(r"\d{6}", match.group(1)):
+            continue
+        number = match.group(1).upper()
+        if number not in numbers:
+            numbers.append(number)
+
+        rest = candidate[match.end():]
+        connector_match = _HOUSE_NUMBER_CONNECTOR.match(rest)
+        if connector_match:
+            second = _HOUSE_NUMBER_TOKEN.match(rest[connector_match.end():])
+            if second and not re.fullmatch(r"\d{6}", second.group(1)):
+                second_number = second.group(1).upper()
+                if second_number not in numbers:
+                    numbers.append(second_number)
     return numbers
 
 
