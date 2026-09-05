@@ -1076,6 +1076,24 @@ def test_score_component_match_does_not_block_on_a_flat_or_block_number_alone():
     assert _score_component_match(customer, google_components) is None
 
 
+def test_extract_street_keyword_looks_one_word_further_back_past_a_positional_word():
+    # Real production case (batch 112, Dr G Amalraj): "3rd Canal Cross
+    # Road" - "Cross" sits directly before "Road" and is purely
+    # positional (see _UNNAMED_STREET_WORDS), but "Canal" one word
+    # further back IS the real, distinguishing street name. The old
+    # extraction only ever looked at the single word immediately before
+    # the suffix, so it saw "Cross", correctly rejected it as positional,
+    # and gave up entirely - "Canal" was never even considered.
+    from app.geocoding.google_geocoder import _extract_street_keyword
+
+    assert _extract_street_keyword("9C, 3rd Canal Cross Road, Gandhi Nagar, Adyar") == "canal"
+    # Confirms this doesn't regress the plain single-word case.
+    assert _extract_street_keyword("12, Gandhi Road, Velachery") == "gandhi"
+    # Two positional words in a row (no real name at all) still
+    # correctly yields nothing to check.
+    assert _extract_street_keyword("12, New Cross Road, Velachery") is None
+
+
 def test_extract_street_keyword_ignores_a_purely_positional_street_name():
     # "1st Cross Street" and "16th cross Street" identify a street by its
     # number within a grid, not by a proper name - there is nothing to

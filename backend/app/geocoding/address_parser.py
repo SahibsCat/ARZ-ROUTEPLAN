@@ -238,6 +238,17 @@ def normalize(address: str) -> str:
             repaired.append(trailing)
             continue
 
+        # "3 rd" (a customer's ordinal with a stray space - "3rd Canal
+        # Cross Road" is a real, common Chennai street-naming pattern)
+        # must not be read as "3" + the abbreviation "rd" -> "Road": that
+        # turns a real street name into a number followed by a generic
+        # word, which then can never be recognized as a street name at
+        # all. Only fires when the PRECEDING token is bare digits - "rd"
+        # on its own elsewhere is still the "Road" abbreviation.
+        if token.lower() == "rd" and repaired and repaired[-1].rstrip(",.").isdigit():
+            repaired[-1] = repaired[-1] + "rd" + trailing
+            continue
+
         # Never restructure something that's already a number/PIN/house
         # number - those are correct as typed and splitting them is how
         # "12A" becomes "12 A" and stops matching Google's street_number.

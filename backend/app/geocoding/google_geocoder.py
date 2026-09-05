@@ -266,8 +266,15 @@ STREET_NAME_MISMATCH_CONFIDENCE_CAP = 0.4
 # ("Bharathi Nagar"), not a street, and is already covered by the
 # locality check above; treating it as a street suffix here would extract
 # the wrong word entirely and double up on (or contradict) that check.
+# Group 2 is the word immediately before the suffix ("Cross" in "Canal
+# Cross Road"); group 1, optional, is one word further back ("Canal") -
+# needed because a positional word (_UNNAMED_STREET_WORDS) routinely
+# sits directly before the suffix while the REAL distinguishing name
+# sits one word earlier still ("3rd Canal Cross Road" - "Cross" isn't a
+# name, "Canal" is). _extract_street_keyword falls back to group 1 only
+# when group 2 turns out to be positional.
 _STREET_SUFFIX_PATTERN = re.compile(
-    r"\b([A-Za-z]+)\s+(?:st|street|road|rd|salai|avenue|ave|lane|marg)\.?\b",
+    r"\b(?:([A-Za-z]+)\s+)?([A-Za-z]+)\s+(?:st|street|road|rd|salai|avenue|ave|lane|marg)\.?\b",
     re.IGNORECASE,
 )
 
@@ -666,14 +673,20 @@ def _extract_street_keyword(address: str) -> Optional[str]:
     type suffix at all - a locality/landmark-only address - simply has
     none, and this correctly returns None rather than guessing at one),
     and equally None when the only word in the name position is a
-    positional one (see _UNNAMED_STREET_WORDS) rather than a real name.
-    First match wins - Indian addresses reliably name the actual street
-    once, early in the string; a later "St"/"Road" mention (inside a
-    locality or landmark phrase) is rare enough not to special-case."""
+    positional one (see _UNNAMED_STREET_WORDS) rather than a real name -
+    in which case the word ONE FURTHER BACK is tried instead ("Canal" out
+    of "3rd Canal Cross Road", where "Cross" is the positional word
+    sitting directly before "Road"). First match wins - Indian addresses
+    reliably name the actual street once, early in the string; a later
+    "St"/"Road" mention (inside a locality or landmark phrase) is rare
+    enough not to special-case."""
     for match in _STREET_SUFFIX_PATTERN.finditer(address):
-        keyword = match.group(1).lower()
-        if keyword not in _UNNAMED_STREET_WORDS:
-            return keyword
+        immediate = match.group(2).lower()
+        if immediate not in _UNNAMED_STREET_WORDS:
+            return immediate
+        further_back = match.group(1)
+        if further_back and further_back.lower() not in _UNNAMED_STREET_WORDS:
+            return further_back.lower()
     return None
 
 
