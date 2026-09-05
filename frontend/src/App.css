@@ -1643,6 +1643,64 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .failed-detail__reason svg { flex: none; margin-top: 0.15rem; }
 .failed-detail__reason span { overflow-wrap: break-word; word-break: break-word; min-width: 0; }
 
+/* Per-field breakdown of a flagged address (see crud._address_breakdown /
+   AddressBreakdown in App.jsx) - one labeled box per component (house
+   number, street, area, city, PIN...) instead of making the admin parse
+   the raw address text themselves to find which part is the problem. */
+.address-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+.address-breakdown__field {
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+}
+.address-breakdown__label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.2rem;
+}
+.address-breakdown__value {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+/* A component the parser never found at all (house/street/area/city/PIN
+   genuinely absent) - greyed out rather than left blank, so an empty box
+   reads as "nothing here" instead of looking like a rendering error. */
+.address-breakdown__field--empty {
+  opacity: 0.55;
+}
+.address-breakdown__field--empty .address-breakdown__value {
+  font-style: italic;
+  font-weight: 500;
+}
+/* The ONE field the current geocode_error is actually complaining about -
+   visually called out so the admin doesn't have to cross-reference the
+   reason sentence against every box themselves. */
+.address-breakdown__field--error {
+  background: var(--critical-soft);
+  border-color: var(--critical);
+}
+.address-breakdown__field--error .address-breakdown__label,
+.address-breakdown__field--error .address-breakdown__value {
+  color: var(--critical);
+}
+.address-breakdown__field--error .address-breakdown__label svg { flex: none; }
+
 .failed-split__detail {
   flex: 1;
   display: flex;

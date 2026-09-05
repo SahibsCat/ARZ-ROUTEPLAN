@@ -485,6 +485,63 @@ _LOCALITY_NOISE_WORDS = {
 # check in _score_component_match.
 _CITY_LEVEL_WORDS = {"chennai", "madras", "tamil", "nadu", "india"}
 
+# LOAD-BEARING - closes a real, confirmed wrong-pin bug (caught by an
+# adversarial code review, not live traffic, but genuinely live in
+# production before this fix): "T. Nagar", "T Nagar", and "K K Nagar" -
+# three of the highest-volume delivery areas in Chennai - were being
+# reduced to NOTHING by the tokenizer below. A single initial ("T"/"K")
+# is one character, below the length floor; "Nagar" is stripped as a
+# generic street-type word. With BOTH sides' specific tokens erased to
+# an empty list, the code fell back to its "one side only named the
+# city" branch and treated bare city-name agreement as locality
+# confirmation - for T. Nagar addresses, unconditionally, regardless of
+# what Google actually returned. Verified: "12, Main Road, T. Nagar,
+# Chennai 600017" accepted a Velachery/600042 match at 0.95 confidence.
+#
+# Fixed by gluing a run of 1-3 single-letter initials (dotted or not)
+# directly onto the noise word that follows them BEFORE tokenizing -
+# "T. Nagar"/"T Nagar" -> "tnagar", "K K Nagar" -> "kknagar". Neither
+# "tnagar" nor "kknagar" is itself a noise word or too short, so the
+# specific identity survives as one real, comparable token on both
+# sides. "Main Road" is unaffected - "Main" is 4 letters, not a single
+# initial, so this pattern never fires on genuinely generic street-type
+# phrases.
+_INITIALS_BEFORE_NOISE_WORD = re.compile(
+    r"\b(?:[A-Za-z]\.?\s+){1,3}(?:" + "|".join(_LOCALITY_NOISE_WORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _glue_initials_to_noise_word(text: str) -> str:
+    return _INITIALS_BEFORE_NOISE_WORD.sub(lambda m: re.sub(r"[.\s]+", "", m.group(0)), text)
+
+
+def _describe_locality_suggestion(google_localities: List[str]) -> str:
+    """The operator-facing half of a locality mismatch: not just "this
+    disagrees", but WHICH of Google's areas is the actual closest
+    suggestion, so the admin sees it as an actionable "did you mean X?"
+    rather than a raw dump of every address_components locality level.
+
+    address_components come back from Google most-specific-first
+    (sublocality_level_2, then level_1, then the bare city last), so the
+    first entry that isn't just the bare city name IS the closest, most
+    useful suggestion - "Rajiv Nagar" out of "Rajiv Nagar, Vanagaram,
+    Thiruverkadu, Chennai", not the whole list read out flatly. The rest
+    are kept as supporting context, not dropped - a sublocality alone can
+    be ambiguous (there's more than one "Ganesh Nagar" in Chennai) and
+    the broader area disambiguates it."""
+    specific = [loc for loc in google_localities if loc.strip().lower() not in _CITY_LEVEL_WORDS]
+    if not specific:
+        # Google itself only ever placed this at city level - there's no
+        # closer suggestion to offer, only the honest limit of the match.
+        city = google_localities[0] if google_localities else "an unknown area"
+        return f"Google could only place this in {city} generally, nothing more specific"
+
+    suggestion, context = specific[0], specific[1:]
+    if context:
+        return f"you entered an area Google's match doesn't recognize - closest match is '{suggestion}' ({', '.join(context)})"
+    return f"you entered an area Google's match doesn't recognize - closest match is '{suggestion}'"
+
 
 def _locality_tokens(text: str) -> List[str]:
     """Tokenizes text for the locality-agreement check specifically -
@@ -508,7 +565,8 @@ def _locality_tokens(text: str) -> List[str]:
     # plain .strip("."), which leaves "kk" unreachable as a substring of
     # anything. Removing them here turns it into "wkknagar", which the
     # short-acronym containment check in _locality_token_matches can see.
-    tokens = re.split(r"[,\s/#-]+", text.lower().replace(".", ""))
+    glued = _glue_initials_to_noise_word(text)
+    tokens = re.split(r"[,\s/#-]+", glued.lower().replace(".", ""))
     return [
         t for t in tokens
         if t and len(t) >= 2 and not t.isdigit() and t not in _LOCALITY_NOISE_WORDS
@@ -702,8 +760,7 @@ def _score_component_match(
         elif comparison_tokens:
             non_pin_flags.append((
                 LOCALITY_MISMATCH_CONFIDENCE_CAP,
-                f"Area/locality mismatch: none of the entered address matches Google's area "
-                f"({', '.join(google_localities)})",
+                f"Area/locality mismatch: {_describe_locality_suggestion(google_localities)}",
             ))
 
     # House/door number - the spec's central "street found, house not
@@ -832,20 +889,30 @@ def _score_component_match(
     # The house/door number, decided last because it depends on what the
     # street and locality checks concluded.
     #
-    # An explicit product decision: when the STREET and the AREA are both
-    # confirmed, a house-number difference no longer blocks the address.
-    # "You entered 78, Google found 79 on this street" describes two doors
-    # a few metres apart on a street we have positively identified - the
-    # driver is on the right road looking at the right stretch of it. That
-    # is a categorically smaller error than a wrong locality (a different
-    # part of the city entirely), which is what these checks exist to
-    # catch, and it is not worth sending an otherwise-good address to a
-    # human. The number and Google's version of it stay visible in the
-    # match itself; nothing is hidden, it just stops being a blocker.
+    # An explicit product decision, twice refined: when the STREET is
+    # confirmed, a house-number difference no longer blocks the address on
+    # its own - naming the correct street is enough. "You entered 78,
+    # Google found 79 on this street" describes two doors a few metres
+    # apart on a road we have positively identified; the driver is on the
+    # right road looking at the right stretch of it. That is a
+    # categorically smaller error than a wrong street or a wrong locality
+    # (both of which land somewhere else in the city entirely) - it is not
+    # worth sending an otherwise-good address to a human for. The number
+    # and Google's version of it stay visible in the match itself; nothing
+    # is hidden, it just stops being a blocker.
     #
-    # Still blocks whenever the street or the area is NOT confirmed - a
-    # house-number mismatch on an unverified street is exactly the
-    # "confidently wrong pin" case, and nothing here weakens that.
+    # Confirming the AREA too is no longer required - a customer isn't
+    # required to name a sublocality for their street name to be trusted.
+    # `not non_pin_flags` still does the real safety work here: it's False
+    # whenever the area (or anything else) was ACTIVELY found to
+    # contradict what the customer wrote, so a street name that happens to
+    # repeat in the wrong part of the city is still caught the moment the
+    # locality check actually disagrees - this only stops REQUIRING a
+    # locality to be volunteered and confirmed in the first place.
+    #
+    # Still blocks whenever the street itself is NOT confirmed - a house-
+    # number mismatch on an unverified street is exactly the "confidently
+    # wrong pin" case, and nothing here weakens that.
     #
     # Restricted to a genuine MISMATCH (house_number_is_specific_mismatch -
     # Google positively found a different, specific, nearby door number).
@@ -855,17 +922,16 @@ def _score_component_match(
     # could be anywhere along it. "Found the street, not the house" stays
     # a verification case, exactly as it always has.
     if house_number_flag is not None:
-        trust_street_and_locality_over_house_number = (
+        trust_street_over_house_number = (
             house_number_is_specific_mismatch
             and street_name_confirmed
-            and locality_confirmed
             and not non_pin_flags
         )
         # A flat/block designator can never be confirmed against street-
         # level data, so it must not block on its own either (see
         # house_number_is_unit_designator above).
         trust_unit_designator = house_number_is_unit_designator and not non_pin_flags
-        if not (trust_street_and_locality_over_house_number or trust_unit_designator):
+        if not (trust_street_over_house_number or trust_unit_designator):
             non_pin_flags.append(house_number_flag)
 
     if pin_mismatch:

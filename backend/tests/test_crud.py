@@ -468,6 +468,54 @@ def test_set_manual_location_correcting_a_learned_pin_fully_replaces_it(db_sessi
     assert learned.hit_count == 2
 
 
+def test_order_summary_includes_a_structured_address_breakdown(db_session):
+    # The frontend needs each address component as real data (house,
+    # street, area, city, PIN) to render a labeled box per field - not
+    # just the one geocode_error sentence they'd otherwise have to parse
+    # themselves.
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice",
+         "address": "12A, Gandhi Road, Velachery, Chennai 600042",
+         "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+    ])
+    order = batch.orders[0]
+
+    summary = crud.order_summary(order)
+
+    assert summary["address_breakdown"]["fields"]["house_number"] == "12A"
+    assert summary["address_breakdown"]["fields"]["street"] == "Gandhi Road"
+    assert summary["address_breakdown"]["fields"]["area"] == "Velachery"
+    assert summary["address_breakdown"]["fields"]["pincode"] == "600042"
+    assert summary["address_breakdown"]["missing"] == []
+
+
+def test_order_summary_lists_what_is_missing_from_an_incomplete_address(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "Gandhi Road, Velachery",
+         "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+    ])
+    order = batch.orders[0]
+
+    summary = crud.order_summary(order)
+
+    assert "house/door number" in summary["address_breakdown"]["missing"]
+    assert "PIN code" in summary["address_breakdown"]["missing"]
+
+
+def test_failed_address_summary_includes_the_same_structured_breakdown(db_session):
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice",
+         "address": "12A, Gandhi Road, Velachery, Chennai 600042",
+         "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+    ])
+    failed = crud.get_failed_address(db_session, batch.id, "1")
+
+    summary = crud.failed_address_summary(failed, batch.orders[0])
+
+    assert summary["address_breakdown"]["fields"]["house_number"] == "12A"
+    assert summary["address_breakdown"]["fields"]["street"] == "Gandhi Road"
+
+
 def test_set_manual_location_patches_the_live_route_stop_snapshot(db_session):
     """The order is already on a route when corrected - the route's own
     stop snapshot (what the map/driver app actually reads) must reflect

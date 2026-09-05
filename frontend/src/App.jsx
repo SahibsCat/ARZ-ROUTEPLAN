@@ -109,6 +109,63 @@ const SOON_BLURBS = {
   settings: 'Route capacity defaults and notification preferences as real, saved configuration instead of only what is set per-session in Generate Routes.',
 };
 
+// Field metadata for the per-component address breakdown on a Failed
+// Order (backend: crud._address_breakdown, address_parser.ParsedAddress).
+// `missingLabel` matches ParsedAddress.missing()'s own wording exactly -
+// used to grey out a field the parser genuinely couldn't find, separately
+// from `errorMatch`, which flags the ONE field the CURRENT geocode_error
+// is actually complaining about (a house-number mismatch highlights the
+// House No box specifically, not every box) by checking for the same
+// wording google_geocoder.py's own reasons are built from - see
+// _score_component_match's non_pin_flags reason strings.
+const ADDRESS_BREAKDOWN_FIELDS = [
+  { key: 'house_number', label: 'House / Door No', missingLabel: 'house/door number', errorMatch: /house\/door number/i },
+  { key: 'flat', label: 'Flat / Unit' },
+  { key: 'building', label: 'Building' },
+  { key: 'street', label: 'Street', missingLabel: 'street name', errorMatch: /street name/i },
+  { key: 'landmark', label: 'Landmark' },
+  { key: 'area', label: 'Area / Locality', missingLabel: 'area/locality', errorMatch: /area\/locality/i },
+  { key: 'city', label: 'City', missingLabel: 'city' },
+  { key: 'pincode', label: 'PIN Code', missingLabel: 'PIN code', errorMatch: /pin code/i },
+];
+
+// One labeled box per address component, with the field the current error
+// is actually about visually flagged - see the user-facing request this
+// answers: "each no, street give heading to that each text box with the
+// error" (a per-field breakdown instead of one wrapped sentence).
+function AddressBreakdown({ breakdown, geocodeError }) {
+  if (!breakdown) return null;
+  const fields = breakdown.fields || {};
+  const missing = breakdown.missing || [];
+  const errorText = geocodeError || '';
+
+  return (
+    <div className="address-breakdown">
+      {ADDRESS_BREAKDOWN_FIELDS.map(({ key, label, missingLabel, errorMatch }) => {
+        const value = fields[key];
+        const isMissing = missingLabel ? missing.includes(missingLabel) : false;
+        const isErrorField = Boolean(errorMatch && errorMatch.test(errorText));
+        const cls = [
+          'address-breakdown__field',
+          !value && 'address-breakdown__field--empty',
+          isErrorField && 'address-breakdown__field--error',
+        ].filter(Boolean).join(' ');
+        return (
+          <div key={key} className={cls}>
+            <span className="address-breakdown__label">
+              {label}
+              {isErrorField && <IconAlert width={11} height={11} />}
+            </span>
+            <span className="address-breakdown__value">
+              {value || (isMissing ? 'Not provided' : '—')}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Counts up/down to a new value instead of snapping - used on the KPI tiles.
 function useCountUp(value, duration = 500) {
   const [display, setDisplay] = useState(value);
@@ -3467,6 +3524,17 @@ function App() {
                           <IconAlert width={13} height={13} />
                           <span>{selectedFailedOrder.geocode_error || 'Geocoding failed'}</span>
                         </div>
+
+                        {/* Per-field breakdown of what the system actually
+                            read out of the address - house number, street,
+                            area, city, PIN each get their own labeled box,
+                            with whichever one the error above is actually
+                            about visually flagged, instead of making the
+                            admin re-read the raw address to find it. */}
+                        <AddressBreakdown
+                          breakdown={selectedFailedOrder.address_breakdown}
+                          geocodeError={selectedFailedOrder.geocode_error}
+                        />
 
                         <div className="detail-map">
                           <iframe

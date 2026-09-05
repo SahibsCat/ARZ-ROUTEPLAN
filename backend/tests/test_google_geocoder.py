@@ -364,6 +364,64 @@ def test_score_component_match_confirms_locality_via_the_city_name_alone():
     assert _score_component_match(customer, google_components) is None
 
 
+def test_locality_tokens_preserves_single_initial_locality_names():
+    # LOAD-BEARING - a confirmed, live wrong-pin bug (found by adversarial
+    # code review, not a support ticket): "T. Nagar" and "K K Nagar" are
+    # among the highest-volume delivery areas in Chennai, and a bare
+    # single-letter initial ("T"/"K") was too short to survive the length
+    # floor while "Nagar" was stripped as generic - both sides' specific
+    # identity vanished to nothing, which incorrectly satisfied the
+    # "one side only named the city" fallback for city-name-only
+    # agreement. See google_geocoder.py's own comment above
+    # _INITIALS_BEFORE_NOISE_WORD for the full mechanism.
+    from app.geocoding.google_geocoder import _locality_tokens
+
+    assert _locality_tokens("T. Nagar") == ["tnagar"]
+    assert _locality_tokens("T Nagar") == ["tnagar"]
+    assert _locality_tokens("K K Nagar") == ["kknagar"]
+    # A genuinely generic street-type phrase must stay empty - "Main" is
+    # a real word, not a single initial, so this must never fire on it.
+    assert _locality_tokens("Main Road") == []
+
+
+def test_score_component_match_flags_a_wrong_locality_hidden_behind_a_single_initial_name():
+    # End-to-end reproduction of the exact confirmed bug: customer names
+    # T. Nagar, Google's actual match is a different real locality
+    # (Velachery) with a different PIN - both must be caught, not
+    # silently accepted via the city-name-only fallback.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "12, Main Road, T. Nagar, Chennai 600017"
+    google_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Main Road", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap is not None
+    assert "Velachery" in reason
+
+
+def test_score_component_match_still_confirms_a_genuine_single_initial_locality_match():
+    # The flip side - a customer naming T. Nagar whose match genuinely IS
+    # T. Nagar must not be flagged just because the fix touches this path.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "12, Main Road, T. Nagar, Chennai 600017"
+    google_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Main Road", "types": ["route"]},
+        {"long_name": "T. Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600017", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
 def test_score_component_match_does_not_let_the_city_name_alone_confirm_the_locality():
     # LOAD-BEARING. Practically every Chennai address says "Chennai" and
     # so does practically every Google response. If that counts as

@@ -4,7 +4,7 @@ themselves."""
 
 import re
 
-from app.geocoding.address_parser import building_signature
+from app.geocoding.address_parser import building_signature, normalize as normalize_address, parse as parse_address
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -1542,6 +1542,19 @@ def update_settings(db: Session, **fields: object) -> AppSettings:
 # Response-shape helpers (DB rows -> the plain dicts routes/tests expect)
 # --------------------------------------------------------------------------
 
+def _address_breakdown(address: Optional[str]) -> Dict[str, object]:
+    """The per-field parse of an address, as real structured data rather
+    than embedded inside the geocode_error sentence - lets the frontend
+    render "House: 12A" / "Street: Gandhi Road" / etc as their own
+    labeled fields instead of a single wrapped paragraph. Safe to call on
+    any order (not just a flagged one); an address with nothing wrong
+    just parses cleanly and the frontend has no reason to show it."""
+    if not address:
+        return {"fields": {}, "missing": []}
+    parsed = parse_address(normalize_address(address))
+    return {"fields": parsed.as_dict(), "missing": parsed.missing()}
+
+
 def order_summary(order: Order) -> Dict[str, object]:
     data = {
         "order_id": order.order_id,
@@ -1571,6 +1584,7 @@ def order_summary(order: Order) -> Dict[str, object]:
     }
     data["map_link"] = single_stop_maps_link(data)
     data["area"] = resolve_location(data)
+    data["address_breakdown"] = _address_breakdown(order.address)
     return data
 
 
@@ -1581,10 +1595,11 @@ def failed_address_summary(failed: FailedAddress, order: Optional[Order] = None)
     models.Order.suggested_lat), and every real caller already has the
     batch's Order rows loaded (see /api/dashboard), so this avoids an
     extra query per failed row."""
+    address = failed.edited_address or failed.entered_address
     return {
         "order_id": failed.order_id,
         "customer_name": failed.customer_name,
-        "address": failed.edited_address or failed.entered_address,
+        "address": address,
         "entered_address": failed.entered_address,
         "edited_address": failed.edited_address,
         "geocode_error": failed.failure_reason,
@@ -1592,6 +1607,7 @@ def failed_address_summary(failed: FailedAddress, order: Optional[Order] = None)
         "status": failed.status,
         "suggested_lat": order.suggested_lat if order is not None else None,
         "suggested_lng": order.suggested_lng if order is not None else None,
+        "address_breakdown": _address_breakdown(address),
     }
 
 
