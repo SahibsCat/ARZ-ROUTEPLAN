@@ -404,6 +404,70 @@ def test_set_manual_location_resolves_the_failed_address_tracking_row(db_session
     assert failed.status == "resolved"
 
 
+def test_set_manual_location_teaches_the_building_for_future_orders(db_session):
+    # The learning mechanism itself: correcting one order for a building
+    # specific enough to key on (name + area both present) must leave a
+    # VerifiedLocation behind so a DIFFERENT, later order naming the same
+    # complex can be recognized automatically - see
+    # geocode_service._try_learned_building_match.
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice",
+         "address": "A103, Urbantree Fantastic, Survey No 106, Vanagaram, Chennai 600077",
+         "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+    ])
+
+    crud.set_manual_location(db_session, batch.id, "1", lat=13.06, lng=80.14)
+
+    from app.geocoding.address_parser import building_signature
+    signature = building_signature(
+        "A103, Urbantree Fantastic, Survey No 106, Vanagaram, Chennai 600077"
+    )
+    assert signature is not None
+    learned = crud.get_verified_location(db_session, signature)
+    assert learned is not None
+    assert learned.lat == 13.06
+    assert learned.lng == 80.14
+    assert learned.hit_count == 1
+
+
+def test_set_manual_location_does_not_teach_anything_without_a_specific_enough_building(db_session):
+    # No building name at all ("45 Bhavani Street, Kilpauk") must not
+    # produce a signature - see building_signature's own reasoning for
+    # why a bare street address is never specific enough to key on.
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 1, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": "45 Bhavani Street, Kilpauk, Chennai",
+         "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+    ])
+
+    crud.set_manual_location(db_session, batch.id, "1", lat=13.08, lng=80.24)
+
+    # No exception, and nothing was learned - the table stays empty.
+    assert db_session.query(crud.VerifiedLocation).count() == 0
+
+
+def test_set_manual_location_correcting_a_learned_pin_fully_replaces_it(db_session):
+    # A second manual correction for the SAME building must overwrite the
+    # learned coordinate outright, not blend with it - an admin fixing a
+    # previously-wrong learned pin is exactly the case where the old
+    # value must not partially survive.
+    address = "B12, Green Meadows, Survey 45, Sholinganallur, Chennai 600119"
+    batch = crud.save_upload_batch(db_session, "orders.xlsx", 2, True, [], [
+        {"order_id": "1", "customer_name": "Alice", "address": address,
+         "delivery_time": "10:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+        {"order_id": "2", "customer_name": "Bob", "address": address,
+         "delivery_time": "11:00", "lat": None, "lng": None, "geocode_error": "flagged"},
+    ])
+
+    crud.set_manual_location(db_session, batch.id, "1", lat=12.90, lng=80.22)
+    crud.set_manual_location(db_session, batch.id, "2", lat=12.91, lng=80.23)
+
+    from app.geocoding.address_parser import building_signature
+    learned = crud.get_verified_location(db_session, building_signature(address))
+    assert learned.lat == 12.91
+    assert learned.lng == 80.23
+    assert learned.hit_count == 2
+
+
 def test_set_manual_location_patches_the_live_route_stop_snapshot(db_session):
     """The order is already on a route when corrected - the route's own
     stop snapshot (what the map/driver app actually reads) must reflect

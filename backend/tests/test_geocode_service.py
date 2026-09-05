@@ -380,3 +380,84 @@ def test_invalidate_cached_geocode_forces_a_real_relookup(monkeypatch, db_sessio
     third = geocode_address("12 Main Street", db=db_session)
     assert third["lat"] == 13.5
     assert len(fake_geocoder.calls) == 2
+
+
+def test_geocode_address_falls_back_to_a_previously_verified_building(monkeypatch, db_session):
+    # The learning mechanism's read side: a DIFFERENT order (a different
+    # flat in the same complex, most likely) names a building an admin
+    # already hand-verified on some earlier order - Google's own attempt
+    # is flagged (a real, common case for a large complex), and the
+    # learned coordinate is used instead of landing in Failed Addresses
+    # again for a building this system has already been taught.
+    from app import crud
+    from app.geocoding.address_parser import building_signature
+
+    address = "A103, Urbantree Fantastic, Survey No 106, Vanagaram, Chennai 600077"
+    signature = building_signature(address)
+    assert signature is not None
+    crud.upsert_verified_location(
+        db_session, signature, lat=13.06, lng=80.14,
+        formatted_address="Urbantree Fantastic, Vanagaram, Chennai",
+        sample_address="B204, " + address,
+    )
+
+    flagged = GeocodeResult(
+        lat=13.061, lng=80.141, formatted_address="Vanagaram, Chennai",
+        status="NEEDS_MANUAL_VERIFICATION", provider="google", confidence=0.4,
+    )
+    fake_geocoder = _FakeGeocoder({})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+    monkeypatch.setattr(fake_geocoder, "geocode", lambda addr: flagged)
+
+    result = geocode_address_detailed(address, db=db_session)
+
+    assert result["lat"] == 13.06
+    assert result["lng"] == 80.14
+
+
+def test_geocode_address_prefers_a_fresh_confident_google_match_over_a_learned_one(monkeypatch, db_session):
+    # The learned building is a FALLBACK, never a replacement for a
+    # genuinely confident fresh match - Google confirming the exact unit
+    # this time is strictly better information than a past order's
+    # complex-level coordinate.
+    from app import crud
+    from app.geocoding.address_parser import building_signature
+
+    address = "A103, Urbantree Fantastic, Survey No 106, Vanagaram, Chennai 600077"
+    crud.upsert_verified_location(
+        db_session, building_signature(address), lat=13.06, lng=80.14,
+        formatted_address="Urbantree Fantastic, Vanagaram, Chennai", sample_address=address,
+    )
+
+    confident = GeocodeResult(
+        lat=13.0602, lng=80.1401, formatted_address="A103, Urbantree Fantastic, Chennai",
+        status="OK", provider="google", confidence=0.95,
+    )
+    fake_geocoder = _FakeGeocoder({})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+    monkeypatch.setattr(fake_geocoder, "geocode", lambda addr: confident)
+
+    result = geocode_address(address, db=db_session)
+
+    assert result["lat"] == 13.0602
+    assert result["display_name"] == "A103, Urbantree Fantastic, Chennai"
+
+
+def test_geocode_address_does_not_fall_back_when_nothing_has_been_learned(monkeypatch, db_session):
+    # No VerifiedLocation exists for this building - must behave exactly
+    # as it always has (flagged stays flagged), not silently invent a
+    # fallback.
+    flagged = GeocodeResult(
+        lat=13.0, lng=80.2, formatted_address="Somewhere, Chennai",
+        status="NEEDS_MANUAL_VERIFICATION", provider="google", confidence=0.4,
+    )
+    fake_geocoder = _FakeGeocoder({})
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: fake_geocoder)
+    monkeypatch.setattr(fake_geocoder, "geocode", lambda addr: flagged)
+
+    result = geocode_address_detailed(
+        "A103, Never Seen Apartments, Somewhere Nagar, Chennai 600001", db=db_session
+    )
+
+    assert result["lat"] is None
+    assert result["confidence"] == 0.4

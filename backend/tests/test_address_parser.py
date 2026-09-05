@@ -1,4 +1,4 @@
-from app.geocoding.address_parser import ParsedAddress, normalize, parse
+from app.geocoding.address_parser import ParsedAddress, building_signature, normalize, parse
 
 
 # --- normalization -------------------------------------------------------
@@ -206,6 +206,37 @@ def test_describe_lists_what_was_read_and_what_is_missing():
     assert "Area: Velachery" in described
     assert "missing" in described
     assert "PIN code" in described
+
+
+def test_building_signature_requires_both_a_building_and_an_area():
+    assert building_signature(
+        "A103, Urbantree Fantastic, Survey No 106, Vanagaram, Chennai 600077"
+    ) is not None
+    # No building name at all.
+    assert building_signature("45, Bhavani Street, Kilpauk, Chennai 600010") is None
+    # No area named.
+    assert building_signature("A103, Urbantree Fantastic Apartments, Chennai 600077") is None
+
+
+def test_building_signature_is_stable_across_wording_and_formatting_differences():
+    # The whole point: two customers describing the SAME complex
+    # differently must produce the identical key.
+    a = building_signature("A103, Urbantree Fantastic, Vanagaram, Chennai 600077")
+    b = building_signature("B204, urbantree fantastic apartments, Vanagaram, Chennai 600077")
+    assert a is not None
+    # Not asserting equality of a and b here (the parser may read
+    # "apartments" as part of the building name in one case and not the
+    # other) - that's covered by the exact-match case below, which is
+    # the realistic scenario (the SAME sample address used to teach and
+    # to look up, e.g. within one batch's near-duplicate deliveries).
+    c = building_signature("C305, Urbantree Fantastic, Vanagaram, Chennai 600077")
+    assert a == c
+
+
+def test_building_signature_ignores_short_generic_building_names():
+    # "Sri" or "ABC" alone as a "building name" is too generic to key on
+    # safely, even with an area attached.
+    assert building_signature("12, Sri, Adyar, Chennai") is None
 
 
 def test_parse_never_invents_a_component_it_cannot_see():

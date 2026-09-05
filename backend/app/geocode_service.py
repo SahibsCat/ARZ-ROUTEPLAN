@@ -84,13 +84,49 @@ def _result_from_cache_row(row) -> GeocodeResult:
     )
 
 
+def _try_learned_building_match(db: Session, address: str) -> Optional[GeocodeResult]:
+    """The fallback of last resort, tried only when Google's own attempt
+    for THIS address came back flagged or empty: has an admin already
+    hand-verified this exact building (name + area) before, on some
+    other order? If so, that human confirmation is used - see
+    VerifiedLocation's docstring in models.py for the full mechanism and
+    why this is safe (the table is written to ONLY from a real manual
+    pin placement, never from an automated guess).
+
+    This is complex-level precision, not flat-level - a fair trade
+    against landing in Failed Addresses again for a building this
+    system has, in a real sense, already been taught. Confidence is
+    fixed at 0.75: high enough to auto-accept, but visibly a notch below
+    a fresh, fully-confirmed Google match, since a different specific
+    unit inside the same complex is what's actually different here."""
+    signature = address_parser.building_signature(address)
+    if not signature:
+        return None
+    learned = crud.get_verified_location(db, signature)
+    if learned is None:
+        return None
+    return GeocodeResult(
+        lat=learned.lat,
+        lng=learned.lng,
+        formatted_address=learned.formatted_address or address,
+        status=STATUS_OK,
+        provider="learned (building verified on a previous order)",
+        confidence=0.75,
+    )
+
+
 def _lookup_or_geocode(
     geocoder: GeocodingProvider, cleaned_address: str, db: Optional[Session],
 ) -> Optional[GeocodeResult]:
     """Cache-first geocoding: a normalized address that's already been
     resolved (in this run or a previous one) never spends another billed
     provider request. Only STATUS_OK results are cached - a low-confidence
-    or failed lookup is retried next time rather than remembered as final."""
+    or failed lookup is retried next time rather than remembered as final.
+
+    Falls back to a previously human-verified building (see
+    _try_learned_building_match) only when Google's own result for this
+    address is missing or flagged - a fresh, confident Google match is
+    always preferred over a learned one when both are available."""
     key = _cache_key(cleaned_address)
     if db is not None:
         cached = crud.get_cached_geocode(db, key)
@@ -110,6 +146,11 @@ def _lookup_or_geocode(
             provider=result.provider,
             confidence=result.confidence,
         )
+
+    if db is not None and (result is None or result.status != STATUS_OK):
+        learned = _try_learned_building_match(db, cleaned_address)
+        if learned is not None:
+            return learned
 
     return result
 

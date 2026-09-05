@@ -281,6 +281,36 @@ class GeocodingCache(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class VerifiedLocation(Base):
+    """A building the system has been HUMAN-verified against before, keyed
+    by a signature built from its building name + area (see
+    app.geocoding.address_parser.building_signature). Written to in
+    exactly one place - crud.set_manual_location, the moment an admin
+    drags/places a pin themselves - never from an automated geocode
+    result, however high its confidence, so this table only ever grows
+    from genuine ground truth and never compounds an automated mistake.
+
+    Read by geocode_service as a fallback ONLY when Google's own attempt
+    for a NEW order comes back flagged: a different customer naming the
+    same apartment complex Google itself can't confidently place gets the
+    complex-level coordinate an admin already confirmed, instead of
+    landing in Failed Addresses again for a building this system has
+    already been taught. This is the concrete mechanism behind "the
+    admin should never have to fix the same building twice" - see
+    docs/ADDRESS_RESOLUTION.md."""
+    __tablename__ = "verified_locations"
+
+    id = Column(Integer, primary_key=True)
+    signature = Column(String, nullable=False, unique=True, index=True)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    formatted_address = Column(String, nullable=True)
+    sample_address = Column(String, nullable=True)
+    hit_count = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Driver(Base):
     """A delivery driver/partner - login identity for the driver app, plus
     the roster fields the admin manages from the Drivers page. `status`

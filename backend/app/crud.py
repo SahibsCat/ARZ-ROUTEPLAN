@@ -3,6 +3,8 @@ function here. API routes call these; they never build SQLAlchemy queries
 themselves."""
 
 import re
+
+from app.geocoding.address_parser import building_signature
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -19,6 +21,7 @@ from app.models import (
     RoutePlan,
     RouteStop,
     UploadBatch,
+    VerifiedLocation,
 )
 from app.route_service import (
     insert_orders_into_route,
@@ -1020,7 +1023,15 @@ def set_manual_location(
     Order row - location_source="manual", real lat/lng - but never
     touched FailedAddress at all, so a manually-corrected order kept
     showing up in the Failed Addresses queue indefinitely, a stale entry
-    for an order that had, in fact, already been resolved)."""
+    for an order that had, in fact, already been resolved).
+
+    Also teaches this building to VerifiedLocation, when the address
+    names one specifically enough to key on (see building_signature) -
+    the mechanism behind "the admin shouldn't have to fix the same
+    apartment complex every time it reorders" (see that model's own
+    docstring in models.py). This is the ONLY write path into that
+    table, deliberately: every other geocode result, however confident,
+    is an automated guess by comparison to a human placing the pin."""
     order = db.query(Order).filter(Order.batch_id == batch_id, Order.order_id == str(order_id)).first()
     if order is None:
         raise OrderNotFoundError(f"Order {order_id} not found in the current session")
@@ -1038,6 +1049,13 @@ def set_manual_location(
     failed = get_failed_address(db, batch_id, order_id)
     if failed is not None and failed.status != "resolved":
         failed.status = "resolved"
+
+    signature = building_signature(order.address or "")
+    if signature:
+        upsert_verified_location(
+            db, signature, lat=lat, lng=lng,
+            formatted_address=None, sample_address=order.address,
+        )
 
     if order.route_id is not None:
         stop = (
@@ -1449,6 +1467,49 @@ def save_geocode_cache(
             lng=lng,
             provider=provider,
             confidence=confidence,
+        ))
+    db.commit()
+
+
+def get_verified_location(db: Session, signature: str) -> Optional[VerifiedLocation]:
+    if not signature:
+        return None
+    return db.query(VerifiedLocation).filter(VerifiedLocation.signature == signature).first()
+
+
+def upsert_verified_location(
+    db: Session,
+    signature: str,
+    lat: float,
+    lng: float,
+    formatted_address: Optional[str],
+    sample_address: Optional[str],
+) -> None:
+    """Records a human-confirmed building - see VerifiedLocation's own
+    docstring for the full mechanism and why this is the ONLY write path
+    into that table (called from exactly one place: set_manual_location,
+    the moment an admin places a pin themselves). The most recent human
+    confirmation always wins outright (not averaged, not weighted by
+    hit_count) - an admin correcting a previously-wrong learned pin is
+    exactly the case where the new value must fully replace the old
+    one, not blend with it."""
+    if not signature:
+        return
+    existing = get_verified_location(db, signature)
+    if existing is not None:
+        existing.lat = lat
+        existing.lng = lng
+        existing.formatted_address = formatted_address
+        existing.sample_address = sample_address
+        existing.hit_count = (existing.hit_count or 0) + 1
+    else:
+        db.add(VerifiedLocation(
+            signature=signature,
+            lat=lat,
+            lng=lng,
+            formatted_address=formatted_address,
+            sample_address=sample_address,
+            hit_count=1,
         ))
     db.commit()
 

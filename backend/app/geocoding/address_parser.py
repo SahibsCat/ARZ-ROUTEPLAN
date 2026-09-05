@@ -350,6 +350,37 @@ def _looks_like_city(segment: str) -> bool:
     return any(token in _CITY_KEYWORDS for token in tokens)
 
 
+def building_signature(address: str) -> Optional[str]:
+    """A stable key identifying "this specific building, in this area" -
+    the thing that lets the system recognize a repeat apartment complex
+    across two customers who worded their address completely
+    differently. Used by crud.set_manual_location to remember a human-
+    confirmed building forever, and by geocode_service to recognize it
+    again on a later, different order (see VerifiedLocation's own
+    docstring in models.py for the full mechanism).
+
+    Deliberately requires BOTH a building name AND an area, each long
+    enough to be reasonably specific - a bare building name alone
+    ("Sri Apartments", "Ganga Enclave") repeats constantly across a city
+    this size and would collide; requiring the area too narrows it to a
+    combination genuinely unlikely to name two different real places.
+    Returns None whenever that bar isn't met - most addresses (no
+    building name given at all) never get a signature, which is
+    correct: this is a bonus signal on top of normal geocoding, not a
+    replacement for it, and a signature that could plausibly collide is
+    worse than no signature."""
+    parsed = parse(normalize(address))
+    if not parsed.building or not parsed.area:
+        return None
+
+    normalized_building = re.sub(r"[^a-z0-9]+", "", parsed.building.lower())
+    normalized_area = re.sub(r"[^a-z0-9]+", "", parsed.area.lower())
+    if len(normalized_building) < 6 or len(normalized_area) < 3:
+        return None
+
+    return f"{normalized_building}|{normalized_area}"
+
+
 def _split_at_street_word(segment: str) -> tuple:
     """("Kk Road 3rd Cross Street Ambattur") -> ("Kk Road", "3rd Cross
     Street Ambattur"). Splits just after the FIRST street word, and only
@@ -412,6 +443,13 @@ def parse(address: str) -> ParsedAddress:
     pending = [s.strip(" .").strip() for s in re.split(r"[,\n]", working)]
     pending = [s for s in pending if s]
 
+    # Segments that didn't match anything specific (no street/building/
+    # city keyword) - decided AFTER the full pass, not immediately, so a
+    # complex name with no recognizable keyword ("Urbantree Fantastic",
+    # unlike "... Apartments"/"... Towers") can still be told apart from
+    # the actual area named after it. See the decision below the loop.
+    unclassified: List[str] = []
+
     while pending:
         segment = pending.pop(0)
 
@@ -463,11 +501,33 @@ def parse(address: str) -> ParsedAddress:
                 parsed.area = head
             continue
 
-        if parsed.area is None and re.search(r"[A-Za-z]{3,}", segment):
-            parsed.area = segment
+        if re.search(r"[A-Za-z]{3,}", segment):
+            unclassified.append(segment)
             continue
 
         if re.search(r"[A-Za-z0-9]", segment):
             parsed.extra.append(segment)
+
+    if len(unclassified) >= 2 and parsed.building is None:
+        # Two or more segments matched no known keyword at all, and
+        # nothing has been read as the building yet - the conventional
+        # Indian address order (complex/building name, THEN its area) is
+        # far more informative here than "first one wins": real case,
+        # "Urbantree Fantastic, Vanagaram" naming a complex with no
+        # recognizable building keyword. First becomes the building,
+        # last becomes the area (whichever named the finished delivery
+        # zone is more likely to be nearest the city/PIN); anything
+        # genuinely in between is too ambiguous to guess at and is kept
+        # as extra rather than forced into either.
+        parsed.building = unclassified[0]
+        rest = unclassified[1:]
+        if parsed.area is None and rest:
+            parsed.area = rest[-1]
+            rest = rest[:-1]
+        parsed.extra.extend(rest)
+    elif unclassified:
+        if parsed.area is None:
+            parsed.area = unclassified[0]
+        parsed.extra.extend(unclassified[1:])
 
     return parsed
