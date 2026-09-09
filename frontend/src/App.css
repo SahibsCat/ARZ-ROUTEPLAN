@@ -50,6 +50,20 @@
   --neutral: #6b7280;
   --neutral-soft: #f3f4f6;
 
+  /* Operational-page section identities (Routes/Unassigned/Failed
+     Addresses/Drivers) - see App.jsx's Lucide import comment for the
+     rest of this redesign. Deliberately separate from the --signal/
+     --critical/etc block above: those are SEMANTIC (this thing is
+     pending/wrong/fine), these are purely WAYFINDING (this panel
+     belongs to this section) - Unassigned reuses --signal and Failed
+     Addresses reuses --critical directly (both already mean the right
+     thing), but Routes and Drivers have no existing status color that
+     fits, so they get their own. */
+  --op-routes: #2563eb;
+  --op-routes-soft: #eff6ff;
+  --op-drivers: #0d9488;
+  --op-drivers-soft: #f0fdfa;
+
   /* Shadows & Depth */
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: 1px solid rgba(226, 232, 240, 0.6);
@@ -123,6 +137,11 @@
     --neutral: #9ca3af;
     --neutral-soft: rgba(156, 163, 175, 0.1);
 
+    --op-routes: #60a5fa;
+    --op-routes-soft: rgba(96, 165, 250, 0.15);
+    --op-drivers: #2dd4bf;
+    --op-drivers-soft: rgba(45, 212, 191, 0.15);
+
     --glass-bg: rgba(17, 24, 39, 0.85);
     --glass-border: 1px solid rgba(255, 255, 255, 0.08);
     --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -182,6 +201,11 @@
   --neutral: #9ca3af;
   --neutral-soft: rgba(156, 163, 175, 0.1);
 
+  --op-routes: #60a5fa;
+  --op-routes-soft: rgba(96, 165, 250, 0.15);
+  --op-drivers: #2dd4bf;
+  --op-drivers-soft: rgba(45, 212, 191, 0.15);
+
   --glass-bg: rgba(17, 24, 39, 0.85);
   --glass-border: 1px solid rgba(255, 255, 255, 0.08);
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -239,6 +263,11 @@
   --info-soft: #f0f9ff;
   --neutral: #6b7280;
   --neutral-soft: #f3f4f6;
+
+  --op-routes: #2563eb;
+  --op-routes-soft: #eff6ff;
+  --op-drivers: #0d9488;
+  --op-drivers-soft: #f0fdfa;
 
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: 1px solid rgba(226, 232, 240, 0.6);
@@ -765,6 +794,38 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .btn--primary:hover:not(:disabled) {
   background: var(--btn-fill-hover);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* A primary button inside an operational section (Routes/Unassigned
+   Orders/Drivers/Failed Addresses) picks up that section's own color
+   instead of the Dashboard's monochrome fill - "Create Route" reads as
+   a Routes action, "Add Driver" as a Drivers action, on sight, rather
+   than every primary button in the app looking identical regardless of
+   what board it's in. Scoped by container (a descendant selector), not
+   by touching every button's own className at every call site - matches
+   the left-spine accent already on each of these sections' own panel. */
+.board.board--workspace-routes .btn--primary,
+.board--drivers .btn--primary {
+  background: var(--op-routes);
+  color: #ffffff;
+}
+.board.board--workspace-unassigned .btn--primary {
+  background: var(--signal);
+  color: #ffffff;
+}
+.board--drivers .btn--primary {
+  background: var(--op-drivers);
+}
+.board--returns .btn--primary {
+  background: var(--critical);
+  color: #ffffff;
+}
+.board.board--workspace-routes .btn--primary:hover:not(:disabled),
+.board.board--workspace-unassigned .btn--primary:hover:not(:disabled),
+.board--drivers .btn--primary:hover:not(:disabled),
+.board--returns .btn--primary:hover:not(:disabled) {
+  filter: brightness(0.9);
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
 }
 
@@ -1297,16 +1358,20 @@ textarea:focus-visible, [tabindex]:focus-visible {
   flex-direction: column;
   gap: 1.25rem;
 }
-.board--drivers {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-xl);
-  padding: 1.5rem;
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+/* Operational sections (Drivers, Failed Addresses) get a squarer corner
+   and a colored left spine identifying which section this is, in place
+   of the Dashboard's uniform rounded/shadow-only card - see the Lucide
+   import comment in App.jsx for the fuller reasoning. Left border, not a
+   top one: it reads at a glance while scanning DOWN the page (how this
+   single-page layout is actually navigated) without competing with the
+   header's own bottom rule. */
+.board--drivers,
+.board--returns {
+  border-radius: var(--radius-lg);
+  border-left-width: 4px;
 }
+.board--drivers { border-left-color: var(--op-drivers); }
+.board--returns { border-left-color: var(--critical); }
 
 .board__header {
   display: flex;
@@ -1336,8 +1401,8 @@ textarea:focus-visible, [tabindex]:focus-visible {
   box-sizing: content-box;
   flex: none;
 }
-.board--drivers .board__title svg { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
-.board--returns .board__title svg { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.board--drivers .board__title svg { background: var(--op-drivers-soft); color: var(--op-drivers); }
+.board--returns .board__title svg { background: var(--critical-soft); color: var(--critical); }
 
 .board__count {
   font-size: 0.85rem;
@@ -1375,18 +1440,18 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .drivers-table th:nth-child(5) { width: 12%; }
 .drivers-table th:nth-child(6) { width: 32%; }
 .drivers-table th {
-  padding: 0.85rem 1.25rem;
-  font-size: 0.78rem;
+  padding: 0.7rem 1.25rem;
+  font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--ink-faint);
-  border-bottom: 1px solid var(--rule);
-  background: var(--surface-2);
+  color: var(--op-drivers);
+  border-bottom: 2px solid var(--op-drivers);
+  background: var(--op-drivers-soft);
   white-space: nowrap;
 }
 .drivers-table td {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--rule-soft);
   vertical-align: middle;
   color: var(--ink);
@@ -1394,8 +1459,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .drivers-table tbody tr {
   transition: background 0.15s ease;
 }
+/* Zebra striping - a denser, more scannable read for a table that's
+   meant to be worked in (assigning routes, resetting passwords) rather
+   than glanced at, distinct from the Dashboard's card-based layouts
+   which have no equivalent "many similar rows" problem to solve. */
+.drivers-table tbody tr:nth-child(even) {
+  background: var(--rule-soft);
+}
 .drivers-table tbody tr:hover {
-  background: var(--surface-2);
+  background: var(--op-drivers-soft);
 }
 .drivers-table__name {
   font-weight: 700;

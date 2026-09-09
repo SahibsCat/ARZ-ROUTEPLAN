@@ -9,6 +9,23 @@
   flex-direction: column;
   height: 100%;
 }
+/* Same operational-section treatment as .board--drivers/.board--returns
+   in App.css - squarer corner, colored left spine. Compound selector
+   (.board.board--workspace), not a second bare .board--workspace block -
+   App.jsx imports RouteWorkspace before App.css, so this file's rules
+   land EARLIER in the final bundle than App.css's plain `.board { ... }`
+   despite the <link>/JS order suggesting otherwise (import hoisting);
+   at equal specificity the later one wins regardless of which file
+   "sounds" more specific, which silently ate a bare `.board--workspace`
+   version of this same rule. The accent color itself tracks which tab is
+   showing (see the two modifier classes below), since Routes and
+   Unassigned Orders share this one container. */
+.board.board--workspace {
+  border-radius: var(--radius-lg);
+  border-left-width: 4px;
+}
+.board.board--workspace-routes { border-left-color: var(--op-routes); }
+.board.board--workspace-unassigned { border-left-color: var(--signal); }
 
 .board--workspace .btn {
   width: auto;
@@ -312,6 +329,17 @@ select.add-route-select:hover:not(:disabled) {
   font-weight: 800;
   margin: 0 0 0.3rem;
   color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.routes-page__title svg {
+  flex: none;
+  padding: 0.3rem;
+  border-radius: var(--radius-sm);
+  box-sizing: content-box;
+  background: var(--op-routes-soft);
+  color: var(--op-routes);
 }
 .routes-page__header-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 
@@ -327,6 +355,9 @@ select.add-route-select:hover:not(:disabled) {
   border-radius: var(--radius-sm);
 }
 .view-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.4rem 0.85rem;
   border: none;
   border-radius: var(--radius-xs);
@@ -337,6 +368,7 @@ select.add-route-select:hover:not(:disabled) {
   font-weight: 700;
   cursor: pointer;
 }
+.view-toggle__btn svg { flex: none; }
 .view-toggle__btn:hover { color: var(--ink); }
 .view-toggle__btn--active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
 
@@ -570,14 +602,14 @@ select.add-route-select:hover:not(:disabled) {
   display: grid;
   grid-template-columns: 28px 2fr 0.9fr 0.8fr 1.3fr 0.9fr 1.1fr 1fr 1.4fr;
   gap: 1.25rem;
-  padding: 0.7rem 1.35rem;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--rule);
+  padding: 0.6rem 1.35rem;
+  background: var(--op-routes-soft);
+  border-bottom: 2px solid var(--op-routes);
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--ink-soft);
+  color: var(--op-routes);
 }
 
 /* route-hue-0..5 (RouteRow, RouteDetail) set --route-color, cycling for
@@ -608,6 +640,7 @@ select.add-route-select:hover:not(:disabled) {
   cursor: pointer;
   transition: background 0.15s ease;
 }
+.route-row:nth-child(even) { background: var(--rule-soft); }
 .route-row:hover { background: var(--surface-2); }
 .route-row--selected { background: var(--accent-soft); }
 .route-row--busy { cursor: wait; }

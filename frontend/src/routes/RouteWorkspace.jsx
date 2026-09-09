@@ -6,6 +6,14 @@ import {
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
   IconUsers, IconChevron, IconLocate,
 } from '../icons';
+// Lucide - the same operational-pages icon language introduced in App.jsx
+// (see its own import comment for why); this file is where the Routes and
+// Unassigned Orders workspace itself actually lives.
+import {
+  Route as LIconRoute, PackageSearch, MapPinPlus, RotateCw, Trash2, UserPlus,
+  Map as LIconMap, Columns2, List as LIconList, Download as LIconDownload,
+  MoreHorizontal, CarFront as LIconCarFront, Bike as LIconBike,
+} from 'lucide-react';
 import './routeWorkspace.css';
 
 // A JS-API key is meant to be used client-side (it's restricted by
@@ -526,7 +534,7 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
       {open && panelPos && createPortal(
         <div className="row-menu__panel" ref={panelRef} style={{ top: panelPos.top, right: panelPos.right }}>
           <button type="button" onClick={() => { onDownload(route); setOpen(false); }}>
-            <IconDownload width={13} height={13} />
+            <LIconDownload width={13} height={13} />
             Download sheet
           </button>
           <button
@@ -540,7 +548,7 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
               }
             }}
           >
-            {isDeletingRoute === route.route_name ? <span className="spinner" /> : <IconX width={13} height={13} />}
+            {isDeletingRoute === route.route_name ? <span className="spinner" /> : <Trash2 width={13} height={13} />}
             {isDeletingRoute === route.route_name ? 'Deleting…' : 'Delete Route'}
           </button>
         </div>,
@@ -585,7 +593,7 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
       </div>
       <div className="route-row__cell route-row__cell--vehicle">
         <span className={`vehicle-pill vehicle-pill--${route.vehicle_type === 'car' ? 'car' : 'bike'}`}>
-          {route.vehicle_type === 'car' ? <IconCar width={12} height={12} /> : <IconBike width={12} height={12} />}
+          {route.vehicle_type === 'car' ? <LIconCarFront width={12} height={12} /> : <LIconBike width={12} height={12} />}
           {route.vehicle_type === 'car' ? 'Car' : 'Bike'}
         </span>
       </div>
@@ -1145,7 +1153,7 @@ function SplitRouteList({ routes, capacityFor, selectedRouteName, onSelectRoute 
             <span className="split-route-row__body">
               <span className="split-route-row__name">{route.route_name}</span>
               <span className="split-route-row__meta">
-                {route.vehicle_type === 'car' ? <IconCar width={11} height={11} /> : <IconBike width={11} height={11} />}
+                {route.vehicle_type === 'car' ? <LIconCarFront width={11} height={11} /> : <LIconBike width={11} height={11} />}
                 {route.orders.length} of {capacity} stops
               </span>
             </span>
@@ -2454,7 +2462,7 @@ function RouteDetail({
             title="Switch this route's vehicle type"
             onClick={() => onToggleVehicle(route)}
           >
-            {route.vehicle_type === 'car' ? <IconCar width={14} height={14} /> : <IconBike width={14} height={14} />}
+            {route.vehicle_type === 'car' ? <LIconCarFront width={14} height={14} /> : <LIconBike width={14} height={14} />}
             Switch to {route.vehicle_type === 'car' ? 'Bike' : 'Car'}
             <IconRefresh width={11} height={11} />
           </button>
@@ -2997,10 +3005,10 @@ export default function RouteWorkspace({
   const backToList = () => setView('list');
 
   return (
-    <div className="board board--workspace" id="route-workspace">
+    <div className={`board board--workspace${tab === 'unassigned' ? ' board--workspace-unassigned' : ' board--workspace-routes'}`} id="route-workspace">
       <div className="workspace-tabs">
         <button type="button" className={`workspace-tab${tab === 'routes' ? ' workspace-tab--active' : ''}`} onClick={() => setTab('routes')}>
-          <IconRoute width={14} height={14} />
+          <LIconRoute width={14} height={14} />
           Routes
           <span className="workspace-tab__count mono-num">{routes.length}</span>
         </button>
@@ -3010,7 +3018,7 @@ export default function RouteWorkspace({
           className={`workspace-tab${tab === 'unassigned' ? ' workspace-tab--active' : ''}`}
           onClick={() => setTab('unassigned')}
         >
-          <IconInbox width={14} height={14} />
+          <PackageSearch width={14} height={14} />
           Unassigned Orders
           <span className="workspace-tab__count workspace-tab__count--warn mono-num">{pendingOrders.length}</span>
         </button>
@@ -3030,7 +3038,7 @@ export default function RouteWorkspace({
         />
       ) : routes.length === 0 ? (
         <div className="empty-state">
-          <IconInbox width={22} height={22} />
+          <PackageSearch width={22} height={22} />
           {isProcessing ? 'Building routes…' : 'Create your first delivery route to start organizing today\'s orders.'}
           <select
             className="stop-move add-route-select"
@@ -3051,14 +3059,20 @@ export default function RouteWorkspace({
         <div className="routes-page">
           <div className="routes-page__header">
             <div>
-              <h2 className="routes-page__title">Routes</h2>
+              <h2 className="routes-page__title"><LIconRoute width={20} height={20} /> Routes</h2>
               <p className="routes-page__subtitle">Manage delivery routes, vehicles and stops</p>
             </div>
             <div className="routes-page__header-actions">
               <div className="view-toggle" role="group" aria-label="Routes view">
-                <button type="button" className={`view-toggle__btn${viewMode === 'list' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('list')}>List</button>
-                <button type="button" className={`view-toggle__btn${viewMode === 'map' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('map')}>Map</button>
-                <button type="button" className={`view-toggle__btn${viewMode === 'split' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('split')}>Split</button>
+                <button type="button" className={`view-toggle__btn${viewMode === 'list' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('list')}>
+                  <LIconList width={13} height={13} /> List
+                </button>
+                <button type="button" className={`view-toggle__btn${viewMode === 'map' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('map')}>
+                  <LIconMap width={13} height={13} /> Map
+                </button>
+                <button type="button" className={`view-toggle__btn${viewMode === 'split' ? ' view-toggle__btn--active' : ''}`} onClick={() => setViewMode('split')}>
+                  <Columns2 width={13} height={13} /> Split
+                </button>
               </div>
               <select
                 className="stop-move add-route-select"
@@ -3071,7 +3085,7 @@ export default function RouteWorkspace({
                 <option value="car">Car</option>
               </select>
               <button type="button" className="btn btn--ghost" onClick={() => setShowManualAddressModal(true)}>
-                + Add Address Manually
+                <MapPinPlus width={14} height={14} /> Add Address Manually
               </button>
             </div>
           </div>

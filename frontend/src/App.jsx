@@ -14,6 +14,18 @@ import {
   IconSearch, IconBell, IconMenu, IconX, IconLayoutGrid, IconUpload, IconUsers, IconHistory,
   IconBarChart, IconFileText, IconSettings, IconSun, IconMoon,
 } from './icons';
+// Lucide - used to give the Dispatch/Fleet/Insights/System sections (the
+// sidebar nav past "Dashboard", and everything inside Routes/Unassigned
+// Orders/Failed Addresses/Drivers) their own, more specific icon language,
+// visually distinct from the small hand-drawn set icons.jsx's KPI tiles
+// and quick-nav cards keep using - see the per-section design notes below
+// for why the split is deliberate, not arbitrary.
+import {
+  Route as LIconRoute, PackageSearch, MapPinOff, History as LIconHistory, Radar,
+  Users as LIconUsers, ClipboardList, CarFront, FileBarChart, TrendingUp, BellRing, Settings2,
+  MapPinPlus, RotateCw, Eye, Trash2, UserPlus, UserX, KeyRound, Pencil, ListFilter,
+  Map as LIconMap, Columns2, Download as LIconDownload, MoreHorizontal,
+} from 'lucide-react';
 
 // Backend origin for deployments where frontend and backend aren't
 // same-origin (e.g. Render, where they're two separate services). Empty
@@ -66,33 +78,33 @@ const NAV_GROUPS = [
   {
     label: 'Dispatch',
     items: [
-      { key: 'generate', label: 'Routes', icon: IconRoute, anchor: 'toolbar-section' },
-      { key: 'unassigned', label: 'Unassigned Orders', icon: IconInbox, anchor: 'unassigned-board' },
-      { key: 'failed', label: 'Failed Addresses', icon: IconAlert, anchor: 'returns-board' },
-      { key: 'history', label: 'Route History', icon: IconHistory },
-      { key: 'live-tracking', label: 'Live Tracking', icon: IconGauge, anchor: 'unassigned-board' },
+      { key: 'generate', label: 'Routes', icon: LIconRoute, anchor: 'toolbar-section' },
+      { key: 'unassigned', label: 'Unassigned Orders', icon: PackageSearch, anchor: 'unassigned-board' },
+      { key: 'failed', label: 'Failed Addresses', icon: MapPinOff, anchor: 'returns-board' },
+      { key: 'history', label: 'Route History', icon: LIconHistory },
+      { key: 'live-tracking', label: 'Live Tracking', icon: Radar, anchor: 'unassigned-board' },
     ],
   },
   {
     label: 'Fleet',
     items: [
-      { key: 'drivers', label: 'Drivers', icon: IconUsers, anchor: 'drivers-board' },
-      { key: 'driver-data', label: 'Driver Data', icon: IconClock },
-      { key: 'vehicles', label: 'Vehicles', icon: IconCar, soon: true },
+      { key: 'drivers', label: 'Drivers', icon: LIconUsers, anchor: 'drivers-board' },
+      { key: 'driver-data', label: 'Driver Data', icon: ClipboardList },
+      { key: 'vehicles', label: 'Vehicles', icon: CarFront, soon: true },
     ],
   },
   {
     label: 'Insights',
     items: [
-      { key: 'reports', label: 'Reports', icon: IconFileText, soon: true },
-      { key: 'analytics', label: 'Analytics', icon: IconBarChart, soon: true },
+      { key: 'reports', label: 'Reports', icon: FileBarChart, soon: true },
+      { key: 'analytics', label: 'Analytics', icon: TrendingUp, soon: true },
     ],
   },
   {
     label: 'System',
     items: [
-      { key: 'notifications', label: 'Notifications', icon: IconBell, soon: true },
-      { key: 'settings', label: 'Settings', icon: IconSettings, soon: true },
+      { key: 'notifications', label: 'Notifications', icon: BellRing, soon: true },
+      { key: 'settings', label: 'Settings', icon: Settings2, soon: true },
     ],
   },
 ];
@@ -3591,11 +3603,11 @@ function App() {
           <div className="board board--drivers" id="drivers-board">
             <div className="board__header">
               <div className="board__header-group">
-                <h2 className="board__title"><IconUsers width={18} height={18} /> Drivers</h2>
+                <h2 className="board__title"><LIconUsers width={18} height={18} /> Drivers</h2>
                 <span className="board__count mono-num">{drivers.length}</span>
               </div>
               <button type="button" className="btn btn--primary board__header-action" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
-                <IconPlus width={14} height={14} /> Add Driver
+                <UserPlus width={14} height={14} /> Add Driver
               </button>
             </div>
             <p className="board__intro">
@@ -3642,15 +3654,19 @@ function App() {
                           <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
                           <td>
                             <div className="drivers-table__actions">
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>Edit</button>
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>Reset Password</button>
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>
+                                <Pencil width={12} height={12} /> Edit
+                              </button>
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>
+                                <KeyRound width={12} height={12} /> Reset Password
+                              </button>
                               <button
                                 type="button"
                                 className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
                                 disabled={isTogglingDriverStatus === driver.id}
                                 onClick={() => handleToggleDriverStatus(driver)}
                               >
-                                {isTogglingDriverStatus === driver.id && <span className="spinner" />}
+                                {isTogglingDriverStatus === driver.id ? <span className="spinner" /> : <UserX width={12} height={12} />}
                                 {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
                               </button>
                               <button
@@ -3659,7 +3675,7 @@ function App() {
                                 disabled={isDeletingDriver === driver.id}
                                 onClick={() => handleDeleteDriver(driver)}
                               >
-                                {isDeletingDriver === driver.id && <span className="spinner" />}
+                                {isDeletingDriver === driver.id ? <span className="spinner" /> : <Trash2 width={12} height={12} />}
                                 {isDeletingDriver === driver.id ? 'Deleting…' : 'Delete'}
                               </button>
                             </div>
@@ -3676,7 +3692,11 @@ function App() {
           {/* RETURNS BOARD */}
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
-              <h2 className="board__title"><IconAlert width={18} height={18} /> Returns</h2>
+              {/* Was labeled "Returns" here while the sidebar nav item
+                  pointing at this exact section says "Failed Addresses" -
+                  same content, two different names for it depending on
+                  which one you looked at. Matched to the nav label. */}
+              <h2 className="board__title"><MapPinOff width={18} height={18} /> Failed Addresses</h2>
               <span className="board__count mono-num">{failedOrders.length}</span>
             </div>
             <div className="board__body">
