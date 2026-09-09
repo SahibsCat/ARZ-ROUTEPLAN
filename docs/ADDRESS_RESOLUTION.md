@@ -21,11 +21,14 @@ Customer's address (stored untouched on Order.address)
    │                                                → this is the QUERY
    ├─ cache lookup           crud.get_cached_geocode
    │
-   ├─ Google Geocoding API   google_geocoder.py     up to 6 query variants
+   ├─ Google Geocoding API   google_geocoder.py     multi-stage query variants
    │     · raw query
+   │     · spelling-corrected query
    │     · landmark phrase stripped
    │     · leading name segment stripped / house number reordered
-   │     · Places Find Place → Place Details (on original, then cleaned)
+   │     · Places Text Search / Details (original address)
+   │     · Targeted Building Complex Places query ("Building, Area, India")
+   │     · Places Text Search / Details (cleaned address)
    │
    ├─ _score_result()        precision of the match (rooftop/range/centre)
    ├─ _score_component_match() does it agree with what the customer wrote?

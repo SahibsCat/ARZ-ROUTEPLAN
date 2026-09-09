@@ -1264,14 +1264,11 @@ function AddAddressModal({
   onConfirm, onConfirmFromUnassigned, onClose, isSubmitting,
 }) {
   const eligibleSourceRoutes = routes.filter((r) => r.route_name !== destinationRoute.route_name && r.orders.length > 0);
-  // Unassigned Orders is offered as a source whenever there's anything in
-  // it, listed first since it's usually the more likely place an admin
-  // wants to pull one more delivery from.
   const hasUnassigned = pendingOrders.length > 0;
   const [sourceRouteName, setSourceRouteName] = useState(
     hasUnassigned ? UNASSIGNED_SOURCE : (eligibleSourceRoutes[0]?.route_name || '')
   );
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const fromUnassigned = sourceRouteName === UNASSIGNED_SOURCE;
   const sourceRoute = fromUnassigned ? null : eligibleSourceRoutes.find((r) => r.route_name === sourceRouteName) || null;
@@ -1281,17 +1278,38 @@ function AddAddressModal({
   const destinationCount = destinationRoute.orders.length;
   const remainingSlots = Math.max(maxCapacity - destinationCount, 0);
 
-  const changeSource = (name) => { setSourceRouteName(name); setSelectedId(null); };
+  const changeSource = (name) => {
+    setSourceRouteName(name);
+    setSelectedIds([]);
+  };
+
+  const toggleSelection = (idStr) => {
+    setSelectedIds((prev) =>
+      prev.includes(idStr) ? prev.filter((i) => i !== idStr) : [...prev, idStr]
+    );
+  };
+
+  const isAllSelected =
+    sourceOrders.length > 0 &&
+    sourceOrders.every((o) => selectedIds.includes(String(o.order_id)));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(sourceOrders.map((o) => String(o.order_id)));
+    }
+  };
 
   const handleConfirm = async () => {
-    if (!selectedId || remainingSlots < 1) return;
+    if (selectedIds.length === 0) return;
     if (fromUnassigned) {
-      const ok = await onConfirmFromUnassigned([selectedId]);
+      const ok = await onConfirmFromUnassigned(selectedIds);
       if (ok) onClose();
       return;
     }
     if (!sourceRoute) return;
-    const ok = await onConfirm(sourceRoute.route_id, [selectedId]);
+    const ok = await onConfirm(sourceRoute.route_id, selectedIds);
     if (ok) onClose();
   };
 
@@ -1299,22 +1317,19 @@ function AddAddressModal({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
-          <h3>Add Delivery Point</h3>
+          <h3>Add Delivery Points</h3>
           <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
         </div>
 
         <div className="modal__meta">
           <span>{destinationRoute.route_name}</span>
           <span>Vehicle: {destinationRoute.vehicle_type === 'car' ? 'Car' : 'Bike'}</span>
-          <span>Current addresses: <strong className="mono-num">{destinationCount} / {baseCapacity}</strong> + 1 manual override</span>
+          <span>Current addresses: <strong className="mono-num">{destinationCount} / {baseCapacity}</strong></span>
         </div>
 
         <div className="modal__body">
           <p className="modal__hint">
-            {destinationCount >= baseCapacity
-              ? `This route is at its normal capacity (${baseCapacity}). Select exactly one delivery point from `
-                + 'Unassigned Orders or another route to add here as a manual override - only one is allowed per route.'
-              : 'Select one specific delivery point from Unassigned Orders or another route to add to this route.'}
+            Select one or more delivery points from Unassigned Orders or another route to add to this route.
           </p>
           <label className="modal__field-label" htmlFor="add-address-source">Select Source</label>
           {!hasUnassigned && eligibleSourceRoutes.length === 0 ? (
@@ -1337,30 +1352,51 @@ function AddAddressModal({
                 ))}
               </select>
 
-              <div className="modal__address-list">
-                {sourceOrders.map((order) => (
-                  <label key={order.order_id} className="address-pick-row">
+              {sourceOrders.length > 0 && (
+                <div className="modal__select-all-bar">
+                  <label className="select-all-label">
                     <input
-                      type="radio"
-                      name="add-address-selection"
-                      checked={selectedId === String(order.order_id)}
-                      onChange={() => setSelectedId(String(order.order_id))}
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
                     />
-                    <div className="address-pick-row__body">
-                      <div className="address-pick-row__top">
-                        <span className="address-pick-row__order-id">Order #{order.order_id}</span>
-                        <span className="address-pick-row__customer">{order.customer_name}</span>
-                        {order.is_late && <span className="stop-status stop-status--late">🔴 Late</span>}
-                      </div>
-                      {order.area && <span className="route-stop__area">{order.area}</span>}
-                      <span className="address-pick-row__address">{order.address}</span>
-                      <span className="address-pick-row__meta">
-                        {fromUnassigned ? 'Currently: Unassigned' : `Current route: ${sourceRoute.route_name}`}
-                        {order.delivery_time ? ` · Slot ${order.delivery_time}` : ''}
-                      </span>
-                    </div>
+                    <span>Select All ({sourceOrders.length} available)</span>
                   </label>
-                ))}
+                  {selectedIds.length > 0 && (
+                    <button type="button" className="btn-link-compact" onClick={() => setSelectedIds([])}>
+                      Clear Selection ({selectedIds.length})
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="modal__address-list">
+                {sourceOrders.map((order) => {
+                  const idStr = String(order.order_id);
+                  const isChecked = selectedIds.includes(idStr);
+                  return (
+                    <label key={order.order_id} className="address-pick-row">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleSelection(idStr)}
+                      />
+                      <div className="address-pick-row__body">
+                        <div className="address-pick-row__top">
+                          <span className="address-pick-row__order-id">Order #{order.order_id}</span>
+                          <span className="address-pick-row__customer">{order.customer_name}</span>
+                          {order.is_late && <span className="stop-status stop-status--late">🔴 Late</span>}
+                        </div>
+                        {order.area && <span className="route-stop__area">{order.area}</span>}
+                        <span className="address-pick-row__address">{order.address}</span>
+                        <span className="address-pick-row__meta">
+                          {fromUnassigned ? 'Currently: Unassigned' : `Current route: ${sourceRoute.route_name}`}
+                          {order.delivery_time ? ` · Slot ${order.delivery_time}` : ''}
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </>
           )}
@@ -1368,14 +1404,8 @@ function AddAddressModal({
 
         {(hasUnassigned || eligibleSourceRoutes.length > 0) && (
           <div className="modal__summary">
-            <span>Selected: <strong className="mono-num">{selectedId ? '1 address' : 'none yet'}</strong></span>
-            <span>Destination Route after adding: <strong className="mono-num">{destinationCount + (selectedId ? 1 : 0)} / {maxCapacity}</strong></span>
-          </div>
-        )}
-        {remainingSlots < 1 && (
-          <div className="modal__warning">
-            <IconAlert width={13} height={13} />
-            This route has already used its one manual override - undo it first to free the slot up again.
+            <span>Selected: <strong className="mono-num">{selectedIds.length > 0 ? `${selectedIds.length} address${selectedIds.length === 1 ? '' : 'es'}` : 'none yet'}</strong></span>
+            <span>Destination Route after adding: <strong className="mono-num">{destinationCount + selectedIds.length}</strong></span>
           </div>
         )}
 
@@ -1384,10 +1414,10 @@ function AddAddressModal({
           <button
             type="button"
             className="btn btn--primary"
-            disabled={(!fromUnassigned && !sourceRoute) || !selectedId || remainingSlots < 1 || isSubmitting}
+            disabled={(!fromUnassigned && !sourceRoute) || selectedIds.length === 0 || isSubmitting}
             onClick={handleConfirm}
           >
-            {isSubmitting ? 'Adding…' : 'Add to Route'}
+            {isSubmitting ? 'Adding…' : `Add ${selectedIds.length > 0 ? selectedIds.length : ''} to Route`}
           </button>
         </div>
       </div>
@@ -1512,23 +1542,107 @@ function ManualAddressModal({ onConfirm, onClose, isSubmitting }) {
 // set_manual_location) - never silently overwritten by a future
 // auto-geocode again. Exported (named, alongside this file's default
 // export) so App.jsx's Failed Orders ticket panel can use it too.
+export function EmbeddedPinAdjuster({ order, onSaveLocation, isSubmitting }) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+
+  const hasStartingPoint = order?.lat != null && order?.lng != null;
+  const hasSuggestion = order?.suggested_lat != null && order?.suggested_lng != null;
+
+  const [position, setPosition] = useState(() => {
+    if (hasStartingPoint) return { lat: order.lat, lng: order.lng };
+    if (hasSuggestion) return { lat: order.suggested_lat, lng: order.suggested_lng };
+    return { lat: 12.989953044885272, lng: 80.21804157624011 };
+  });
+
+  const [isMoved, setIsMoved] = useState(false);
+
+  useEffect(() => {
+    if (hasStartingPoint) setPosition({ lat: order.lat, lng: order.lng });
+    else if (hasSuggestion) setPosition({ lat: order.suggested_lat, lng: order.suggested_lng });
+    else setPosition({ lat: 12.989953044885272, lng: 80.21804157624011 });
+    setIsMoved(false);
+  }, [order?.order_id, order?.lat, order?.lng, order?.suggested_lat, order?.suggested_lng]);
+
+  const handleDragEnd = (e) => {
+    if (e?.latLng) {
+      setPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      setIsMoved(true);
+    }
+  };
+
+  const handleSave = () => {
+    if (onSaveLocation) {
+      onSaveLocation(position.lat, position.lng);
+      setIsMoved(false);
+    }
+  };
+
+  return (
+    <div className="embedded-pin-adjuster">
+      <div className="pin-adjuster__banner">
+        <span className="pin-adjuster__title">📍 Interactive Pin Location & Map Preview</span>
+        <span className="pin-adjuster__sub">Drag the marker on the map below to set the exact delivery point</span>
+      </div>
+
+      <div className="adjust-location-map embedded-map">
+        {loadError ? (
+          <div className="empty-state">Could not load Google Maps.</div>
+        ) : !isLoaded ? (
+          <div className="empty-state">Loading Google Maps…</div>
+        ) : (
+          <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            center={position}
+            zoom={17}
+            options={{
+              streetViewControl: false,
+              fullscreenControl: true,
+              mapTypeControl: true,
+              mapTypeControlOptions: {
+                mapTypeIds: ['roadmap', 'hybrid'],
+                style: window.google?.maps?.MapTypeControlStyle?.HORIZONTAL_BAR,
+                position: window.google?.maps?.ControlPosition?.TOP_RIGHT,
+              },
+            }}
+          >
+            <Marker
+              position={position}
+              draggable
+              onDragEnd={handleDragEnd}
+            />
+          </GoogleMap>
+        )}
+      </div>
+
+      <div className="pin-adjuster__foot">
+        <div className="pin-coords">
+          <span>Lat: <strong className="mono-num">{position.lat.toFixed(6)}</strong></span>
+          <span>Lng: <strong className="mono-num">{position.lng.toFixed(6)}</strong></span>
+          {isMoved && <span className="pin-moved-badge">Pin Moved</span>}
+        </div>
+        <button
+          type="button"
+          className="btn btn--primary btn--compact"
+          onClick={handleSave}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'Saving Pin…' : 'Save Pin Position'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AdjustLocationModal({ order, onConfirm, onClose, isSubmitting }) {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
   const hasStartingPoint = order?.lat != null && order?.lng != null;
-  // A flagged order still usually carries a suggested_lat/suggested_lng -
-  // the geocoder found the right street, just couldn't confirm the exact
-  // house - so Adjust Location opens centered there (a probably-close
-  // guess to drag from) instead of blank/depot-centered, which used to
-  // mean starting from scratch on whatever street the address actually
-  // was, city-wide. Never used as-is: still just a starting position for
-  // the draggable pin, same as any other case here.
   const hasSuggestion = order?.suggested_lat != null && order?.suggested_lng != null;
-  // Mirrors backend/app/route_service.py's VELOCHERY_DEPOT - last-resort
-  // starting point only when there's neither a confirmed nor a suggested
-  // location at all (a hard geocode failure with nothing to go on).
   const [position, setPosition] = useState(
     hasStartingPoint
       ? { lat: order.lat, lng: order.lng }
@@ -1553,21 +1667,8 @@ export function AdjustLocationModal({ order, onConfirm, onClose, isSubmitting })
         <div className="modal__body">
           <p className="modal__hint">
             Drag the pin to the customer's exact delivery point{order?.order_id ? ` for order #${order.order_id}` : ''}.
-            This becomes the permanent, manually-verified location - it will never be silently overwritten by a
-            future geocode.
+            This becomes the permanent, manually-verified location.
           </p>
-          {!hasStartingPoint && hasSuggestion && (
-            <p className="modal__hint">
-              This is Google's best guess for the street - it found the road but couldn't confirm the exact house/
-              door number, so the pin may be off by a bit. Drag it to the exact delivery point.
-            </p>
-          )}
-          {!hasStartingPoint && !hasSuggestion && (
-            <p className="modal__hint">
-              This order has no location yet, so the map opens centered on the depot - drag the pin to where it
-              should actually be.
-            </p>
-          )}
 
           <div className="adjust-location-map">
             {loadError ? (

@@ -34,26 +34,11 @@ def clean_address(address: str) -> str:
 
     Never mutates what the customer typed - Order.address keeps the
     original; this is only ever the text handed to a provider."""
-    if not address:
+    if not address or not address.strip():
         return ""
 
-    # Deliberately does NOT also apply correct_locality_spelling here.
-    # That correction can occasionally be WRONG (real production case:
-    # "Pallavakam" corrected to "Pallavaram" - a different, distant real
-    # locality, before a tie-break fix closed that specific case) -
-    # applying it here would make it the text EVERY validation check
-    # downstream compares Google's answer against, so a wrong correction
-    # could self-confirm. GoogleGeocoder.geocode() instead tries the
-    # spelling-corrected form as one additional QUERY attempt while
-    # always validating against the customer's true original text - see
-    # its own docstring. Other providers (Mapbox/Nominatim) don't get
-    # this benefit; they also don't have equivalent validation depth to
-    # safely house a correction that can occasionally misfire.
     address = address_parser.normalize(address)
-    if not address:
-        # Whitespace/punctuation-only input has nothing to geocode -
-        # appending the city below would turn it into ", Chennai, India"
-        # and send a query for the middle of the city.
+    if not address or not address.strip():
         return ""
 
     lower_address = address.lower()
@@ -206,7 +191,12 @@ def _interpret_result(
     variant match, Mapbox's low-relevance results) is treated the same way
     a hard failure is - lat/lng stay empty and it's surfaced through the
     existing Failed Orders / retry workflow, rather than silently accepting
-    an imprecise guess as the order's real location.
+    an imprecise guess as the order's real location. This is the whole
+    point of everything upstream of this function: a real, wrong-looking
+    pin is a categorically worse outcome than an honest "needs a human
+    look", and nothing here is allowed to blur that line - see
+    _try_learned_building_match and the confidence-cap machinery in
+    google_geocoder.py for how hard "genuinely resolved" is to earn.
 
     A flagged (not hard-failed) result still carries real coordinates the
     provider found SOMETHING at - most often the correct street/area, just
@@ -279,12 +269,12 @@ def geocode_address_detailed(
     """Same lookup as geocode_address(), but never collapses a flagged
     (NEEDS_MANUAL_VERIFICATION) match down to a bare None - callers that
     need to offer the admin a starting pin for Adjust Location (the retry-
-    a-Failed-Order flow) use this instead of geocode_address() so a
-    genuinely-unresolvable address (None here too - clean_address emptied
-    it out, or the provider found literally nothing) still reads
-    differently from "found the street, just not confirmed house-number-
-    precise" (suggested_lat/suggested_lng/confidence set, lat/lng still
-    None - never treated as the order's real location, see
+    a-Failed-Order flow, and /api/debug/geocode) use this instead of
+    geocode_address() so a genuinely-unresolvable address (None here too -
+    clean_address emptied it out, or the provider found literally nothing)
+    still reads differently from "found the street, just not confirmed
+    house-number-precise" (suggested_lat/suggested_lng/confidence set,
+    lat/lng still None - never treated as the order's real location, see
     _interpret_result's docstring for why)."""
     cleaned = clean_address(address)
     if not cleaned:

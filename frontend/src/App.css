@@ -1,5 +1,5 @@
 /* =======================================================================
-   RootPlan Design System — Pixel-Perfect, Stable SaaS Design System
+   RootPlan Design System — Next-Gen Modern SaaS UI
    Fonts: Inter for UI typography, IBM Plex Mono for tabular data & IDs
 ======================================================================= */
 @import "@fontsource-variable/inter/wght.css";
@@ -8,68 +8,77 @@
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 
 /* =======================================================================
-   Tokens & Color Palette
+   Tokens & Color Palette (Clean Slate + Electric Violet/Blue)
 ======================================================================= */
 :root {
-  --paper: #f8fafc;
+  --paper: #fafafa;
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --surface-3: #e2e8f0;
-  --ink: #0f172a;
-  --ink-soft: #475569;
-  --ink-faint: #64748b;
-  --rule: #e2e8f0;
-  --rule-soft: #f1f5f9;
+  --surface-2: #f4f4f5;
+  --surface-3: #e5e7eb;
+  --ink: #111827;
+  --ink-soft: #4b5563;
+  --ink-faint: #9ca3af;
+  --rule: #e5e7eb;
+  --rule-soft: #f3f4f6;
 
-  --primary: #4f46e5;
-  --primary-strong: #4338ca;
-  --primary-soft: #eef2ff;
-  --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+  /* Electric Violet Primary */
+  --primary: #6d28d9;
+  --primary-strong: #5b21b6;
+  --primary-soft: #f5f3ff;
+  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
   
   --accent: #4f46e5;
-  --accent-strong: #3730a3;
-  --accent-soft: #eef2ff;
+  --accent-strong: #4338ca;
+  --accent-soft: #e0e7ff;
   --accent-glow: rgba(79, 70, 229, 0.15);
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
 
-  --btn-fill: #4f46e5;
-  --btn-fill-hover: #4338ca;
+  --btn-fill: #111827;
+  --btn-fill-hover: #1f2937;
   --btn-text: #ffffff;
   --btn-font-weight: 600;
 
+  /* Status Colors */
   --signal: #d97706;
   --signal-soft: #fffbeb;
   --good: #059669;
   --good-soft: #ecfdf5;
-  --critical: #e11d48;
-  --critical-soft: #fff1f2;
+  --critical: #dc2626;
+  --critical-soft: #fef2f2;
   --info: #0284c7;
   --info-soft: #f0f9ff;
-  --neutral: #64748b;
-  --neutral-soft: #f1f5f9;
+  --neutral: #6b7280;
+  --neutral-soft: #f3f4f6;
 
-  --glass-bg: rgba(255, 255, 255, 0.92);
-  --glass-border: 1px solid rgba(226, 232, 240, 0.8);
-  --glass-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08);
+  /* Shadows & Depth */
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: 1px solid rgba(226, 232, 240, 0.6);
+  --glass-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
 
-  --sidebar-bg: #0f172a;
-  --sidebar-ink: #f8fafc;
-  --sidebar-ink-soft: #94a3b8;
-  --sidebar-ink-faint: #64748b;
+  /* Sidebar */
+  --sidebar-bg: #030712;
+  --sidebar-ink: #f9fafb;
+  --sidebar-ink-soft: #9ca3af;
+  --sidebar-ink-faint: #4b5563;
   --sidebar-rule: rgba(255, 255, 255, 0.08);
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-  --sidebar-active-bg: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0.04) 100%);
-  --sidebar-active-ink: #818cf8;
-  --sidebar-active-border: #6366f1;
-  --sidebar-soon-active-bg: rgba(245, 158, 11, 0.15);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.1);
+  --sidebar-active-ink: #ffffff;
+  --sidebar-active-border: #7c3aed;
+  --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
-  --radius-xs: 6px;
+  /* Radii */
+  --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --radius-xl: 20px;
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 12px 28px -6px rgba(15, 23, 42, 0.12), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
+  --radius-xl: 24px;
+
+  /* Modern Layered Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
 
   --font-display: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-body: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -78,185 +87,182 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #090d16;
-    --surface: #141e30;
-    --surface-2: #1c2841;
-    --surface-3: #34435e;
-    --ink: #f8fafc;
-    --ink-soft: #94a3b8;
-    --ink-faint: #64748b;
-    --rule: rgba(255, 255, 255, 0.14);
-    --rule-soft: rgba(255, 255, 255, 0.08);
+    --paper: #030712;
+    --surface: #111827;
+    --surface-2: #1f2937;
+    --surface-3: #374151;
+    --ink: #f9fafb;
+    --ink-soft: #9ca3af;
+    --ink-faint: #6b7280;
+    --rule: rgba(255, 255, 255, 0.1);
+    --rule-soft: rgba(255, 255, 255, 0.05);
 
-    --primary: #6366f1;
-    --primary-strong: #818cf8;
-    --primary-soft: rgba(99, 102, 241, 0.22);
-    --primary-gradient: linear-gradient(135deg, #3730a3 0%, #312e81 100%);
+    --primary: #8b5cf6;
+    --primary-strong: #a78bfa;
+    --primary-soft: rgba(139, 92, 246, 0.15);
+    --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
     
     --accent: #6366f1;
     --accent-strong: #818cf8;
-    --accent-soft: rgba(99, 102, 241, 0.22);
+    --accent-soft: rgba(99, 102, 241, 0.15);
     --accent-glow: rgba(99, 102, 241, 0.2);
+    --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
 
-    --btn-fill: #3730a3;
-    --btn-fill-hover: #312e81;
-    --btn-text: #e0e7ff;
+    --btn-fill: #ffffff;
+    --btn-fill-hover: #f3f4f6;
+    --btn-text: #111827;
 
-    --signal: #f59e0b;
-    --signal-soft: rgba(245, 158, 11, 0.22);
+    --signal: #fbbf24;
+    --signal-soft: rgba(245, 158, 11, 0.15);
     --good: #34d399;
-    --good-soft: rgba(52, 211, 153, 0.2);
-    --critical: #fb7185;
-    --critical-soft: rgba(251, 113, 133, 0.2);
+    --good-soft: rgba(16, 185, 129, 0.15);
+    --critical: #ef4444;
+    --critical-soft: rgba(239, 68, 68, 0.15);
     --info: #38bdf8;
-    --info-soft: rgba(56, 189, 248, 0.2);
-    --neutral: #94a3b8;
-    --neutral-soft: rgba(148, 163, 184, 0.18);
+    --info-soft: rgba(56, 189, 248, 0.15);
+    --neutral: #9ca3af;
+    --neutral-soft: rgba(156, 163, 175, 0.1);
 
-    --glass-bg: rgba(17, 24, 39, 0.88);
+    --glass-bg: rgba(17, 24, 39, 0.85);
     --glass-border: 1px solid rgba(255, 255, 255, 0.08);
-    --glass-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.45);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 
-    --sidebar-bg: #0b0f19;
-    --sidebar-ink: #f8fafc;
-    --sidebar-ink-soft: #94a3b8;
-    --sidebar-ink-faint: #64748b;
-    --sidebar-rule: rgba(255, 255, 255, 0.08);
-    --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-    --sidebar-active-bg: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0.04) 100%);
-    --sidebar-active-ink: #818cf8;
-    --sidebar-active-border: #6366f1;
-    --sidebar-soon-active-bg: rgba(245, 158, 11, 0.15);
+    --sidebar-bg: #030712;
+    --sidebar-ink: #f9fafb;
+    --sidebar-ink-soft: #9ca3af;
+    --sidebar-ink-faint: #4b5563;
+    --sidebar-rule: rgba(255, 255, 255, 0.05);
+    --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+    --sidebar-active-bg: rgba(255, 255, 255, 0.1);
+    --sidebar-active-ink: #ffffff;
+    --sidebar-active-border: #8b5cf6;
+    --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 }
 
 :root[data-theme="dark"] {
-  --paper: #090d16;
-  --surface: #141e30;
-  --surface-2: #1c2841;
-  --surface-3: #34435e;
-  --ink: #f8fafc;
-  --ink-soft: #94a3b8;
-  --ink-faint: #64748b;
-  --rule: rgba(255, 255, 255, 0.14);
-  --rule-soft: rgba(255, 255, 255, 0.08);
+  --paper: #030712;
+  --surface: #111827;
+  --surface-2: #1f2937;
+  --surface-3: #374151;
+  --ink: #f9fafb;
+  --ink-soft: #9ca3af;
+  --ink-faint: #6b7280;
+  --rule: rgba(255, 255, 255, 0.1);
+  --rule-soft: rgba(255, 255, 255, 0.05);
 
-  --primary: #6366f1;
-  --primary-strong: #818cf8;
-  --primary-soft: rgba(99, 102, 241, 0.22);
-  --primary-gradient: linear-gradient(135deg, #3730a3 0%, #312e81 100%);
+  --primary: #8b5cf6;
+  --primary-strong: #a78bfa;
+  --primary-soft: rgba(139, 92, 246, 0.15);
+  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
 
   --accent: #6366f1;
   --accent-strong: #818cf8;
-  --accent-soft: rgba(99, 102, 241, 0.22);
+  --accent-soft: rgba(99, 102, 241, 0.15);
   --accent-glow: rgba(99, 102, 241, 0.2);
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
 
-  --btn-fill: #3730a3;
-  --btn-fill-hover: #312e81;
-  --btn-text: #e0e7ff;
+  --btn-fill: #ffffff;
+  --btn-fill-hover: #f3f4f6;
+  --btn-text: #111827;
 
-  --signal: #f59e0b;
-  --signal-soft: rgba(245, 158, 11, 0.22);
+  --signal: #fbbf24;
+  --signal-soft: rgba(245, 158, 11, 0.15);
   --good: #34d399;
-  --good-soft: rgba(52, 211, 153, 0.2);
-  --critical: #fb7185;
-  --critical-soft: rgba(251, 113, 133, 0.2);
+  --good-soft: rgba(16, 185, 129, 0.15);
+  --critical: #ef4444;
+  --critical-soft: rgba(239, 68, 68, 0.15);
   --info: #38bdf8;
-  --info-soft: rgba(56, 189, 248, 0.2);
-  --neutral: #94a3b8;
-  --neutral-soft: rgba(148, 163, 184, 0.18);
+  --info-soft: rgba(56, 189, 248, 0.15);
+  --neutral: #9ca3af;
+  --neutral-soft: rgba(156, 163, 175, 0.1);
 
-  --glass-bg: rgba(17, 24, 39, 0.88);
+  --glass-bg: rgba(17, 24, 39, 0.85);
   --glass-border: 1px solid rgba(255, 255, 255, 0.08);
-  --glass-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.45);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 
-  --sidebar-bg: #0b0f19;
-  --sidebar-ink: #f8fafc;
-  --sidebar-ink-soft: #94a3b8;
-  --sidebar-ink-faint: #64748b;
-  --sidebar-rule: rgba(255, 255, 255, 0.08);
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-  --sidebar-active-bg: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0.04) 100%);
-  --sidebar-active-ink: #818cf8;
-  --sidebar-active-border: #6366f1;
-  --sidebar-soon-active-bg: rgba(245, 158, 11, 0.15);
+  --sidebar-bg: #030712;
+  --sidebar-ink: #f9fafb;
+  --sidebar-ink-soft: #9ca3af;
+  --sidebar-ink-faint: #4b5563;
+  --sidebar-rule: rgba(255, 255, 255, 0.05);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.1);
+  --sidebar-active-ink: #ffffff;
+  --sidebar-active-border: #8b5cf6;
+  --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 :root[data-theme="light"] {
-  --paper: #f8fafc;
+  --paper: #fafafa;
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --surface-3: #e2e8f0;
-  --ink: #0f172a;
-  --ink-soft: #475569;
-  --ink-faint: #64748b;
-  --rule: #e2e8f0;
-  --rule-soft: #f1f5f9;
+  --surface-2: #f4f4f5;
+  --surface-3: #e5e7eb;
+  --ink: #111827;
+  --ink-soft: #4b5563;
+  --ink-faint: #9ca3af;
+  --rule: #e5e7eb;
+  --rule-soft: #f3f4f6;
 
-  --primary: #4f46e5;
-  --primary-strong: #4338ca;
-  --primary-soft: #eef2ff;
-  --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+  --primary: #6d28d9;
+  --primary-strong: #5b21b6;
+  --primary-soft: #f5f3ff;
+  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
 
   --accent: #4f46e5;
-  --accent-strong: #3730a3;
-  --accent-soft: #eef2ff;
+  --accent-strong: #4338ca;
+  --accent-soft: #e0e7ff;
   --accent-glow: rgba(79, 70, 229, 0.15);
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
 
-  --btn-fill: #4f46e5;
-  --btn-fill-hover: #4338ca;
+  --btn-fill: #111827;
+  --btn-fill-hover: #1f2937;
   --btn-text: #ffffff;
 
   --signal: #d97706;
   --signal-soft: #fffbeb;
   --good: #059669;
   --good-soft: #ecfdf5;
-  --critical: #e11d48;
-  --critical-soft: #fff1f2;
+  --critical: #dc2626;
+  --critical-soft: #fef2f2;
   --info: #0284c7;
   --info-soft: #f0f9ff;
-  --neutral: #64748b;
-  --neutral-soft: #f1f5f9;
+  --neutral: #6b7280;
+  --neutral-soft: #f3f4f6;
 
-  --glass-bg: rgba(255, 255, 255, 0.92);
-  --glass-border: 1px solid rgba(226, 232, 240, 0.8);
-  --glass-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: 1px solid rgba(226, 232, 240, 0.6);
+  --glass-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
 
-  --sidebar-bg: #0f172a;
-  --sidebar-ink: #f8fafc;
-  --sidebar-ink-soft: #94a3b8;
-  --sidebar-ink-faint: #64748b;
+  --sidebar-bg: #030712;
+  --sidebar-ink: #f9fafb;
+  --sidebar-ink-soft: #9ca3af;
+  --sidebar-ink-faint: #4b5563;
   --sidebar-rule: rgba(255, 255, 255, 0.08);
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-  --sidebar-active-bg: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0.04) 100%);
-  --sidebar-active-ink: #818cf8;
-  --sidebar-active-border: #6366f1;
-  --sidebar-soon-active-bg: rgba(245, 158, 11, 0.15);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.1);
+  --sidebar-active-ink: #ffffff;
+  --sidebar-active-border: #7c3aed;
+  --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 12px 28px -6px rgba(15, 23, 42, 0.12), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 /* Base Resets & Global Button Stability */
 * { box-sizing: border-box; }
-/* Every spacing/radius/font-size value in this app is in rem, so
-   dialing the root size down scales the whole site proportionally in
-   one place - text, padding, gaps, icons via em-sized containers, all
-   slightly more compact - instead of hand-tuning every component. */
-/* Text and container padding were both riding the same rem-based root
-   size, so shrinking one to make cards more compact shrunk the other
-   too far to read comfortably. Nudged back up slightly for text; the
-   container/card padding reductions below are now a separate, explicit
-   lever instead of also being tied to this value. */
 html { font-size: 14.5px; scroll-behavior: smooth; }
 html, body, #root { margin: 0; padding: 0; min-height: 100vh; }
 body {
@@ -268,19 +274,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Ensure ZERO button scaling/jumping across the application */
 button, .btn, .toolbar-btn, .quick-action, .session-tab, .nav-item, .dash-link, .workspace-tab {
   transform: none !important;
   box-sizing: border-box !important;
-}
-button:hover, button:active, button:focus,
-.btn:hover, .btn:active, .btn:focus,
-.toolbar-btn:hover, .toolbar-btn:active, .toolbar-btn:focus,
-.quick-action:hover, .quick-action:active, .quick-action:focus,
-.dash-link:hover, .dash-link:active, .dash-link:focus,
-.session-tab:hover, .session-tab:active, .session-tab:focus,
-.nav-item:hover, .nav-item:active, .nav-item:focus {
-  transform: none !important;
 }
 
 .mono-num {
@@ -294,29 +290,20 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--rule) transparent;
 }
-::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background-color: var(--rule);
-  border-radius: 20px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  transition: background-color 0.2s ease;
+  background-color: var(--ink-faint);
+  border-radius: 10px;
 }
-::-webkit-scrollbar-thumb:hover { background-color: var(--ink-faint); }
-::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--ink-soft); }
 
-.sidebar__nav { scrollbar-width: none; -ms-overflow-style: none; }
-.sidebar__nav::-webkit-scrollbar { display: none; }
-
-/* Focus Styles */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
 textarea:focus-visible, [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
-.sidebar :is(a, button, [tabindex]):focus-visible { outline-color: var(--sidebar-active-ink); }
 
 /* =======================================================================
    App Shell Layout
@@ -353,7 +340,6 @@ textarea:focus-visible, [tabindex]:focus-visible {
   flex-direction: column;
   transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 40;
-  backdrop-filter: blur(16px);
 }
 .sidebar--collapsed { --sidebar-w: 78px; }
 
@@ -382,16 +368,8 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .sidebar--collapsed .sidebar__brand-text { display: none; }
 
 .brand-logo { width: auto; flex: none; }
-.brand-logo--light { display: block; }
-.brand-logo--dark { display: none; }
-@media (prefers-color-scheme: dark) {
-  .brand-logo--light { display: none; }
-  .brand-logo--dark { display: block; }
-}
-:root[data-theme="dark"] .brand-logo--light { display: none; }
-:root[data-theme="dark"] .brand-logo--dark { display: block; }
-:root[data-theme="light"] .brand-logo--light { display: block; }
-:root[data-theme="light"] .brand-logo--dark { display: none; }
+.brand-logo--light { display: none; }
+.brand-logo--dark { display: block; }
 .sidebar .brand-logo--light { display: none !important; }
 .sidebar .brand-logo--dark { display: block !important; }
 
@@ -406,7 +384,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border: 1px solid var(--sidebar-rule);
   background: rgba(255, 255, 255, 0.04);
   color: var(--sidebar-ink-soft);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -424,13 +402,13 @@ textarea:focus-visible, [tabindex]:focus-visible {
   padding: 1rem 0.8rem;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.35rem;
 }
 
 .sidebar__section-label {
   font-size: 0.65rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--sidebar-ink-faint);
   padding: 1rem 0.75rem 0.4rem;
@@ -453,7 +431,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   width: 100%;
   text-align: left;
   position: relative;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease;
 }
 .nav-item:hover {
   color: var(--sidebar-ink);
@@ -468,21 +446,21 @@ textarea:focus-visible, [tabindex]:focus-visible {
   content: '';
   position: absolute;
   left: 0;
-  top: 15%;
-  bottom: 15%;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 60%;
   width: 3px;
   background: var(--sidebar-active-border);
   border-radius: 4px;
-  box-shadow: 0 0 8px var(--sidebar-active-border);
 }
-.nav-item--soon { opacity: 0.85; }
+.nav-item--soon { opacity: 0.6; }
 .nav-item__badge {
   margin-left: auto;
   font-size: 0.65rem;
   font-weight: 700;
   padding: 0.15rem 0.4rem;
-  border-radius: 6px;
-  background: rgba(245, 158, 11, 0.2);
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -497,8 +475,6 @@ textarea:focus-visible, [tabindex]:focus-visible {
   gap: 0.5rem;
 }
 
-/* Mobile Off-Canvas Drawer */
-.sidebar__scrim { display: none; }
 @media (max-width: 900px) {
   .sidebar {
     position: fixed;
@@ -513,8 +489,9 @@ textarea:focus-visible, [tabindex]:focus-visible {
   .sidebar__scrim.is-visible {
     display: block;
     position: fixed; inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: rgba(0, 0, 0, 0.6);
     z-index: 39;
+    backdrop-filter: blur(4px);
   }
 }
 
@@ -526,15 +503,16 @@ textarea:focus-visible, [tabindex]:focus-visible {
   top: 0;
   z-index: 30;
   background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--rule);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: var(--glass-border);
   padding: 0.75rem 1.75rem;
+  box-shadow: var(--shadow-sm);
 }
 .topbar__inner {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.25rem;
   max-width: 1680px;
   margin: 0 auto;
   width: 100%;
@@ -542,7 +520,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .topbar__menu-btn {
   display: none;
   flex: none;
-  width: 34px; height: 34px;
+  width: 36px; height: 36px;
   align-items: center; justify-content: center;
   border: 1px solid var(--rule);
   background: var(--surface);
@@ -557,39 +535,41 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .topbar__title { min-width: 0; }
 .topbar__title h1 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: var(--ink);
 }
 .topbar__title p {
-  margin: 0.15rem 0 0;
+  margin: 0.1rem 0 0;
   font-size: 0.8rem;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
+  font-weight: 500;
 }
 
 .topbar__search {
   position: relative;
   display: flex;
   align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
-  padding: 0.45rem 0.75rem;
-  gap: 0.5rem;
-  width: 280px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.85rem;
+  gap: 0.6rem;
+  width: 300px;
   transition: all 0.2s ease;
 }
 .topbar__search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: var(--surface);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-soft);
 }
 .topbar__search input {
   border: none;
   background: none;
   outline: none;
   color: var(--ink);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   width: 100%;
 }
 .topbar__search-clear {
@@ -608,11 +588,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--surface-2);
   padding: 0.35rem 0.75rem;
   border-radius: 20px;
-  border: 1px solid var(--rule);
 }
 .topbar__icon-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--rule);
   background: var(--surface);
@@ -622,42 +601,43 @@ textarea:focus-visible, [tabindex]:focus-visible {
   justify-content: center;
   cursor: pointer;
   position: relative;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: all 0.15s ease;
 }
 .topbar__icon-btn:hover {
   background: var(--surface-2);
   color: var(--ink);
-  border-color: var(--ink-faint);
 }
 .topbar__icon-btn .badge-dot {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: -2px;
+  right: -2px;
   background: var(--critical);
   color: #fff;
   font-size: 0.65rem;
   font-weight: 800;
   padding: 0.1rem 0.35rem;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 2px solid var(--surface);
 }
 .topbar__account {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.35rem 0.75rem;
+  padding: 0.35rem 0.75rem 0.35rem 0.35rem;
   border-radius: 30px;
   background: var(--surface);
   border: 1px solid var(--rule);
   cursor: pointer;
+  transition: background 0.2s ease;
 }
+.topbar__account:hover { background: var(--surface-2); }
 .topbar__avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: var(--btn-fill);
+  background: var(--primary-gradient);
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 800;
   display: flex;
   align-items: center;
@@ -669,7 +649,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--ink);
 }
 
-/* Quick Actions Dropdown — Fixed sizing & absolute position */
+/* Quick Actions Dropdown */
 .quick-actions {
   position: relative;
   flex: none;
@@ -683,21 +663,21 @@ textarea:focus-visible, [tabindex]:focus-visible {
   justify-content: center;
   gap: 0.45rem;
   height: 38px;
-  padding: 0 1rem;
+  padding: 0 1.1rem;
   border-radius: var(--radius-sm);
   background: var(--btn-fill);
   color: var(--btn-text);
   font-weight: 600;
   font-size: 0.85rem;
-  border: 1px solid var(--rule);
+  border: none;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
   white-space: nowrap;
-  box-sizing: border-box;
 }
 .quick-action:hover {
   background: var(--btn-fill-hover);
+  box-shadow: var(--shadow-md);
 }
 .quick-actions__menu {
   position: absolute;
@@ -708,23 +688,22 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  padding: 0.4rem;
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  min-width: 190px;
-  white-space: nowrap;
+  min-width: 200px;
 }
 .quick-actions__item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.6rem;
+  padding: 0.6rem 0.85rem;
   border-radius: var(--radius-xs);
   border: none;
   background: transparent;
   color: var(--ink);
-  font-size: 0.84rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   width: 100%;
@@ -733,7 +712,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .quick-actions__item:hover:not(:disabled) {
   background: var(--surface-2);
-  color: var(--accent);
+  color: var(--primary);
 }
 
 /* =======================================================================
@@ -745,8 +724,8 @@ textarea:focus-visible, [tabindex]:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  padding: 0.55rem 1.1rem;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
   font-weight: 600;
@@ -754,86 +733,66 @@ textarea:focus-visible, [tabindex]:focus-visible {
   cursor: pointer;
   border: 1px solid transparent;
   text-decoration: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: all 0.2s ease;
   white-space: nowrap;
-  box-sizing: border-box;
 }
 
-/* Every control that receives the delegated click ripple owns and clips it.
-   Without this, the ripple from toolbar/quick-action buttons can paint
-   outside the rounded button and make the control look like it grows. */
-.toolbar-btn,
-.quick-action {
+.toolbar-btn, .quick-action {
   position: relative;
   overflow: hidden;
 }
-/* Click ripple (App.jsx's delegated mousedown listener on every .btn/
-   .toolbar-btn/.quick-action) - the element it inserts sets its own
-   width/height/left/top inline, sized to the button itself, and relies
-   entirely on these three things to render as a small circular ripple
-   instead of a plain sized block: position:absolute (so it lifts out of
-   flow instead of pushing the button's own content outward - this was
-   missing, and was the actual cause of buttons visibly growing on every
-   click), the button being position:relative (so that absolute
-   positioning is relative to the button, not the page), and overflow:
-   hidden on the button (so the ripple is clipped to its rounded
-   corners). Also: with no animation defined, the JS's `animationend`
-   listener that removes the ripple element never fired, so old ripples
-   never got cleaned up and kept accumulating in the DOM. */
+
 .btn-ripple {
   position: absolute;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.3);
   transform: scale(0);
-  animation: rp-ripple 0.55s ease-out;
+  animation: rp-ripple 0.5s ease-out;
   pointer-events: none;
 }
 @keyframes rp-ripple {
-  to { transform: scale(2.2); opacity: 0; }
+  to { transform: scale(2.5); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  /* Kept running (not display:none) so `animationend` still fires and
-     the JS still removes the element - just fast enough to read as
-     instant rather than a moving effect. */
   .btn-ripple { animation-duration: 0.01ms; }
 }
 
 .btn--primary {
   background: var(--btn-fill);
   color: var(--btn-text);
-  border: 1px solid var(--rule);
-  box-shadow: var(--shadow-sm);
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 .btn--primary:hover:not(:disabled) {
   background: var(--btn-fill-hover);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
 }
 
 .btn--secondary {
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--ink);
-  border-color: var(--rule);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-sm);
 }
 .btn--secondary:hover:not(:disabled) {
-  background: var(--surface-3);
+  background: var(--surface-2);
   border-color: var(--ink-faint);
 }
 
 .btn--outline {
   background: transparent;
   color: var(--ink);
-  border-color: var(--rule);
+  border: 1px solid var(--rule);
 }
 .btn--outline:hover:not(:disabled) {
   background: var(--surface-2);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--ink-soft);
 }
 
 .btn--ghost {
   background: transparent;
   color: var(--ink-soft);
-  border-color: transparent;
+  border: none;
 }
 .btn--ghost:hover:not(:disabled) {
   background: var(--surface-2);
@@ -843,10 +802,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .btn--danger {
   background: var(--critical);
   color: #ffffff;
-  border-color: var(--critical);
+  border: none;
 }
 .btn--danger:hover:not(:disabled) {
-  background: #be123c;
+  background: #b91c1c;
 }
 
 .btn:disabled {
@@ -860,8 +819,8 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .session-tabs {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 1.75rem 0;
+  gap: 0.25rem;
+  padding: 0.75rem 1.75rem 0;
   background: var(--surface);
   border-bottom: 1px solid var(--rule);
   overflow-x: auto;
@@ -873,26 +832,36 @@ textarea:focus-visible, [tabindex]:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.55rem 0.95rem;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: var(--surface-2);
-  border: 1px solid var(--rule);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: transparent;
+  border: 1px solid transparent;
   border-bottom: none;
   color: var(--ink-soft);
-  font-size: 0.84rem;
+  font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: all 0.2s ease;
+  position: relative;
 }
 .session-tab:hover {
+  background: var(--surface-2);
   color: var(--ink);
-  background: var(--surface-3);
 }
 .session-tab--active {
-  background: var(--paper);
-  color: var(--accent);
+  background: var(--surface);
+  color: var(--primary);
   font-weight: 700;
   border-color: var(--rule);
+}
+.session-tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0; right: 0;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 2px 2px 0 0;
 }
 .session-tab__close {
   display: flex;
@@ -901,98 +870,105 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border-radius: 50%;
   padding: 2px;
   color: var(--ink-faint);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease;
 }
 .session-tab__close:hover {
   background: var(--critical-soft);
   color: var(--critical);
 }
 .session-tab--new {
-  padding: 0.55rem 0.75rem;
+  padding: 0.65rem 0.85rem;
   color: var(--ink-faint);
 }
 
 /* =======================================================================
-   Console Container & Aligned Layout
+   Console Container
 ======================================================================= */
 .console {
   max-width: 1680px;
   width: 100%;
   margin: 0 auto;
-  padding: 1.5rem 1.75rem 3rem;
+  padding: 2rem 1.75rem 4rem;
   flex: 1 1 auto;
 }
 
 /* Stat Row & KPI Tiles */
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 1rem;
-  padding: 0 0 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.25rem;
+  padding: 0 0 1.5rem;
 }
 .kpi-tile {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   overflow: hidden;
 }
-.kpi-tile:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--accent-soft);
+.kpi-tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--rule-soft);
+  transition: background 0.25s ease;
 }
-/* Rendered as a real <button> only when KpiTile is given an onClick (see
-   App.jsx) - reset the button chrome back to plain-tile look. The
-   existing global rule (`button { transform: none !important }`, see
-   "Ensure ZERO button scaling/jumping across the application" above)
-   rules out a translateY hover-lift here, so the clickable affordance is
-   cursor + the same shadow/border-color lift .kpi-tile:hover already
-   gives every tile - no separate hover rule needed. */
+.kpi-tile--orders::before { background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%); }
+.kpi-tile--bikes::before { background: linear-gradient(90deg, #10b981 0%, #34d399 100%); }
+.kpi-tile--cars::before { background: linear-gradient(90deg, #6366f1 0%, #818cf8 100%); }
+.kpi-tile--routes::before { background: linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%); }
+.kpi-tile--distance::before { background: linear-gradient(90deg, #06b6d4 0%, #22d3ee 100%); }
+.kpi-tile--eta::before { background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+
+.kpi-tile:hover {
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(124, 58, 237, 0.08);
+  transform: translateY(-3px);
+  border-color: var(--primary-soft);
+}
 .kpi-tile--clickable {
   cursor: pointer;
   font: inherit;
   text-align: left;
   width: 100%;
 }
-/* Soft, desaturated per-metric tint on the card itself (not just the
-   icon chip) - low enough alpha that it reads correctly over both the
-   light and dark surface tokens without a separate dark-mode override. */
-.kpi-tile--orders { background: rgba(59, 130, 246, 0.06); }
-.kpi-tile--bikes { background: rgba(16, 185, 129, 0.06); }
-.kpi-tile--cars { background: rgba(99, 102, 241, 0.06); }
-.kpi-tile--routes { background: rgba(139, 92, 246, 0.06); }
-.kpi-tile--distance { background: rgba(6, 182, 212, 0.06); }
-.kpi-tile--eta { background: rgba(245, 158, 11, 0.06); }
+
 .kpi-tile__icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--surface-2);
+  color: var(--ink);
+  transition: transform 0.2s ease;
 }
-.kpi-tile--orders .kpi-tile__icon { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-.kpi-tile--bikes .kpi-tile__icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-.kpi-tile--cars .kpi-tile__icon { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
-.kpi-tile--routes .kpi-tile__icon { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-.kpi-tile--distance .kpi-tile__icon { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
-.kpi-tile--eta .kpi-tile__icon { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.kpi-tile:hover .kpi-tile__icon {
+  transform: scale(1.08);
+}
+.kpi-tile--orders .kpi-tile__icon { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.kpi-tile--bikes .kpi-tile__icon { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+.kpi-tile--cars .kpi-tile__icon { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
+.kpi-tile--routes .kpi-tile__icon { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.kpi-tile--distance .kpi-tile__icon { background: rgba(6, 182, 212, 0.12); color: #06b6d4; }
+.kpi-tile--eta .kpi-tile__icon { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
 
 .kpi-tile__value {
-  font-size: 23px;
+  font-size: 1.8rem;
   font-weight: 800;
   color: var(--ink);
   line-height: 1.1;
   display: block;
+  letter-spacing: -0.03em;
+  font-family: var(--font-mono);
 }
 .kpi-tile__suffix {
   font-size: 0.9rem;
@@ -1001,14 +977,11 @@ textarea:focus-visible, [tabindex]:focus-visible {
   margin-left: 0.25rem;
 }
 .kpi-tile__label {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--ink-soft);
-  margin-top: 0.15rem;
+  margin-top: 0.25rem;
   display: block;
-  /* "Average ETA"/"Bikes available" mid-word wrapping at narrower tile
-     widths read as broken layout rather than a label that just needed
-     more room - clip to one line instead. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1017,157 +990,139 @@ textarea:focus-visible, [tabindex]:focus-visible {
 /* Shortcuts */
 .dash-links {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
-  padding: 0 0 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  padding: 0 0 2rem;
 }
 .dash-link {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s ease;
   color: var(--ink);
   outline: none;
 }
 .dash-link:hover {
   box-shadow: var(--shadow-md);
-  border-color: var(--accent);
+  border-color: var(--primary);
+  transform: translateY(-2px);
 }
 .dash-link svg {
-  color: var(--accent);
+  color: var(--primary);
   flex: none;
 }
 .dash-link > div {
-  /* A flex child's default min-width is its content's own min-content
-     size, not 0 - a long uploaded filename ("converted_customer_
-     orders_4th_sep_2026.xlsx") could refuse to shrink and push the
-     card wider than its grid track, spilling text out past the edge
-     instead of truncating. */
   min-width: 0;
   flex: 1;
 }
-/* Each shortcut gets the same accent as its own destination page, and
-   Routes (the primary "go do something" card, not just a status check)
-   gets a subtle indigo border to read as first among equals. */
-.dash-link:nth-child(1) { border-color: rgba(99, 102, 241, 0.5); }
-.dash-link:nth-child(1) svg { color: #6366f1; }
-.dash-link:nth-child(2) svg { color: #3b82f6; }
-.dash-link:nth-child(3) svg { color: #f59e0b; }
-.dash-link:nth-child(4) svg { color: #64748b; }
 .dash-link div strong {
   display: block;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--ink);
 }
 .dash-link div span {
   display: block;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--ink-soft);
-  margin-top: 0.1rem;
-  /* Truncate a long filename cleanly with an ellipsis instead of
-     spilling past the card's edge. */
+  margin-top: 0.2rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dash-link div strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Toolbar */
 .toolbar {
   position: relative;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-lg);
-  padding: 1rem 1.15rem;
-  margin-bottom: 1.15rem;
+  border-radius: var(--radius-xl);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 .toolbar__summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--rule-soft);
-  padding-bottom: 0.75rem;
+  padding-bottom: 1rem;
 }
 .toolbar__summary-title {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: var(--ink);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
-/* Same tinted icon-box language as the KPI row/board headers. */
 .toolbar__summary-title svg {
-  padding: 0.35rem;
+  padding: 0.4rem;
   border-radius: var(--radius-sm);
   box-sizing: content-box;
   flex: none;
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(59, 130, 246, 0.1);
   color: #3b82f6;
 }
 .toolbar__summary-meta {
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   color: var(--ink-soft);
   font-family: var(--font-mono);
 }
 .toolbar__row {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1.5rem;
   flex-wrap: wrap;
 }
 .toolbar__group {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
-/* Cars/Bikes steppers - a labeled −/input/+ cluster instead of the bare
-   number input .fleet-dial used to be. The input stays directly
-   editable (typing "20" beats twenty clicks), the flanking buttons are
-   the quick +/-1 path. */
+
+/* Stepper */
 .stepper {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.75rem;
   background: var(--surface-2);
-  padding: 0.35rem 0.6rem;
-  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--rule);
 }
 .stepper__label {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--ink-soft);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
 }
 .stepper__control {
   display: flex;
   align-items: center;
   border: 1px solid var(--rule);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--surface);
 }
 .stepper__btn {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: var(--surface-2);
   color: var(--ink);
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
@@ -1178,86 +1133,80 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .stepper__btn:hover:not(:disabled) { background: var(--surface-3); }
 .stepper__btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .stepper__input {
-  width: 36px;
-  padding: 0.2rem 0;
+  width: 40px;
+  padding: 0.3rem 0;
   border: none;
   border-left: 1px solid var(--rule);
   border-right: 1px solid var(--rule);
   background: transparent;
   color: var(--ink);
   font-weight: 700;
+  font-size: 0.95rem;
   text-align: center;
-  /* Hide the native number spinner - the stepper buttons are the
-     increment/decrement control now, a second one crowds a 36px box. */
   -moz-appearance: textfield;
 }
 .stepper__input::-webkit-outer-spin-button,
 .stepper__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.stepper--alarm { border-color: var(--critical); }
+
 .toolbar-btn {
   position: relative;
   overflow: hidden;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.55rem 1rem;
+  gap: 0.5rem;
+  padding: 0.65rem 1.1rem;
   border-radius: var(--radius-sm);
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   cursor: pointer;
   border: 1px solid var(--rule);
   background: var(--surface);
   color: var(--ink);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
 }
 .toolbar-btn:hover:not(:disabled) {
   background: var(--surface-2);
-  border-color: var(--accent);
+  border-color: var(--primary);
 }
-/* The one dominant action in the Generate Routes panel - Regenerate,
-   the thing you actually come to this panel to do. */
 .toolbar-btn--primary {
   background: var(--btn-fill);
   color: var(--btn-text);
-  border-color: var(--btn-fill);
-  font-weight: var(--btn-font-weight, 700);
-  padding: 0.65rem 1.35rem;
-  box-shadow: var(--shadow-sm);
+  border: none;
+  font-weight: 700;
+  padding: 0.75rem 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 .toolbar-btn--primary:hover:not(:disabled) {
   background: var(--btn-fill-hover);
-  border-color: var(--btn-fill-hover);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
 }
-/* Generate Routes panel's overflow menu (Download all/Save/Delete) -
-   same floating-panel shape as .quick-actions__menu and .row-menu__panel
-   elsewhere in the app. */
+
 .overflow-wrap { position: relative; }
 .overflow-menu {
   position: absolute;
-  top: calc(100% + 0.35rem);
+  top: calc(100% + 0.5rem);
   right: 0;
   z-index: 20;
-  min-width: 210px;
+  min-width: 220px;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  padding: 0.35rem;
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
 }
 .overflow-menu__item {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.6rem;
   width: 100%;
-  padding: 0.5rem 0.6rem;
+  padding: 0.6rem 0.85rem;
   border: none;
   background: transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   font-family: var(--font-body);
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
@@ -1270,39 +1219,38 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .overflow-menu__item--danger svg { color: var(--critical); }
 .overflow-menu__item--danger:hover:not(:disabled) { background: var(--critical-soft); }
 
-/* Manifest dropzone - replaces the plain <input type=file> row. Real
-   drag-and-drop (see the onDrop handler in App.jsx), not decorative. */
+/* Dropzone */
 .dropzone {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-  padding: 0.9rem 1.1rem;
-  border: 1.5px dashed var(--rule);
-  border-radius: var(--radius-md);
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border: 2px dashed var(--rule);
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: all 0.2s ease;
 }
-.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
-.dropzone--active { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone:hover, .dropzone:focus-visible, .dropzone--active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
 .dropzone--disabled { cursor: not-allowed; opacity: 0.6; }
 .dropzone__icon {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--radius-sm);
-  background: var(--primary-soft);
+  background: var(--surface);
   color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
+  box-shadow: var(--shadow-sm);
 }
-.dropzone__text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-.dropzone__title { font-size: 0.88rem; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dropzone__sub { font-size: 0.76rem; color: var(--ink-faint); }
-/* The real control - kept in the DOM (not display:none) so it stays
-   part of the form/focus semantics, just visually hidden behind the
-   dropzone's own styled surface. */
+.dropzone__text { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.dropzone__title { font-size: 0.95rem; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropzone__sub { font-size: 0.8rem; color: var(--ink-soft); }
 .dropzone__input {
   position: absolute;
   width: 1px;
@@ -1314,15 +1262,16 @@ textarea:focus-visible, [tabindex]:focus-visible {
   white-space: nowrap;
   border: 0;
 }
+
 .toolbar__status-row {
   border-top: 1px solid var(--rule-soft);
-  padding-top: 0.75rem;
-  font-size: 0.82rem;
+  padding-top: 1rem;
+  font-size: 0.85rem;
   color: var(--ink-soft);
 }
 .status-readout {
   display: flex;
-  gap: 1.5rem;
+  gap: 1.75rem;
 }
 .status-readout__value {
   color: var(--ink);
@@ -1332,40 +1281,31 @@ textarea:focus-visible, [tabindex]:focus-visible {
 /* =======================================================================
    Drivers Board & Roster Page
 ======================================================================= */
-/* .board-grid is the stack that holds the Routes/Unassigned board,
-   Drivers board, and Returns board one after another - it had no rule
-   of its own, so the boards butted straight into each other with zero
-   space between them. */
 .board-grid {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.75rem;
 }
 
-/* Shared card shell for every board (App.jsx renders className="board
-   board--X" on each one) - only .board--drivers had this styling
-   defined directly on itself, so any other board (Returns/Failed
-   Addresses) rendered with no card at all: no background, border, or
-   shadow, just its header sitting flush on the page background. */
 .board {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-lg);
-  padding: 1.1rem 1.25rem;
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 .board--drivers {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-lg);
-  padding: 1.1rem 1.25rem;
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .board__header {
@@ -1373,45 +1313,43 @@ textarea:focus-visible, [tabindex]:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 1rem;
+  padding-bottom: 1.25rem;
   border-bottom: 1px solid var(--rule);
 }
 .board__header-group {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 .board__title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: var(--ink);
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
-/* Same tinted icon-box language as the KPI row above - a board's own
-   icon was plain, uncolored SVG next to its title where every other
-   icon on the page now sits in its own soft-color chip. */
 .board__title svg {
   padding: 0.4rem;
   border-radius: var(--radius-sm);
   box-sizing: content-box;
   flex: none;
 }
-.board--drivers .board__title svg { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
-.board--returns .board__title svg { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.board--drivers .board__title svg { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
+.board--returns .board__title svg { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+
 .board__count {
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 800;
-  padding: 0.2rem 0.6rem;
+  padding: 0.25rem 0.75rem;
   border-radius: 20px;
   background: var(--primary-soft);
   color: var(--primary);
 }
 .board__intro {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   color: var(--ink-soft);
   line-height: 1.5;
 }
@@ -1425,12 +1363,9 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .drivers-table {
   width: 100%;
-  /* Fixed layout + explicit column widths below - auto layout let a
-     long email or driver name reflow every other column's width as
-     rows came in, so nothing lined up between one row and the next. */
   table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   text-align: left;
 }
 .drivers-table th:nth-child(1) { width: 17%; }
@@ -1440,18 +1375,18 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .drivers-table th:nth-child(5) { width: 12%; }
 .drivers-table th:nth-child(6) { width: 32%; }
 .drivers-table th {
-  padding: 0.7rem 1rem;
-  font-size: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
   border-bottom: 1px solid var(--rule);
   background: var(--surface-2);
   white-space: nowrap;
 }
 .drivers-table td {
-  padding: 0.75rem 1rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--rule-soft);
   vertical-align: middle;
   color: var(--ink);
@@ -1464,38 +1399,34 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .drivers-table__name {
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   color: var(--ink);
 }
 .drivers-table__code {
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
 }
 .drivers-table__meta {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--ink-soft);
 }
 .drivers-table__actions {
   display: flex;
-  /* Without wrap, 4 text buttons ("Edit"/"Reset Password"/"Deactivate"/
-     "Delete") in the now fixed-width Actions column had nowhere to go
-     but overflow into the next cell, overlapping its text instead of
-     dropping to a second line. */
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 
 .driver-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.7rem;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
   border-radius: 20px;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   font-weight: 800;
   background: var(--neutral-soft);
   color: var(--neutral);
@@ -1510,18 +1441,14 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 
 .btn--compact {
-  padding: 0.35rem 0.75rem;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
   border-radius: var(--radius-xs);
 }
 
-/* Driver Data panel (every driver's past work runs) - same table
-   treatment as .drivers-table above, but its own class rather than a
-   shared one: that table's th:nth-child widths are tuned for its own 6
-   columns and would misapply to this table's 9. */
 .driver-runs-table-wrap {
   border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -1529,22 +1456,22 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .driver-runs-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   text-align: left;
 }
 .driver-runs-table th {
-  padding: 0.65rem 0.85rem;
-  font-size: 0.72rem;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.76rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
   border-bottom: 1px solid var(--rule);
   background: var(--surface-2);
   white-space: nowrap;
 }
 .driver-runs-table td {
-  padding: 0.7rem 0.85rem;
+  padding: 0.85rem 1.1rem;
   border-bottom: 1px solid var(--rule-soft);
   vertical-align: middle;
   color: var(--ink);
@@ -1552,254 +1479,347 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .driver-runs-table tbody tr:hover { background: var(--surface-2); }
 .driver-runs-table__name { font-weight: 700; color: var(--ink); }
-.driver-runs-table__code { font-size: 0.74rem; color: var(--ink-soft); font-family: var(--font-mono); margin-top: 0.1rem; }
+.driver-runs-table__code { font-size: 0.78rem; color: var(--ink-soft); font-family: var(--font-mono); margin-top: 0.15rem; }
 
 .run-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.65rem;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
   border-radius: 20px;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 800;
   white-space: nowrap;
 }
 .run-status-pill--in_progress { background: var(--info-soft); color: var(--info); }
 .run-status-pill--completed { background: var(--good-soft); color: var(--good); }
 
+
 /* =======================================================================
-   Failed Addresses Split View
+   Failed Addresses Panel Redesign (High Contrast & Clear Hierarchy)
 ======================================================================= */
 .failed-split {
   display: flex;
-  gap: 1.5rem;
-  min-height: 500px;
+  gap: 1.75rem;
+  min-height: 540px;
 }
 .failed-split__list {
-  width: 340px;
+  width: 360px;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   overflow-y: auto;
   border-right: 1px solid var(--rule);
-  padding-right: 1rem;
+  padding-right: 1.25rem;
 }
 .failed-row {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.25rem;
-  padding: 0.85rem 1rem;
+  gap: 0.35rem;
+  padding: 1rem 1.15rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--rule);
   background: var(--surface);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
-  /* A flex child's default min-width is its content's own min-content
-     size, not 0 - for a long unbroken reason string that can push the
-     whole row (and its .failed-split__list parent) wider than intended
-     instead of wrapping. This is what actually lets width:100% below
-     take effect. */
+  transition: all 0.2s ease;
   min-width: 0;
   width: 100%;
 }
-.failed-row:hover, .failed-row--active {
+.failed-row:hover {
+  border-color: var(--critical);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08);
+}
+.failed-row--active {
   border-color: var(--critical);
   background: var(--critical-soft);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.1);
 }
-.failed-row__name { font-weight: 700; color: var(--ink); font-size: 0.9rem; }
+.failed-row__name { font-weight: 700; color: var(--ink); font-size: 0.95rem; }
 .failed-row__reason {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--critical);
-  /* Specific mismatch reasons ("House/door number mismatch: you entered
-     231B/1, Google found 231C on this street") run much longer than the
-     generic "low confidence match" text this row was first built for -
-     wrap onto multiple lines instead of overflowing the row's fixed-
-     width list. */
   overflow-wrap: break-word;
   word-break: break-word;
-}
-
-/* The specific reason a Failed Order needs review (geocode_error) - a
-   full sentence now (see geocode_service._verification_message), not a
-   short label, so it gets its own wrapping banner instead of being
-   crammed into the .tag pill (built for one-word labels and set to
-   white-space: nowrap - forcing a whole sentence in there is what
-   pushed the text out past the panel's edge). */
-.failed-detail__reason {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.7rem 0.9rem;
-  border-radius: var(--radius-md);
-  background: var(--critical-soft);
-  color: var(--critical);
-  font-size: 0.85rem;
-  font-weight: 600;
-  line-height: 1.4;
-}
-.failed-detail__reason svg { flex: none; margin-top: 0.15rem; }
-.failed-detail__reason span { overflow-wrap: break-word; word-break: break-word; min-width: 0; }
-
-/* Per-field breakdown of a flagged address (see crud._address_breakdown /
-   AddressBreakdown in App.jsx) - one labeled box per component (house
-   number, street, area, city, PIN...) instead of making the admin parse
-   the raw address text themselves to find which part is the problem. */
-.address-breakdown {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.6rem;
-}
-.address-breakdown__field {
-  min-width: 0;
-  padding: 0.55rem 0.75rem;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  border: 1px solid var(--rule);
-}
-.address-breakdown__label {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  margin-bottom: 0.2rem;
-}
-.address-breakdown__value {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink);
-  overflow-wrap: break-word;
-  word-break: break-word;
-}
-/* A component the parser never found at all (house/street/area/city/PIN
-   genuinely absent) - greyed out rather than left blank, so an empty box
-   reads as "nothing here" instead of looking like a rendering error. */
-.address-breakdown__field--empty {
-  opacity: 0.55;
-}
-.address-breakdown__field--empty .address-breakdown__value {
-  font-style: italic;
   font-weight: 500;
 }
-/* The ONE field the current geocode_error is actually complaining about -
-   visually called out so the admin doesn't have to cross-reference the
-   reason sentence against every box themselves. */
-.address-breakdown__field--error {
-  background: var(--critical-soft);
-  border-color: var(--critical);
-}
-.address-breakdown__field--error .address-breakdown__label,
-.address-breakdown__field--error .address-breakdown__value {
-  color: var(--critical);
-}
-.address-breakdown__field--error .address-breakdown__label svg { flex: none; }
 
 .failed-split__detail {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.5rem;
+  gap: 1.5rem;
+  padding: 1.75rem;
   background: var(--surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   border: 1px solid var(--rule);
+  box-shadow: var(--shadow-sm);
 }
+
 .detail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.detail-map {
-  width: 100%;
-  height: 240px;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  border: 1px solid var(--rule);
+.detail-head h3 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0.2rem 0 0;
 }
-.detail-map iframe { width: 100%; height: 100%; border: none; }
+.stop__id {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
 
-.detail-grid {
+/* ERROR BANNER - High contrast red block */
+.failed-detail__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: #b91c1c;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.5;
+  box-shadow: 0 4px 12px rgba(185, 28, 28, 0.25);
+  border: 1px solid #991b1b;
+}
+.failed-detail__reason svg { flex: none; margin-top: 0.2rem; color: #ffffff; width: 18px; height: 18px; }
+.failed-detail__reason span { overflow-wrap: break-word; word-break: break-word; min-width: 0; color: #ffffff; }
+
+/* ADDRESS COMPONENT EDITOR */
+.address-component-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+}
+.editor-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.editor-sub {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.component-inputs-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1rem;
 }
-.detail-field {
-  background: var(--surface-2);
-  padding: 0.85rem 1rem;
+.component-field-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
   border-radius: var(--radius-md);
+  background: var(--surface);
   border: 1px solid var(--rule);
-  /* A grid track sized 1fr still won't shrink below its content's own
-     min-content width by default (same underlying issue as flex items) -
-     a long Google-suggested address with no natural break point could
-     force this column wider than the grid's own track, pushing the
-     panel's edge out. minmax(0, 1fr) above plus wrapping the actual text
-     here is what makes a long address wrap instead. */
-  min-width: 0;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
 }
-.detail-field p { overflow-wrap: break-word; word-break: break-word; }
+.component-field-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+/* Specific highlight for errored fields */
+.component-field-box--error {
+  border: 2px solid #ef4444;
+  background: #fef2f2;
+}
+:root[data-theme="dark"] .component-field-box--error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
+.component-field-box--error .field-box__head label {
+  color: #b91c1c;
+  font-weight: 800;
+}
+:root[data-theme="dark"] .component-field-box--error .field-box__head label { color: #f87171; }
 
+.field-box__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.field-box__head label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+.field-box__error-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: #dc2626;
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);
+}
+
+.field-guidance {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  font-weight: 500;
+}
+.field-guidance--error {
+  color: #ffffff;
+  font-weight: 600;
+  background: #b91c1c;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-xs);
+  box-shadow: 0 2px 4px rgba(185, 28, 28, 0.2);
+}
+
+.component-field-input {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  outline: none;
+  transition: all 0.2s ease;
+}
+.component-field-input:focus { border-color: var(--accent); }
+
+.combined-address-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--rule);
+}
+.ticket__field-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+}
 .ticket__field {
   width: 100%;
-  padding: 0.65rem 0.9rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--rule);
   background: var(--surface);
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   outline: none;
 }
 .ticket__field:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-.ticket__field-label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  margin-bottom: 0.3rem;
-  display: block;
+  box-shadow: 0 0 0 4px var(--accent-glow);
 }
 
-.retry-feedback {
-  padding: 0.75rem 1rem;
+/* EMBEDDED MAP ADJUSTER */
+.embedded-pin-adjuster {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.pin-adjuster__banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.pin-adjuster__title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+.pin-adjuster__sub {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.adjust-location-map.embedded-map {
+  height: 320px;
   border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+.pin-adjuster__foot {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
 }
-.retry-feedback--success { background: var(--good-soft); color: var(--good); }
-.retry-feedback--error { background: var(--critical-soft); color: var(--critical); }
+.pin-coords {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.pin-coords strong { color: var(--ink); }
+.pin-moved-badge {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+}
 
 /* =======================================================================
    Modals & Overlays
 ======================================================================= */
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .modal-backdrop, .history-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(3, 7, 18, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
 }
 
-.history-overlay__scrim {
-  position: absolute;
-  inset: 0;
-}
+.history-overlay__scrim { position: absolute; inset: 0; }
 
 .modal, .history-panel {
   position: relative;
@@ -1807,40 +1827,40 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
   width: 100%;
-  max-width: 580px;
+  max-width: 600px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: modalEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.history-panel--wide { max-width: 680px; }
-.history-panel--xwide { max-width: 1080px; }
+.history-panel--wide { max-width: 720px; }
+.history-panel--xwide { max-width: 1120px; }
 
-/* Command palette (⌘K) - shares .modal-backdrop's dimmed/blurred scrim
-   but overrides the centered flex alignment to sit near the top, the
-   way an omnibox does rather than a centered dialog. */
-.command-palette__backdrop { align-items: flex-start; padding-top: 12vh; }
+/* Command palette (⌘K) */
+.command-palette__backdrop { align-items: flex-start; padding-top: 14vh; }
 .command-palette {
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 560px;
+  max-width: 640px;
   max-height: 70vh;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: modalEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 .command-palette__input-wrap {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.9rem 1.1rem;
+  gap: 0.85rem;
+  padding: 1.1rem 1.25rem;
   border-bottom: 1px solid var(--rule);
   color: var(--ink-faint);
   flex: none;
@@ -1850,7 +1870,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border: none;
   outline: none;
   background: transparent;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   font-family: var(--font-body);
   color: var(--ink);
 }
@@ -1860,26 +1880,26 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--ink-faint);
   cursor: pointer;
   display: flex;
-  padding: 0.25rem;
+  padding: 0.4rem;
   border-radius: var(--radius-xs);
   flex: none;
 }
 .command-palette__close:hover { background: var(--surface-2); color: var(--ink); }
-.command-palette__list { overflow-y: auto; padding: 0.5rem; }
+.command-palette__list { overflow-y: auto; padding: 0.75rem; }
 .command-palette__group {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.75rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--ink-faint);
-  padding: 0.5rem 0.6rem 0.25rem;
+  padding: 0.75rem 0.85rem 0.4rem;
 }
 .command-palette__item {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.55rem 0.6rem;
+  gap: 0.85rem;
+  padding: 0.75rem 0.85rem;
   border-radius: var(--radius-sm);
   border: none;
   background: transparent;
@@ -1890,8 +1910,8 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .command-palette__item:hover:not(:disabled) { background: var(--surface-2); }
 .command-palette__item:disabled { opacity: 0.5; cursor: not-allowed; }
 .command-palette__item-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink-soft);
@@ -1900,42 +1920,44 @@ textarea:focus-visible, [tabindex]:focus-visible {
   justify-content: center;
   flex: none;
 }
-.command-palette__item-label { display: block; font-size: 0.85rem; font-weight: 700; color: var(--ink); }
-.command-palette__item-sub { display: block; font-size: 0.74rem; color: var(--ink-faint); }
-.command-palette__empty { padding: 1.75rem; text-align: center; font-size: 0.85rem; color: var(--ink-faint); }
+.command-palette__item-label { display: block; font-size: 0.95rem; font-weight: 700; color: var(--ink); }
+.command-palette__item-sub { display: block; font-size: 0.8rem; color: var(--ink-faint); }
+.command-palette__empty { padding: 2rem; text-align: center; font-size: 0.95rem; color: var(--ink-faint); }
 .command-palette__foot {
   border-top: 1px solid var(--rule);
-  padding: 0.6rem 1.1rem;
+  padding: 0.85rem 1.25rem;
   display: flex;
-  gap: 1rem;
+  gap: 1.25rem;
   flex: none;
+  background: var(--surface-2);
 }
-.command-palette__hint { font-size: 0.74rem; color: var(--ink-faint); display: flex; align-items: center; gap: 0.35rem; }
+.command-palette__hint { font-size: 0.78rem; color: var(--ink-faint); display: flex; align-items: center; gap: 0.5rem; font-weight: 500; }
 .command-palette__hint kbd, .topbar__palette-btn kbd {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.1rem 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
   border-radius: var(--radius-xs);
   border: 1px solid var(--rule);
-  background: var(--surface-2);
-  color: var(--ink-faint);
+  background: var(--surface);
+  color: var(--ink-soft);
 }
 .topbar__palette-btn {
   flex: none;
   display: flex;
   align-items: center;
   border: 1px solid var(--rule);
-  background: var(--surface-2);
+  background: var(--surface);
   border-radius: var(--radius-sm);
-  padding: 0.4rem 0.55rem;
+  padding: 0.45rem 0.65rem;
   cursor: pointer;
   color: var(--ink-faint);
+  transition: all 0.2s ease;
 }
-.topbar__palette-btn:hover { background: var(--surface-3); color: var(--ink); }
+.topbar__palette-btn:hover { background: var(--surface-2); color: var(--ink); }
 
 .modal__header, .history-panel__head {
-  padding: 1.25rem 1.5rem;
+  padding: 1.5rem 1.75rem;
   border-bottom: 1px solid var(--rule);
   display: flex;
   align-items: center;
@@ -1943,121 +1965,114 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 .modal__header h3, .history-panel__head h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: var(--ink);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 
 .history-panel__sub {
-  padding: 0.85rem 1.5rem;
+  padding: 1rem 1.75rem;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--ink-soft);
   background: var(--surface-2);
   border-bottom: 1px solid var(--rule);
 }
 
 .modal__body, .history-panel__body {
-  padding: 1.5rem;
+  padding: 1.75rem;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
+  gap: 1.5rem;
 }
 
 .modal__footer, .history-panel__footer {
-  padding: 1rem 1.5rem;
+  padding: 1.25rem 1.75rem;
   border-top: 1px solid var(--rule);
   background: var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .modal__field-label {
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 800;
   color: var(--ink-soft);
   text-transform: uppercase;
-  margin-bottom: 0.35rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
   display: block;
 }
 .modal__input {
   width: 100%;
-  padding: 0.65rem 0.9rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--rule);
   background: var(--surface);
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
   box-sizing: border-box;
 }
 .modal__input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: 0 0 0 4px var(--accent-glow);
 }
-/* A <textarea> with this class (the manual-address form's Address field)
-   needs its own rule - box-sizing/line-height/min-height explicit, not
-   left to the `rows` attribute alone, since a couple of parent flex/grid
-   contexts in this app squeeze a bare textarea down to a single visible
-   line otherwise. resize: vertical keeps the native resize handle usable
-   without letting it get dragged narrower than the field. */
 textarea.modal__input {
-  min-height: 4.5rem;
-  line-height: 1.4;
+  min-height: 5.5rem;
+  line-height: 1.5;
   resize: vertical;
 }
-/* AdjustLocationModal's draggable-pin map (RouteWorkspace.jsx) - a fixed,
-   generous height so the map is actually usable for dragging a pin, not
-   squeezed down by the modal's own flex layout. */
 .adjust-location-map {
-  height: 320px;
+  height: 360px;
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--rule);
 }
-.modal__static-value { font-size: 0.9rem; color: var(--ink); padding: 0.4rem 0; font-weight: 700; }
-.modal__static-hint { font-size: 0.78rem; color: var(--ink-soft); font-weight: 400; }
-.modal__hint { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
+.modal__static-value { font-size: 1rem; color: var(--ink); padding: 0.5rem 0; font-weight: 700; }
+.modal__static-hint { font-size: 0.85rem; color: var(--ink-soft); font-weight: 500; }
+.modal__hint { font-size: 0.9rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
 .modal__warning {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.75rem 1rem; border-radius: var(--radius-md);
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 1rem 1.25rem; border-radius: var(--radius-md);
   background: var(--signal-soft); color: var(--signal);
-  font-size: 0.85rem; font-weight: 600;
+  font-size: 0.9rem; font-weight: 700;
 }
 
 .credential-row {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 0.85rem 1.1rem; border: 1px solid var(--rule);
+  padding: 1rem 1.25rem; border: 1px solid var(--rule);
   border-radius: var(--radius-md); background: var(--surface-2);
 }
-.credential-row__label { font-size: 0.78rem; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; }
-.credential-row__value { font-size: 1rem; font-weight: 700; color: var(--ink); user-select: all; }
+.credential-row__label { font-size: 0.8rem; font-weight: 800; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; }
+.credential-row__value { font-size: 1.1rem; font-weight: 700; color: var(--ink); user-select: all; }
 
 .driver-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 .driver-form-grid__full { grid-column: 1 / -1; }
 
-.history-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.history-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.85rem; }
 .history-row {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 1rem 1.2rem; border-radius: var(--radius-md);
+  padding: 1.1rem 1.35rem; border-radius: var(--radius-md);
   border: 1px solid var(--rule); background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .history-row--active { border-color: var(--accent); background: var(--accent-soft); }
-.history-row__main { display: flex; flex-direction: column; gap: 0.25rem; }
-.history-row__label { font-weight: 700; color: var(--ink); font-size: 0.95rem; }
-.history-row__meta { font-size: 0.78rem; color: var(--ink-soft); }
-.history-row__actions { display: flex; gap: 0.5rem; }
+.history-row__main { display: flex; flex-direction: column; gap: 0.35rem; }
+.history-row__label { font-weight: 800; color: var(--ink); font-size: 1rem; }
+.history-row__meta { font-size: 0.85rem; color: var(--ink-soft); }
+.history-row__actions { display: flex; gap: 0.6rem; }
 
 /* Coming Soon Overlay */
 .coming-soon-page {
@@ -2066,10 +2081,10 @@ textarea.modal__input {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
   width: 100%;
-  max-width: 440px;
-  padding: 2.5rem 2rem;
+  max-width: 480px;
+  padding: 3rem 2.5rem;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius-xl);
@@ -2077,89 +2092,79 @@ textarea.modal__input {
 }
 .coming-soon-page__close {
   position: absolute;
-  top: 1rem; right: 1rem;
-  width: 32px; height: 32px;
+  top: 1.25rem; right: 1.25rem;
+  width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
   border: 1px solid var(--rule); background: var(--surface);
   color: var(--ink-soft); border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .coming-soon-page__icon {
-  width: 56px; height: 56px;
+  width: 64px; height: 64px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
   background: var(--primary-soft);
   color: var(--primary);
 }
-.coming-soon-page h2 { font-size: 1.25rem; font-weight: 800; color: var(--ink); margin: 0; }
-.coming-soon-page p { font-size: 0.88rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
+.coming-soon-page h2 { font-size: 1.4rem; font-weight: 800; color: var(--ink); margin: 0; }
+.coming-soon-page p { font-size: 0.95rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
 .coming-soon-page__tag {
-  font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+  font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--signal); background: var(--signal-soft);
-  padding: 0.3rem 0.75rem; border-radius: 20px;
+  padding: 0.35rem 0.85rem; border-radius: 20px;
 }
 
 /* Loading Console Animation */
 .loading-console {
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-left: 4px solid var(--accent);
-  border-radius: var(--radius-lg);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+  padding: 2rem;
+  margin-bottom: 1.75rem;
   text-align: center;
 }
-.rp-scene { position: relative; height: 84px; overflow: hidden; }
-.rp-convoy { position: relative; width: 148px; height: 60px; margin: 0 auto; }
+.rp-scene { position: relative; height: 90px; overflow: hidden; }
+.rp-convoy { position: relative; width: 160px; height: 70px; margin: 0 auto; }
 .rp-car {
-  position: absolute; bottom: 12px; left: 0;
-  width: 58px; height: 34px;
+  position: absolute; bottom: 14px; left: 0;
+  width: 64px; height: 38px;
   animation: rp-car-bounce 0.5s ease-in-out infinite;
 }
 .rp-car__body {
-  position: absolute; bottom: 6px; left: 0;
-  width: 58px; height: 15px;
-  background: var(--accent); border-radius: 8px 8px 4px 4px;
+  position: absolute; bottom: 8px; left: 0;
+  width: 64px; height: 18px;
+  background: var(--primary); border-radius: 8px 8px 4px 4px;
 }
 .rp-car__cabin {
-  position: absolute; bottom: 17px; left: 13px;
-  width: 30px; height: 13px;
-  background: var(--accent); border-radius: 9px 9px 0 0;
+  position: absolute; bottom: 20px; left: 14px;
+  width: 34px; height: 15px;
+  background: var(--primary); border-radius: 10px 10px 0 0;
 }
 .rp-car__wheel {
   position: absolute; bottom: 0;
-  width: 14px; height: 14px; border-radius: 50%;
+  width: 16px; height: 16px; border-radius: 50%;
   background: var(--ink); animation: rp-wheel-spin 0.3s linear infinite;
 }
-.rp-car__wheel--f { left: 6px; }
-.rp-car__wheel--b { left: 38px; }
-@keyframes rp-car-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.rp-car__wheel--f { left: 8px; }
+.rp-car__wheel--b { left: 42px; }
+@keyframes rp-car-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes rp-wheel-spin { to { transform: rotate(360deg); } }
 
-/* A small inline spinner - drops in wherever a button/icon needs to show
-   "this is running" (delete, save, download, upload...), not just the
-   .loading-console car scene above, which is specifically for the
-   upload-then-generate flow. currentColor so it always matches whatever
-   text/icon color it replaces, no per-context color rule needed. */
 .spinner {
   display: inline-block;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   border: 2px solid currentColor;
   border-top-color: transparent;
   border-radius: 50%;
-  opacity: 0.75;
+  opacity: 0.8;
   animation: spin 0.7s linear infinite;
   flex: none;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Row/panel-level "this is busy" overlay - dims whatever it's placed
-   over and centers a larger spinner, for an action that affects a whole
-   row or table rather than one button (a route being deleted, a bulk
-   action running across several routes). The element it's placed in
-   needs position:relative for the inset:0 to line up. */
 .busy-overlay {
   position: absolute;
   inset: 0;
@@ -2167,157 +2172,150 @@ textarea.modal__input {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.7);
   border-radius: inherit;
+  backdrop-filter: blur(2px);
 }
-:root[data-theme="dark"] .busy-overlay { background: rgba(9, 13, 22, 0.6); }
+:root[data-theme="dark"] .busy-overlay { background: rgba(3, 7, 18, 0.7); }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .busy-overlay { background: rgba(9, 13, 22, 0.6); }
+  :root:not([data-theme="light"]) .busy-overlay { background: rgba(3, 7, 18, 0.7); }
 }
-.busy-overlay .spinner { width: 22px; height: 22px; border-width: 3px; color: var(--accent); }
+.busy-overlay .spinner { width: 26px; height: 26px; border-width: 3px; color: var(--primary); }
 
 /* Toast Notifications */
 .toast {
   position: fixed;
-  bottom: 1.75rem;
-  right: 1.75rem;
+  bottom: 2rem;
+  right: 2rem;
   z-index: 120;
   background: var(--ink);
   color: var(--paper);
-  padding: 0.85rem 1.35rem;
-  border-radius: 30px;
+  padding: 1rem 1.5rem;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
 }
 
-/* Manifest validation banners (errors/warnings on the Routes page) - the
-   class was referenced in App.jsx but had no rule anywhere, so it
-   rendered as bare unstyled text with no card, no color, no icon
-   alignment. */
-/* A tinted-background full-bleed banner reads as an interruption when
-   it's sitting inside the same card as the manifest status line it's
-   actually about - a white background with a colored left spine (the
-   same accent-border language .driver-card/.kpi-tile already use)
-   keeps it attached to that context instead of alarming on its own. */
+/* Alerts */
 .alert {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border-radius: var(--radius-sm);
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--critical);
+  border-left: 4px solid var(--critical);
   background: var(--surface);
   color: var(--ink);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   line-height: 1.5;
+  box-shadow: var(--shadow-sm);
 }
-.alert svg { flex: none; margin-top: 0.1rem; color: var(--critical); }
+.alert svg { flex: none; margin-top: 0.15rem; color: var(--critical); }
 .alert p { margin: 0; }
-.alert p + p { margin-top: 0.3rem; }
+.alert p + p { margin-top: 0.4rem; }
 .alert--warn { border-left-color: var(--signal); }
 .alert--warn svg { color: var(--signal); }
 
-/* Issues requiring attention - only mounted when there's something in
-   it (see IssuesPanel in App.jsx). Same signal-soft language as
-   .alert--warn, never the critical/red tone - nothing in here blocks
-   dispatch outright, it's things to notice, not an emergency. */
 .issues-panel {
   border: 1px solid var(--signal-soft);
-  background: var(--signal-soft);
+  background: var(--surface);
   border-radius: var(--radius-lg);
-  margin-bottom: 1.15rem;
+  margin-bottom: 1.5rem;
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .issues-panel__header {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.85rem 1.1rem;
-  background: transparent;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  background: var(--signal-soft);
   border: none;
   cursor: pointer;
   text-align: left;
   font: inherit;
 }
 .issues-panel__icon {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
-  background: rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.2);
   color: var(--signal);
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
 }
-.issues-panel__title-group { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-.issues-panel__title { font-size: 0.9rem; font-weight: 800; color: var(--ink); }
-.issues-panel__sub { font-size: 0.78rem; color: var(--ink-soft); font-weight: 500; }
-.issues-panel__chevron { margin-left: auto; flex: none; color: var(--ink-faint); transition: transform 0.15s ease; }
+.issues-panel__title-group { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.issues-panel__title { font-size: 0.95rem; font-weight: 800; color: var(--ink); }
+.issues-panel__sub { font-size: 0.82rem; color: var(--ink-soft); font-weight: 600; }
+.issues-panel__chevron { margin-left: auto; flex: none; color: var(--ink-faint); transition: transform 0.2s ease; }
 .issues-panel__chevron--open { transform: rotate(180deg); }
 .issues-panel__body {
   background: var(--surface);
-  border-top: 1px solid var(--signal-soft);
-  padding: 0.4rem 1.1rem 0.85rem;
+  border-top: 1px solid var(--rule);
+  padding: 0.5rem 1.25rem 1rem;
   display: flex;
   flex-direction: column;
 }
-.issue-group { padding-top: 0.65rem; }
+.issue-group { padding-top: 0.85rem; }
 .issue-group__label {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.78rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--ink-faint);
-  padding: 0.1rem 0 0.4rem;
+  padding: 0.15rem 0 0.5rem;
 }
 .issue-row {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.6rem;
+  gap: 0.85rem;
+  padding: 0.6rem 0.75rem;
   border-radius: var(--radius-sm);
 }
 .issue-row:hover { background: var(--surface-2); }
-.issue-row__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); flex: none; }
-.issue-row__text { font-size: 0.83rem; color: var(--ink); font-weight: 600; flex: 1 1 auto; }
-.issue-row__actions { display: flex; gap: 0.4rem; flex: none; }
+.issue-row__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--signal); flex: none; }
+.issue-row__text { font-size: 0.88rem; color: var(--ink); font-weight: 600; flex: 1 1 auto; }
+.issue-row__actions { display: flex; gap: 0.5rem; flex: none; }
 .issue-group__more {
   background: none;
   border: none;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary);
   cursor: pointer;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.75rem;
   text-align: left;
 }
 .issue-group__more:hover { text-decoration: underline; }
 
 .empty-state {
-  padding: 3rem 1.5rem;
+  padding: 4rem 2rem;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
   color: var(--ink-soft);
+  font-size: 0.95rem;
 }
 
 .app-footer {
-  padding: 1.25rem 1.75rem;
+  padding: 1.5rem 2rem;
   border-top: 1px solid var(--rule);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 500;
   color: var(--ink-soft);
   background: var(--surface);
   margin-top: auto;
@@ -2329,9 +2327,6 @@ textarea.modal__input {
 
 /* =======================================================================
    Responsive polish
-   Keep dense operational views usable without forcing the whole page wider
-   than the viewport. These rules intentionally sit last so they also apply
-   to the shared workspace styles imported by App.
 ======================================================================= */
 button, input, select, textarea { font: inherit; }
 button, select { -webkit-tap-highlight-color: transparent; }
@@ -2348,72 +2343,71 @@ select { max-width: 100%; }
 .topbar__title p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1100px) {
-  .console { padding-inline: 1.25rem; }
-  .topbar { padding-inline: 1.25rem; }
-  .topbar__search { width: clamp(180px, 25vw, 280px); }
+  .console { padding-inline: 1.5rem; }
+  .topbar { padding-inline: 1.5rem; }
+  .topbar__search { width: clamp(200px, 25vw, 300px); }
   .drivers-table th,
-  .drivers-table td { padding-inline: 0.85rem; }
-  .failed-split__list { width: 280px; }
+  .drivers-table td { padding-inline: 1rem; }
+  .failed-split__list { width: 300px; }
 }
 
 @media (max-width: 720px) {
-  .topbar { padding: 0.65rem 0.85rem; }
-  .topbar__inner { gap: 0.55rem; }
+  .topbar { padding: 0.75rem 1rem; }
+  .topbar__inner { gap: 0.75rem; }
   .topbar__search,
   .topbar__date,
   .topbar__account-name { display: none; }
   .topbar__spacer { min-width: 0; }
-  .topbar__account { padding: 0.25rem; }
-  .topbar__account .topbar__avatar { width: 30px; height: 30px; }
-  .quick-action { width: 38px; padding: 0; font-size: 0; }
-  .quick-action svg { width: 16px; height: 16px; }
-  .console { padding: 1rem 0.85rem 2rem; }
-  .session-tabs { padding-inline: 0.85rem; }
+  .topbar__account { padding: 0.35rem; }
+  .topbar__account .topbar__avatar { width: 34px; height: 34px; }
+  .quick-action { width: 42px; padding: 0; font-size: 0; }
+  .quick-action svg { width: 18px; height: 18px; }
+  .console { padding: 1.25rem 1rem 2.5rem; }
+  .session-tabs { padding-inline: 1rem; }
   .session-tab { white-space: nowrap; }
-  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
-  .kpi-tile { padding: 0.85rem; gap: 0.65rem; }
-  .kpi-tile__icon { width: 34px; height: 34px; }
-  .kpi-tile__value { font-size: 1.25rem; }
-  .dash-links { grid-template-columns: 1fr; gap: 0.65rem; }
-  .toolbar { padding: 1rem; border-radius: var(--radius-md); }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; }
+  .kpi-tile { padding: 1rem; gap: 0.75rem; }
+  .kpi-tile__icon { width: 38px; height: 38px; }
+  .kpi-tile__value { font-size: 1.4rem; }
+  .dash-links { grid-template-columns: 1fr; gap: 0.85rem; }
+  .toolbar { padding: 1.25rem; border-radius: var(--radius-lg); }
   .toolbar__summary,
   .toolbar__row,
   .toolbar__group { align-items: stretch; }
-  .toolbar__summary { gap: 0.75rem; flex-wrap: wrap; }
+  .toolbar__summary { gap: 0.85rem; flex-wrap: wrap; }
   .toolbar__row,
   .toolbar__group { width: 100%; }
   .toolbar__group { flex-wrap: wrap; }
   .toolbar-btn, .toolbar__group > .btn { flex: 1 1 auto; justify-content: center; }
-  .status-readout { gap: 0.8rem; flex-wrap: wrap; }
-  .board--drivers { padding: 1rem; border-radius: var(--radius-md); }
+  .status-readout { gap: 1rem; flex-wrap: wrap; }
+  .board--drivers { padding: 1.25rem; border-radius: var(--radius-lg); }
   .board__header { align-items: flex-start; flex-direction: column; }
   .board__header-group { width: 100%; justify-content: space-between; }
   .drivers-table-wrap { overflow-x: auto; }
-  .drivers-table { min-width: 700px; }
+  .drivers-table { min-width: 760px; }
   .driver-runs-table-wrap { overflow-x: auto; }
-  .driver-runs-table { min-width: 860px; }
-  .failed-split { flex-direction: column; min-height: 0; }
-  .failed-split__list { width: 100%; max-height: 260px; border-right: 0; border-bottom: 1px solid var(--rule); padding: 0 0 1rem; }
-  .failed-split__detail { padding: 1rem; }
-  .detail-grid { grid-template-columns: 1fr; }
-  .app-footer { padding: 1rem 0.85rem; gap: 0.75rem; align-items: flex-start; flex-direction: column; }
-  .toast { right: 0.85rem; bottom: 0.85rem; left: 0.85rem; justify-content: center; text-align: center; }
-  .modal-backdrop, .history-overlay { padding: 0.75rem; align-items: flex-end; }
-  .modal, .history-panel { max-height: min(92vh, 760px); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-  .driver-form-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .driver-runs-table { min-width: 900px; }
+  .failed-split { flex-direction: column; min-height: 0; gap: 1.25rem; }
+  .failed-split__list { width: 100%; max-height: 300px; border-right: 0; border-bottom: 1px solid var(--rule); padding: 0 0 1.25rem; }
+  .failed-split__detail { padding: 1.25rem; }
+  .app-footer { padding: 1.25rem 1rem; gap: 0.85rem; align-items: flex-start; flex-direction: column; }
+  .toast { right: 1rem; bottom: 1rem; left: 1rem; justify-content: center; text-align: center; }
+  .modal-backdrop, .history-overlay { padding: 1rem; align-items: flex-end; }
+  .modal, .history-panel { max-height: min(92vh, 800px); border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
+  .driver-form-grid { grid-template-columns: 1fr; gap: 1.25rem; }
   .driver-form-grid__full { grid-column: auto; }
   .modal__header, .history-panel__head,
   .modal__body, .history-panel__body,
-  .modal__footer, .history-panel__footer { padding-inline: 1rem; }
+  .modal__footer, .history-panel__footer { padding-inline: 1.25rem; }
   .modal__footer, .history-panel__footer { flex-wrap: wrap; }
   .modal__footer .btn, .history-panel__footer .btn { flex: 1 1 140px; }
-  .credential-row { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
+  .credential-row { align-items: flex-start; flex-direction: column; gap: 0.4rem; }
 }
 
 @media (max-width: 420px) {
   .stat-row { grid-template-columns: 1fr; }
-  .kpi-tile { min-height: 70px; }
-  .topbar__title h1 { font-size: 1.05rem; }
+  .kpi-tile { min-height: 80px; }
+  .topbar__title h1 { font-size: 1.15rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2425,7 +2419,6 @@ select { max-width: 100%; }
   }
 }
 
-/* Focus must remain visible without making a clicked control look larger. */
 button:active:not(:disabled),
 .btn:active:not(:disabled),
 .toolbar-btn:active:not(:disabled),

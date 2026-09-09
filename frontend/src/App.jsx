@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
-import RouteWorkspace, { AdjustLocationModal } from './routes/RouteWorkspace';
+import RouteWorkspace, { AdjustLocationModal, EmbeddedPinAdjuster } from './routes/RouteWorkspace';
 import './App.css';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
 // modal) for the Drivers panel's create/edit/reset-password forms below,
@@ -128,6 +128,152 @@ const ADDRESS_BREAKDOWN_FIELDS = [
   { key: 'city', label: 'City', missingLabel: 'city' },
   { key: 'pincode', label: 'PIN Code', missingLabel: 'PIN code', errorMatch: /pin code/i },
 ];
+
+// Interactive component-level address editor for Failed Addresses -
+// provides individual text boxes for Door/House No., Street Name, Area/Locality,
+// and City & PIN Code with explicit error headers over flagged fields.
+function AddressComponentEditor({ order, geocodeError, currentAddress, onAddressChange }) {
+  if (!order) return null;
+
+  const breakdownFields = order.address_breakdown?.fields || {};
+  const breakdownMissing = order.address_breakdown?.missing || [];
+  const errorText = geocodeError || '';
+
+  const [compState, setCompState] = useState(() => ({
+    houseNo: breakdownFields.house_number || breakdownFields.flat || breakdownFields.building || '',
+    street: breakdownFields.street || '',
+    area: breakdownFields.area || breakdownFields.landmark || '',
+    cityPin: [breakdownFields.city, breakdownFields.pincode].filter(Boolean).join(' ') || ''
+  }));
+
+  useEffect(() => {
+    const fields = order.address_breakdown?.fields || {};
+    setCompState({
+      houseNo: fields.house_number || fields.flat || fields.building || '',
+      street: fields.street || '',
+      area: fields.area || fields.landmark || '',
+      cityPin: [fields.city, fields.pincode].filter(Boolean).join(' ') || ''
+    });
+  }, [order.order_id]);
+
+  const updateField = (fieldKey, value) => {
+    const next = { ...compState, [fieldKey]: value };
+    setCompState(next);
+    const combined = [next.houseNo, next.street, next.area, next.cityPin].filter(Boolean).join(', ');
+    onAddressChange(combined);
+  };
+
+  const isHouseError = /house\/door number|door|house/i.test(errorText) || breakdownMissing.includes('house/door number');
+  const isStreetError = /street name|street/i.test(errorText) || breakdownMissing.includes('street name');
+  const isAreaError = /area\/locality|area|locality|landmark/i.test(errorText) || breakdownMissing.includes('area/locality');
+  const isCityError = /pin code|city/i.test(errorText) || breakdownMissing.includes('city') || breakdownMissing.includes('PIN code');
+
+  return (
+    <div className="address-component-editor">
+      <div className="editor-header">
+        <span className="ticket__field-label">Component Address Editor</span>
+        <span className="editor-sub">Edit individual address text boxes below — explicit guidance above each field indicates what to change</span>
+      </div>
+
+      <div className="component-inputs-grid">
+        {/* House / Door No */}
+        <div className={`component-field-box ${isHouseError ? 'component-field-box--error' : ''}`}>
+          <div className="field-box__head">
+            <label htmlFor={`comp-house-${order.order_id}`}>Door / House No.</label>
+            {isHouseError && <span className="field-box__error-badge"><IconAlert width={12} height={12} /> Action Required</span>}
+          </div>
+          <div className={`field-guidance ${isHouseError ? 'field-guidance--error' : ''}`}>
+            {isHouseError
+              ? '⚠️ Missing Door/House Number — Enter flat, door, or house number (e.g. Door No. 42 / Flat 3B)'
+              : 'Enter flat, door, or house number'}
+          </div>
+          <input
+            id={`comp-house-${order.order_id}`}
+            type="text"
+            className="component-field-input"
+            placeholder="e.g. Door No. 42 / Flat 3B"
+            value={compState.houseNo}
+            onChange={(e) => updateField('houseNo', e.target.value)}
+          />
+        </div>
+
+        {/* Street Name */}
+        <div className={`component-field-box ${isStreetError ? 'component-field-box--error' : ''}`}>
+          <div className="field-box__head">
+            <label htmlFor={`comp-street-${order.order_id}`}>Street Name</label>
+            {isStreetError && <span className="field-box__error-badge"><IconAlert width={12} height={12} /> Action Required</span>}
+          </div>
+          <div className={`field-guidance ${isStreetError ? 'field-guidance--error' : ''}`}>
+            {isStreetError
+              ? '⚠️ Street Name Unclear or Missing — Enter street, road, or avenue name (e.g. Thirumalai Pillai Road)'
+              : 'Enter street, road, or avenue name'}
+          </div>
+          <input
+            id={`comp-street-${order.order_id}`}
+            type="text"
+            className="component-field-input"
+            placeholder="e.g. Thirumalai Pillai Road"
+            value={compState.street}
+            onChange={(e) => updateField('street', e.target.value)}
+          />
+        </div>
+
+        {/* Area / Locality */}
+        <div className={`component-field-box ${isAreaError ? 'component-field-box--error' : ''}`}>
+          <div className="field-box__head">
+            <label htmlFor={`comp-area-${order.order_id}`}>Area / Locality / Landmark</label>
+            {isAreaError && <span className="field-box__error-badge"><IconAlert width={12} height={12} /> Action Required</span>}
+          </div>
+          <div className={`field-guidance ${isAreaError ? 'field-guidance--error' : ''}`}>
+            {isAreaError
+              ? '⚠️ Area or Locality Missing — Enter neighborhood, area, or landmark (e.g. T Nagar / Near Bus Stand)'
+              : 'Enter area, locality, or landmark'}
+          </div>
+          <input
+            id={`comp-area-${order.order_id}`}
+            type="text"
+            className="component-field-input"
+            placeholder="e.g. T Nagar / Near Bus Stand"
+            value={compState.area}
+            onChange={(e) => updateField('area', e.target.value)}
+          />
+        </div>
+
+        {/* City & PIN Code */}
+        <div className={`component-field-box ${isCityError ? 'component-field-box--error' : ''}`}>
+          <div className="field-box__head">
+            <label htmlFor={`comp-city-${order.order_id}`}>City & PIN Code</label>
+            {isCityError && <span className="field-box__error-badge"><IconAlert width={12} height={12} /> Action Required</span>}
+          </div>
+          <div className={`field-guidance ${isCityError ? 'field-guidance--error' : ''}`}>
+            {isCityError
+              ? '⚠️ City or PIN Code Issue — Enter 6-digit PIN code and city (e.g. Chennai 600017)'
+              : 'Enter 6-digit PIN code and city name'}
+          </div>
+          <input
+            id={`comp-city-${order.order_id}`}
+            type="text"
+            className="component-field-input"
+            placeholder="e.g. Chennai 600017"
+            value={compState.cityPin}
+            onChange={(e) => updateField('cityPin', e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="combined-address-box">
+        <label className="ticket__field-label" htmlFor={`addr-detail-${order.order_id}`}>Full Combined Address Line</label>
+        <input
+          id={`addr-detail-${order.order_id}`}
+          className="ticket__field"
+          type="text"
+          value={currentAddress}
+          onChange={(e) => onAddressChange(e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
 
 // One labeled box per address component, with the field the current error
 // is actually about visually flagged - see the user-facing request this
@@ -3525,32 +3671,19 @@ function App() {
                           <span>{selectedFailedOrder.geocode_error || 'Geocoding failed'}</span>
                         </div>
 
-                        {/* Per-field breakdown of what the system actually
-                            read out of the address - house number, street,
-                            area, city, PIN each get their own labeled box,
-                            with whichever one the error above is actually
-                            about visually flagged, instead of making the
-                            admin re-read the raw address to find it. */}
-                        <AddressBreakdown
-                          breakdown={selectedFailedOrder.address_breakdown}
-                          geocodeError={selectedFailedOrder.geocode_error}
+                        {/* Embedded Interactive Draggable Pin Map */}
+                        <EmbeddedPinAdjuster
+                          order={selectedFailedOrder}
+                          isSubmitting={isSettingManualLocation}
+                          onSaveLocation={(lat, lng) => handleSetManualLocation(selectedFailedOrder.order_id, lat, lng)}
                         />
 
-                        <div className="detail-map">
-                          <iframe
-                            title="Address map preview"
-                            loading="lazy"
-                            src={`https://maps.google.com/maps?q=${encodeURIComponent((editingAddresses[selectedFailedOrder.order_id] ?? selectedFailedOrder.address) || 'Chennai, India')}&z=15&output=embed`}
-                          />
-                        </div>
-
-                        <label className="ticket__field-label" htmlFor={`addr-detail-${selectedFailedOrder.order_id}`}>Edit address</label>
-                        <input
-                          id={`addr-detail-${selectedFailedOrder.order_id}`}
-                          className="ticket__field"
-                          type="text"
-                          value={editingAddresses[selectedFailedOrder.order_id] ?? (selectedFailedOrder.address || '')}
-                          onChange={(e) => handleAddressChange(selectedFailedOrder.order_id, e.target.value)}
+                        {/* Component-level address editor with explicit error callouts per field */}
+                        <AddressComponentEditor
+                          order={selectedFailedOrder}
+                          geocodeError={selectedFailedOrder.geocode_error}
+                          currentAddress={editingAddresses[selectedFailedOrder.order_id] ?? (selectedFailedOrder.address || '')}
+                          onAddressChange={(newAddr) => handleAddressChange(selectedFailedOrder.order_id, newAddr)}
                         />
 
                         <div className="detail-grid">

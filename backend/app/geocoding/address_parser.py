@@ -51,7 +51,8 @@ _GLUED_SUFFIXES = ("nagar", "road", "street", "salai", "avenue", "layout")
 # ("D1/5", "A1C" - see google_geocoder._HOUSE_NUMBER_TOKEN).
 _NUMBER_PREFIX_WORDS = (
     "doorno", "door", "dno", "no", "plot", "flat", "houseno", "house",
-    "block", "shop", "unit", "apt",
+    "block", "shop", "unit", "apt", "hno", "h.no", "pno", "p.no",
+    "fno", "f.no", "sno", "s.no", "syno", "sy.no", "siteno", "site.no",
 )
 
 # Expanded only in the text sent to the provider, never in what's shown
@@ -110,7 +111,8 @@ _BUILDING_KEYWORDS = (
     "apartment", "apartments", "apts", "flats", "tower", "towers",
     "residency", "enclave", "villa", "villas", "building", "complex",
     "mansion", "nivas", "illam", "heights", "castle", "court",
-    "chambers", "plaza", "arcade",
+    "chambers", "plaza", "arcade", "society", "gardens", "palace",
+    "nest", "homes", "greens", "paradise", "manor", "haven", "township",
 )
 
 _STREET_KEYWORDS = (
@@ -125,8 +127,8 @@ _STREET_KEYWORDS = (
 _CITY_KEYWORDS = ("chennai", "madras")
 
 _HOUSE_PREFIX_PATTERN = re.compile(
-    r"^(?:door[.\s]*(?:no[.:]?)?|d\.?\s*no[.:]?|plot[.\s]*(?:no[.:]?)?"
-    r"|house[.\s]*(?:no[.:]?)?|no[.:]?)\s*",
+    r"^(?:door[.\s]*(?:no[.:]?)?|d\.?\s*no[.:]?|h\.?\s*no[.:]?|plot[.\s]*(?:no[.:]?)?"
+    r"|p\.?\s*no[.:]?|house[.\s]*(?:no[.:]?)?|f\.?\s*no[.:]?|site[.\s]*(?:no[.:]?)?|no[.:]?)\s*",
     re.IGNORECASE,
 )
 _HOUSE_TOKEN_PATTERN = re.compile(r"^([A-Za-z]?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")

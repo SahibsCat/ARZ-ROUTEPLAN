@@ -37,33 +37,39 @@ from typing import Iterable, List, Optional, Set
 CHENNAI_LOCALITIES: List[str] = [
     "Adambakkam", "Adyar", "Alandur", "Alapakkam", "Alwarpet", "Alwarthirunagar",
     "Ambattur", "Aminjikarai", "Anakaputhur", "Anna Nagar", "Annanur", "Arumbakkam",
-    "Ashok Nagar", "Avadi", "Ayanavaram", "Basin Bridge", "Besant Nagar", "Bharathi Nagar",
-    "Broadway", "Chepauk", "Chetpet", "Chintadripet", "Chitlapakkam", "Choolai",
-    "Choolaimedu", "Chrompet", "Egmore", "Ekkaduthangal", "Ennore", "Foreshore Estate",
-    "Fort St George", "George Town", "Gerugambakkam", "Gopalapuram", "Guduvancheri",
-    "Guindy", "Injambakkam", "Iyyappanthangal", "Jafferkhanpet", "Kanathur",
-    "Kancheepuram", "Kandanchavadi", "Karapakkam", "Kasturba Nagar", "Kattupakkam",
-    "Kazhipattur", "Keelkattalai", "Kelambakkam", "Kilpauk", "Kodambakkam",
-    "Kolathur", "Kondithope", "Korattur", "Korukkupet", "Kotturpuram", "Kottivakkam",
-    "Kovilambakkam", "Kovur", "Koyambedu", "Kundrathur", "Madambakkam", "Madhavaram",
-    "Madipakkam", "Maduravoyal", "Mambalam", "Manali", "Manapakkam", "Mandaveli",
-    "Mangadu", "Mannady", "Maraimalai Nagar", "Medavakkam", "Meenambakkam",
-    "Mogappair", "Moolakadai", "Moulivakkam", "Mount Road", "Mudichur", "Mugalivakkam",
-    "Mylapore", "Nandanam", "Nanganallur", "Nanmangalam", "Navalur", "Neelankarai",
-    "Nerkundram", "Nesapakkam", "Nolambur", "Numbal", "Nungambakkam", "Okkiyam",
-    "Padi", "Padur", "Palavakkam", "Pallavaram", "Pallikaranai", "Pammal",
-    "Parrys Corner", "Pattabiram", "Pattaravakkam", "Peerkankaranai", "Perambur",
-    "Peravallur", "Perumbakkam", "Perungalathur", "Perungudi", "Pozhichalur",
+    "Ashok Nagar", "Athipattu", "Avadi", "Ayapakkam", "Ayanavaram", "Basin Bridge",
+    "Besant Nagar", "Bharathi Nagar", "Broadway", "Camp Road", "Chepauk", "Chetpet",
+    "Chintadripet", "Chitlapakkam", "Choolai", "Choolaimedu", "Chromepet", "Chrompet",
+    "Egmore", "Ekkaduthangal", "Ennore", "Foreshore Estate", "Fort St George",
+    "George Town", "Gerugambakkam", "Gopalapuram", "Guduvancheri", "Guduvanchery",
+    "Guindy", "Hasthinapuram", "Injambakkam", "Iyyappanthangal", "Jafferkhanpet",
+    "K K Nagar", "KK Nagar", "Kanathur", "Kancheepuram", "Kandanchavadi",
+    "Karapakkam", "Kasturba Nagar", "Kattupakkam", "Kazhipattur", "Keelkattalai",
+    "Kelambakkam", "Kilpauk", "Kodambakkam", "Kolathur", "Kondithope", "Korattur",
+    "Korukkupet", "Kotturpuram", "Kottivakkam", "Kovalam", "Kovilambakkam", "Kovur",
+    "Koyambedu", "Kundrathur", "Madambakkam", "Madhavaram", "Madipakkam",
+    "Maduravoyal", "Mahindra World City", "Mambalam", "Manali", "Manapakkam",
+    "Mandaveli", "Mangadu", "Mannady", "Maraimalai Nagar", "Medavakkam",
+    "Meenambakkam", "Minjur", "Mogappair", "Mogappair East", "Mogappair West",
+    "Moolakadai", "Moovarasanpet", "Moulivakkam", "Mount Road", "Mudichur",
+    "Mugalivakkam", "Mylapore", "Nandanam", "Nanganallur", "Nanmangalam",
+    "Navalur", "Neelankarai", "Nerkundram", "Nesapakkam", "Nolambur", "Numbal",
+    "Nungambakkam", "Okkiyam", "Padappai", "Padi", "Padur", "Palavakkam",
+    "Pallavaram", "Pallikaranai", "Pammal", "Parrys Corner", "Pattabiram",
+    "Pattaravakkam", "Peerkankaranai", "Perambur", "Peravallur", "Perumbakkam",
+    "Perungalathur", "Perungudi", "Polichalur", "Potheri", "Pozhichalur",
     "Poonamallee", "Porur", "Pudupet", "Pulianthope", "Purasawalkam", "Puzhal",
     "Puzhuthivakkam", "Raja Annamalai Puram", "Ramapuram", "Red Hills", "Royapettah",
     "Royapuram", "Saidapet", "Saligramam", "Santhome", "Selaiyur", "Semmancheri",
-    "Sembakkam", "Sholavaram", "Sholinganallur", "Siruseri", "Sithalapakkam",
-    "Sowcarpet", "St Thomas Mount", "Surapet", "Taramani", "Teynampet",
-    "Thirumangalam", "Thirumullaivoyal", "Thiruneermalai", "Thiruninravur",
-    "Thiruvanmiyur", "Thiruverkadu", "Thiruvottiyur", "Thoraipakkam", "Tondiarpet",
-    "Triplicane", "Urapakkam", "Vadapalani", "Valasaravakkam", "Vanagaram",
-    "Vandalur", "Velachery", "Vellore", "Vepery", "Vettuvankeni", "Vijayanagaram",
-    "Villivakkam", "Virugambakkam", "Vyasarpadi", "Washermanpet", "West Mambalam",
+    "Sembakkam", "Sholavaram", "Sholinganallur", "Singaperumal Koil", "Siruseri",
+    "Sithalapakkam", "Sowcarpet", "Sriperumbudur", "St Thomas Mount", "Sunguvarchatram",
+    "Surapet", "T Nagar", "T. Nagar", "Taramani", "Teynampet", "Thalambur",
+    "Thirumangalam", "Thirumazhisai", "Thirumullaivoyal", "Thiruneermalai",
+    "Thiruninravur", "Thiruvanmiyur", "Thiruverkadu", "Thiruvottiyur", "Thoraipakkam",
+    "Tondiarpet", "Triplicane", "Urapakkam", "Uttandi", "Vadapalani",
+    "Valasaravakkam", "Vanagaram", "Vandalur", "Velachery", "Vellore", "Vengaivasal",
+    "Vepery", "Vettuvankeni", "Vijayanagaram", "Villivakkam", "Virugambakkam",
+    "Vyasarpadi", "Washermanpet", "West Mambalam",
 ]
 
 # Similarity floor for accepting a correction. 0.86 is high on purpose:
@@ -79,6 +85,57 @@ LOCALITY_CORRECTION_THRESHOLD = 0.86
 # ambiguous between two genuinely different places and is left
 # uncorrected rather than guessed at.
 AMBIGUOUS_CORRECTION_MARGIN = 0.03
+
+# Canonical pincodes for Chennai localities to auto-repair customer pincode typos
+LOCALITY_PINCODES = {
+    "velachery": "600042", "adyar": "600020", "thiruvanmiyur": "600041",
+    "mylapore": "600004", "anna nagar": "600040", "t nagar": "600017",
+    "porur": "600116", "guindy": "600032", "vadapalani": "600026",
+    "kodambakkam": "600024", "ashok nagar": "600083", "kk nagar": "600078",
+    "west mambalam": "600033", "saidapet": "600015", "teynampet": "600018",
+    "alwarpet": "600018", "nungambakkam": "600034", "egmore": "600008",
+    "chetpet": "600031", "kilpauk": "600010", "perambur": "600011",
+    "vyasarpadi": "600039", "royapettah": "600014", "triplicane": "600005",
+    "mandaveli": "600028", "kotturpuram": "600085", "besant nagar": "600090",
+    "perungudi": "600096", "thoraipakkam": "600097", "sholinganallur": "600119",
+    "karapakkam": "600097", "navalur": "603103", "padur": "603103",
+    "siruseri": "603103", "kelambakkam": "603103", "medavakkam": "600100",
+    "perumbakkam": "600100", "sithalapakkam": "600126", "madipakkam": "600091",
+    "keelkattalai": "600117", "nanganallur": "600061", "adambakkam": "600088",
+    "pallavaram": "600043", "chromepet": "600044", "chrompet": "600044",
+    "tambaram": "600045", "selaiyur": "600073", "guduvancheri": "603202",
+    "guduvanchery": "603202", "urapakkam": "603210", "vandalur": "600048",
+    "virugambakkam": "600092", "valasaravakkam": "600087", "ramapuram": "600089",
+    "manapakkam": "600125", "gerugambakkam": "600128", "iyyappanthangal": "600056",
+    "kattupakkam": "600056", "poonamallee": "600056", "kundrathur": "600069",
+    "mangadu": "600122", "avadi": "600054", "ambattur": "600053",
+    "mogappair": "600037", "nolambur": "600095", "arumbakkam": "600106",
+    "aminjikarai": "600029", "koyambedu": "600107", "padi": "600050",
+    "korattur": "600080", "kolathur": "600099", "madhavaram": "600060",
+}
+
+
+def get_canonical_pincode(locality: str) -> Optional[str]:
+    """Returns the canonical 6-digit PIN code for a known Chennai locality."""
+    if not locality:
+        return None
+    return LOCALITY_PINCODES.get(locality.strip().lower())
+
+
+def repair_pincode_by_locality(address: str) -> Optional[str]:
+    """Auto-repairs customer pincode typos ONLY when a 6-digit pincode is typed
+    that differs from the canonical pincode of a recognized locality in the address."""
+    lowered = address.lower()
+    pin_match = re.search(r"\b(\d{6})\b", address)
+    if not pin_match:
+        return None
+
+    typed_pin = pin_match.group(1)
+    for locality, canonical_pin in LOCALITY_PINCODES.items():
+        if locality in lowered and typed_pin != canonical_pin:
+            return address.replace(typed_pin, canonical_pin)
+
+    return None
 
 _VOWEL_RUN = re.compile(r"([aeiou])\1+")
 

@@ -15,17 +15,14 @@ from app.geocoding.base import (
 # this class of comparison (PIN extraction, token-level fuzzy matching) to
 # validate ITS OWN candidates against the customer's original address text;
 # no reason for Google's geocoder to score component matches differently.
-from app.geocoding.chennai_localities import correct_locality_spelling
+from app.geocoding import address_parser
+from app.geocoding.chennai_localities import correct_locality_spelling, repair_pincode_by_locality
 from app.geocoding.nominatim_geocoder import _extract_pincode, _fuzzy_token_match
 
 GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
-# Places API "Find Place From Text" - a fuzzy, named-establishment search,
-# not a structured-address parser. Used only as a fallback (see
-# GoogleGeocoder._find_place) when the Geocoding API above can't place an
-# address precisely - which is common for "Sidharth Upscale Apartments,
-# Porur" style addresses that name a specific building/complex rather than
-# a street + number, exactly the class of address the Geocoding API isn't
-# built to recognize by name.
+# Places API Text Search & Find Place endpoints - fuzzy, named-establishment
+# search for apartment complexes, buildings, and landmarks.
+PLACES_TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 PLACES_FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
 # Find Place From Text's supported `fields` never includes address_components
 # (only formatted_address as free text) - so a place_id from it is resolved
@@ -300,7 +297,7 @@ _STREET_SUFFIX_PATTERN = re.compile(
 # was actually wrong. Confirmed by testing this addition against a real
 # address - it broke a previously-correct 0.8-confidence match.
 _HOUSE_NUMBER_PREFIX = re.compile(
-    r"^(?:door[.\s]*(?:no[.:]?)?|d\.?\s*no[.:]?|plot[.\s]*(?:no[.:]?)?|house[.\s]*(?:no[.:]?)?|no[.:]?)\s*",
+    r"^(?:door[.\s]*(?:no[.:]?)?|d\.?\s*no[.:]?|h\.?\s*no[.:]?|plot[.\s]*(?:no[.:]?)?|p\.?\s*no[.:]?|house[.\s]*(?:no[.:]?)?|f\.?\s*no[.:]?|site[.\s]*(?:no[.:]?)?|sy[.\s]*(?:no[.:]?)?|s\.?\s*no[.:]?|no[.:]?)\s*",
     re.IGNORECASE,
 )
 # A house number token - plain (24), letter-suffixed (12A), letter-
@@ -1168,6 +1165,17 @@ class GoogleGeocoder(GeocodingProvider):
             if best is not None and best.status == STATUS_OK:
                 return best
 
+        # Pincode auto-repair retry (fires only if initial attempt failed due to a PIN mismatch)
+        if best is not None and best.mismatch_reason and "PIN" in best.mismatch_reason:
+            repaired_pin = repair_pincode_by_locality(address)
+            if repaired_pin and repaired_pin.lower() != address.lower():
+                variant = self._geocode_once(repaired_pin, validate_against=address)
+                if _rank(variant) > _rank(best):
+                    print(f"Google Geocoding: pincode-repaired retry '{address}' -> '{repaired_pin}' improved the match")
+                    best = variant
+                if best is not None and best.status == STATUS_OK:
+                    return best
+
         stripped_landmark = _strip_landmark_phrase(address)
         if stripped_landmark and stripped_landmark.lower() != address.lower():
             variant = self._geocode_once(stripped_landmark)
@@ -1195,6 +1203,18 @@ class GoogleGeocoder(GeocodingProvider):
         if best is not None and best.status == STATUS_OK:
             return best
 
+        # Targeted Building Complex Places fallback (if building keyword present):
+        parsed_addr = address_parser.parse(address_parser.normalize(address))
+        if parsed_addr.building and address_parser._looks_like_building(parsed_addr.building):
+            area_part = parsed_addr.area or parsed_addr.city or "Chennai"
+            building_query = f"{parsed_addr.building}, {area_part}, India"
+            building_fallback = self._find_place(building_query)
+            if _rank(building_fallback) > _rank(best):
+                print(f"Places API building fallback: '{address}' -> '{building_query}' improved the match")
+                best = building_fallback
+            if best is not None and best.status == STATUS_OK:
+                return best
+
         if cleaned_text and cleaned_text.lower() != address.lower():
             fallback_cleaned = self._find_place(cleaned_text)
             if _rank(fallback_cleaned) > _rank(best):
@@ -1204,16 +1224,15 @@ class GoogleGeocoder(GeocodingProvider):
         return best
 
     def _find_place(self, address: str) -> Optional[GeocodeResult]:
-        """Falls back to Places API's text search when the structured
+        """Falls back to Places API's fuzzy text search when the structured
         Geocoding API could only place an address at area level - Places is
-        built to match a NAMED establishment/apartment complex/building,
+        built to match a NAMED establishment/apartment complex/building/landmark,
         which the Geocoding API's structured address parser often can't do
         (it expects a street + number, not "Sidharth Upscale Apartments").
 
-        Only resolves a place_id here - Find Place From Text has no
-        address_components field to validate against, so the actual
-        location/confidence comes from a Place Details follow-up (see
-        _place_details) that CAN see them.
+        Only resolves a place_id here - Find Place From Text resolves a
+        place_id, so the actual location/confidence comes from a Place
+        Details follow-up (see _place_details) that CAN see address_components.
 
         Deliberately non-fatal on every failure path, unlike _geocode_once's
         REQUEST_DENIED handling: a denial here means "this fallback isn't
@@ -1246,7 +1265,7 @@ class GoogleGeocoder(GeocodingProvider):
                 print(f"Places API fallback: {status} for '{address}' - skipping (Places API may not be enabled)")
             return None
 
-        candidates = data.get("candidates") or []
+        candidates = data.get("candidates") or data.get("results") or []
         if not candidates:
             return None
         place_id = candidates[0].get("place_id")

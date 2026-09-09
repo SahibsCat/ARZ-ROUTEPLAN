@@ -239,6 +239,13 @@ def test_building_signature_ignores_short_generic_building_names():
     assert building_signature("12, Sri, Adyar, Chennai") is None
 
 
+def test_parse_handles_indian_house_number_prefix_variants():
+    assert parse("H.No 12, Main Road, Porur, Chennai").house_number == "12"
+    assert parse("P.No 45, Cross Street, Velachery, Chennai").house_number == "45"
+    assert parse("F.No 3B, Apex Towers, Guindy, Chennai").house_number == "3B"
+    assert parse("Site No 8, Green Glen, Ambattur, Chennai").house_number == "8"
+
+
 def test_parse_never_invents_a_component_it_cannot_see():
     parsed = parse("Chennai")
 
