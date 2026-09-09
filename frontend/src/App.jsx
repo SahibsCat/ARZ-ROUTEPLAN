@@ -3471,13 +3471,34 @@ function App() {
           </div>
 
           {/* Real drag-and-drop, not decorative - onDrop feeds the same
-              handleUpload the hidden file input's onChange does. */}
-          <div
+              handleUpload the hidden file input's onChange does.
+
+              This is a <label htmlFor="manifest-input">, not a <div
+              role="button"> with a manual onClick calling
+              document.getElementById('manifest-input').click() (what this
+              was before) - real bug report this closes ("I click the
+              upload button and nothing happens - no file picker opens at
+              all", on an unspecified desktop browser, not reproducible in
+              Chromium/Playwright no matter how it was tested). A manual
+              JS .click() on a hidden file input is a SYNTHETIC trigger -
+              some browsers/extensions/security policies are free to treat
+              it differently from a direct user click and silently decline
+              to open the OS picker, with no error thrown to explain why.
+              A <label> activating its associated control via htmlFor is
+              NATIVE browser behavior, not a synthetic click simulated in
+              JS at all - there is no code path here to fail. It also
+              respects the input's own `disabled` state automatically (see
+              the input below), so the isProcessing guard that used to
+              live in this onClick doesn't need to be reimplemented here -
+              a disabled input's label doesn't open a picker no matter how
+              it's clicked. The onKeyDown fallback stays: unlike a plain
+              click, focusing a label and pressing Enter/Space does NOT
+              natively activate its control in any browser - that still
+              needs the explicit .click() call it already had. */}
+          <label
+            htmlFor="manifest-input"
             className={`dropzone${isDraggingManifest ? ' dropzone--active' : ''}${isProcessing ? ' dropzone--disabled' : ''}`}
-            role="button"
             tabIndex={0}
-            aria-label="Load order manifest, .xlsx"
-            onClick={() => { if (!isProcessing) document.getElementById('manifest-input')?.click(); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !isProcessing) document.getElementById('manifest-input')?.click(); }}
             onDragOver={(e) => { e.preventDefault(); if (!isProcessing) setIsDraggingManifest(true); }}
             onDragLeave={() => setIsDraggingManifest(false)}
@@ -3511,7 +3532,7 @@ function App() {
               disabled={isProcessing}
               tabIndex={-1}
             />
-          </div>
+          </label>
 
           <div className="toolbar__status-row">
             <div className="status-readout">
