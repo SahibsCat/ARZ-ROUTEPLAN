@@ -111,7 +111,10 @@ def test_geocode_once_validates_against_validate_against_not_the_queried_text():
 def test_geocode_once_without_validate_against_still_validates_the_queried_text():
     # The default (no override) behaves exactly as before this split -
     # every EXISTING call site keeps validating against what it queried
-    # with.
+    # with. No house number stated on purpose - one IS present in the
+    # customer's text in a couple of other tests near this one, which
+    # would satisfy the (correct, separate) trust-house-and-street-over-
+    # locality override below and mask what THIS test means to check.
     components = [
         {"long_name": "12", "types": ["street_number"]},
         {"long_name": "Gandhi Road", "types": ["route"]},
@@ -121,7 +124,7 @@ def test_geocode_once_without_validate_against_still_validates_the_queried_text(
     client = _DummyClient([_ok_response("ROOFTOP", ["premise"], address_components=components)])
     geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
 
-    result = geocoder._geocode_once("12, Gandhi Road, Random Distant District, Chennai")
+    result = geocoder._geocode_once("Gandhi Road, Random Distant District, Chennai")
 
     assert result.status == "NEEDS_MANUAL_VERIFICATION"
 
@@ -515,6 +518,72 @@ def test_score_component_match_does_not_trust_an_abbreviated_street_name_when_an
 
     cap, _reason = _score_component_match(customer, google_components)
     assert cap == STREET_NUMBER_MISMATCH_CONFIDENCE_CAP
+
+
+def test_score_component_match_trusts_locality_when_house_number_and_street_both_confirm():
+    # Real production case (batch 120, Janu Koneru): "No10 crescent
+    # avenue, ra puram, greenways road" against a live Google ROOFTOP
+    # match at "10, Crescent Avenue Rd" - EXACT house number, EXACT
+    # street name, both structurally confirmed - but Google's own
+    # sublocality for that exact rooftop is "Gandhi Nagar" (within
+    # Adyar), not the customer's "RA Puram". Chennai's colloquial
+    # micro-neighbourhood names overlap and disagree with official data
+    # constantly; an exact house number AND an exact street both landing
+    # on the same result is about as strong a signal as this function
+    # gets that Google found the right building regardless.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "No 10 crescent avenue, ra puram, greenways road"
+    google_components = [
+        {"long_name": "10", "types": ["street_number"]},
+        {"long_name": "Crescent Avenue Road", "types": ["route"]},
+        {"long_name": "Gandhi Nagar", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "Adyar", "types": ["sublocality", "sublocality_level_1"]},
+    ]
+
+    assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_does_not_trust_locality_when_only_the_house_number_confirms():
+    # The new locality override needs BOTH the house number AND the
+    # street confirmed - here the street itself doesn't match either
+    # (no route/street text resembling "crescent avenue" at all), so a
+    # locality disagreement still blocks, same as before this override
+    # existed.
+    from app.geocoding.google_geocoder import LOCALITY_MISMATCH_CONFIDENCE_CAP, _score_component_match
+
+    customer = "No 10 crescent avenue, ra puram"
+    google_components = [
+        {"long_name": "10", "types": ["street_number"]},
+        {"long_name": "Kutchery Road", "types": ["route"]},
+        {"long_name": "Gandhi Nagar", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "Adyar", "types": ["sublocality", "sublocality_level_1"]},
+    ]
+
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap == LOCALITY_MISMATCH_CONFIDENCE_CAP
+    assert "locality" in reason.lower()
+
+
+def test_score_component_match_does_not_trust_locality_when_the_pin_also_disagrees():
+    # A customer-stated PIN that ALSO disagrees is a second, independent
+    # contradiction a naming-variance story doesn't explain away - the
+    # override must not apply here even with house number and street
+    # both confirmed.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "No 10 crescent avenue, ra puram, 600020"
+    google_components = [
+        {"long_name": "10", "types": ["street_number"]},
+        {"long_name": "Crescent Avenue Road", "types": ["route"]},
+        {"long_name": "Gandhi Nagar", "types": ["sublocality", "sublocality_level_2"]},
+        {"long_name": "Adyar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600028", "types": ["postal_code"]},
+    ]
+
+    cap, reason = _score_component_match(customer, google_components)
+    assert cap is not None
+    assert "locality" in reason.lower() or "pin" in reason.lower()
 
 
 def test_score_component_match_confirms_a_letter_suffixed_number_via_its_numeric_base_in_free_text():

@@ -740,6 +740,11 @@ def _score_component_match(
         if set(c.get("types") or []) & _LOCALITY_COMPONENT_TYPES
     ]
     locality_confirmed = False
+    # Deferred rather than appended immediately (mirrors house_number_flag
+    # below) - the trust-house-and-street-over-locality override further
+    # down needs to decide AFTER house_number_structurally_confirmed and
+    # street_name_confirmed are known, and those aren't computed yet here.
+    locality_flag: Optional[Tuple[float, str]] = None
     customer_tokens = _locality_tokens(original_address)
     if google_localities and customer_tokens:
         locality_tokens: List[str] = []
@@ -768,10 +773,18 @@ def _score_component_match(
         ):
             locality_confirmed = True
         elif comparison_tokens:
-            non_pin_flags.append((
+            locality_flag = (
                 LOCALITY_MISMATCH_CONFIDENCE_CAP,
                 f"Area/locality mismatch: {_describe_locality_suggestion(google_localities)}",
-            ))
+            )
+            # Appended immediately (not held back until the trust decision
+            # below) so every OTHER override in this function - street-
+            # over-house, house-over-street - still sees a genuine locality
+            # disagreement as the active blocker it is via their own
+            # `not non_pin_flags` checks, exactly as before this override
+            # existed. Removed again below only if the new trust condition
+            # actually holds.
+            non_pin_flags.append(locality_flag)
 
     # House/door number - the spec's central "street found, house not
     # confirmed" case. Building name is never required (see
@@ -943,6 +956,39 @@ def _score_component_match(
         trust_unit_designator = house_number_is_unit_designator and not non_pin_flags
         if not (trust_street_over_house_number or trust_unit_designator):
             non_pin_flags.append(house_number_flag)
+
+    # Trust a locality-NAME disagreement when the house number AND the
+    # street are BOTH independently, structurally confirmed - the natural
+    # third leg of the same trust triangle as the two overrides above
+    # (street trusted via a confirmed house number; house number trusted
+    # via a confirmed street). Real case that forced this: a ROOFTOP match
+    # with an EXACT house-number AND EXACT street-name hit ("10, Crescent
+    # Avenue Rd" for a customer's "No10 crescent avenue") still flagged
+    # because the customer's own colloquial neighbourhood name ("RA
+    # Puram") wasn't what Google's data called that block ("Gandhi Nagar",
+    # within Adyar) - Chennai's micro-neighbourhood names overlap and
+    # disagree with official data constantly; that is naming variance, not
+    # a different building. An exact house number AND an exact street both
+    # landing on the same result is about as strong a signal as this
+    # function ever gets that Google found the right place - stronger than
+    # either alone, which is why this sits behind BOTH being true, not
+    # just one (a single confirmed signal already has its own, narrower
+    # override above; this one is deliberately harder to earn).
+    #
+    # Guarded by house_number_structurally_confirmed specifically (a REAL
+    # structured street_number match), not just "not blocked" - the same
+    # distinction _house_number_matches's own docstring draws. Excludes a
+    # PIN mismatch on purpose: a customer-stated PIN that ALSO disagrees is
+    # a second, independent contradiction a naming-variance story doesn't
+    # explain away.
+    if locality_flag is not None and locality_flag in non_pin_flags:
+        trust_house_and_street_over_locality = (
+            house_number_structurally_confirmed
+            and street_name_confirmed
+            and not pin_mismatch
+        )
+        if trust_house_and_street_over_locality:
+            non_pin_flags.remove(locality_flag)
 
     if pin_mismatch:
         trust_precision_over_pin = (
