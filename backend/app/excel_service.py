@@ -16,6 +16,35 @@ HEADER_SYNONYMS = {
 MONTH_KEYWORDS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
 
+def _normalize_header_text(text: str) -> str:
+    """The actual character-level cleanup shared by both a real header
+    cell and every entry in HEADER_SYNONYMS - see _SYNONYM_LOOKUP's own
+    comment for why applying this to only ONE side used to be a real
+    bug."""
+    normalized = text.replace("\n", " ").replace("_", " ").replace(".", " ").strip()
+    return " ".join(normalized.split())
+
+
+# LOAD-BEARING. HEADER_SYNONYMS is written with a mix of spaced ("si no")
+# and dotted ("si. no", "s.no") forms for readability, but a real header
+# cell only ever went through _normalize_header_text ONCE - the synonym
+# strings themselves were compared as literal, unprocessed text. Since
+# normalization strips periods to spaces, "S.No" (a completely standard
+# way to write it) normalizes to "s no", which is NOT the literal string
+# "s.no" still sitting in the list - the two could never match, and
+# "s.no" has no separate undotted entry to fall back to, so this specific
+# real, common header was silently unrecognized. Running every synonym
+# through the exact same normalization here, once, at import time, fixes
+# the whole class of it - any synonym written with dots, underscores, or
+# extra spacing now matches whatever a real header normalizes to, not
+# just synonyms that happened to already be written in normalized form.
+_SYNONYM_LOOKUP: Dict[str, str] = {
+    _normalize_header_text(synonym): canonical
+    for canonical, synonyms in HEADER_SYNONYMS.items()
+    for synonym in synonyms
+}
+
+
 def normalize_header_cell(value: Optional[str]) -> str:
     if value is None:
         return ""
@@ -23,13 +52,11 @@ def normalize_header_cell(value: Optional[str]) -> str:
     if not text:
         return ""
 
-    normalized = text.replace("\n", " ").replace("_", " ").replace(".", " ").strip()
-    normalized = " ".join(normalized.split())
+    normalized = _normalize_header_text(text)
 
-    for canonical, synonyms in HEADER_SYNONYMS.items():
-        for synonym in synonyms:
-            if normalized == synonym:
-                return canonical
+    canonical = _SYNONYM_LOOKUP.get(normalized)
+    if canonical:
+        return canonical
 
     if any(month in normalized for month in MONTH_KEYWORDS) and any(char.isdigit() for char in normalized):
         return "delivery_time"

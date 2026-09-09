@@ -2,7 +2,42 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from app.excel_service import validate_excel_file
+from app.excel_service import normalize_header_cell, validate_excel_file
+
+
+def test_normalize_header_cell_recognizes_a_dotted_synonym_with_no_plain_fallback():
+    # LOAD-BEARING - the actual production bug this closes. HEADER_SYNONYMS
+    # is written with a mix of spaced ("si no") and dotted ("s.no") forms,
+    # but normalize_header_cell strips periods from a REAL header cell
+    # before comparing ("S.No" -> "s no") - the dotted synonym strings
+    # themselves were never run through that same transformation, so "s
+    # no" could never equal the literal, still-dotted "s.no" still sitting
+    # in the list. Most dotted entries ("si. no") happened to have a
+    # separate plain fallback ("si no") that saved them anyway - "s.no"
+    # did not, so a completely standard way of writing a serial-number
+    # column ("S.No") was silently unrecognized on every real upload.
+    assert normalize_header_cell("S.No") == "order_id"
+    assert normalize_header_cell("S No") == "order_id"
+    assert normalize_header_cell("s.no") == "order_id"
+
+
+def test_validate_excel_file_accepts_a_realistic_header_row_with_stray_whitespace(tmp_path):
+    # Real production case: a manually-typed header row with a leading/
+    # trailing space on two columns and a dotted serial-number column -
+    # exactly the kind of small formatting noise real spreadsheets have,
+    # none of which should be able to fail the whole upload.
+    file_path = tmp_path / "orders.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["S.No", "Customer Name ", " Delivery Address", "Delivery Time"])
+    sheet.append(["1", "Test Customer", "12A, Gandhi Road, Velachery, Chennai 600042", "10:00-12:00"])
+    workbook.save(file_path)
+
+    result = validate_excel_file(str(file_path))
+
+    assert result["is_valid"] is True
+    assert result["total_orders"] == 1
+    assert result["orders"][0]["order_id"] == "1"
 
 
 def test_validate_excel_file_detects_missing_columns(tmp_path):
