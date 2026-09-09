@@ -376,7 +376,7 @@ function ComingSoonPage({ label, icon: Icon, blurb, onClose }) {
 // A plain div when there's nowhere useful to send a click, a real button
 // (keyboard-reachable, no default day-over-day trend claimed since the
 // backend doesn't track yesterday's numbers) when there is.
-function KpiTile({ variant, icon: Icon, value, label, suffix, onClick }) {
+function KpiTile({ variant, icon: Icon, value, label, suffix, title, onClick }) {
   const display = useCountUp(value);
   const Tag = onClick ? 'button' : 'div';
   return (
@@ -384,6 +384,7 @@ function KpiTile({ variant, icon: Icon, value, label, suffix, onClick }) {
       type={onClick ? 'button' : undefined}
       className={`kpi-tile kpi-tile--${variant}${onClick ? ' kpi-tile--clickable' : ''}`}
       onClick={onClick}
+      title={title}
     >
       <span className="kpi-tile__icon"><Icon width={16} height={16} /></span>
       <div>
@@ -2259,8 +2260,16 @@ function App() {
       return true;
     } catch (err) {
       console.error('Add manual address failed:', err);
-      setWarnings([err.message || 'Could not add this address. Please try again.']);
-      return false;
+      const message = err.message || 'Could not add this address. Please try again.';
+      // Also raised as a page-level warning for visibility after the modal
+      // closes, but the modal itself needs the real message INLINE while
+      // it's still open (its backdrop sits over the rest of the page, so
+      // a banner elsewhere isn't visible yet) - returning it here, not
+      // just true/false, is what makes that possible. Previously this
+      // returned a bare boolean and the modal shown a generic placeholder
+      // pointing at "the warning banner above", which didn't exist.
+      setWarnings([message]);
+      return { ok: false, error: message };
     } finally {
       setIsAddingManualAddress(false);
     }
@@ -3184,7 +3193,21 @@ function App() {
             <KpiTile variant="orders" icon={IconInbox} value={totalOrders} label="Orders today" onClick={() => handleNavClick(findNavItem('generate'))} />
             <KpiTile variant="bikes" icon={IconBike} value={bikes} label="Bikes available" onClick={() => handleNavClick(findNavItem('generate'))} />
             <KpiTile variant="cars" icon={IconCar} value={cars} label="Cars available" onClick={() => handleNavClick(findNavItem('generate'))} />
-            <KpiTile variant="routes" icon={IconRoute} value={routes.length} suffix={hasVehicles ? ` / ${cars + bikes}` : ''} label="Routes today" onClick={() => handleNavClick(findNavItem('generate'))} />
+            <KpiTile
+              variant="routes"
+              icon={IconRoute}
+              value={routes.length}
+              suffix={hasVehicles ? ` / ${cars + bikes}` : ''}
+              label="Routes today"
+              // "10 / 7" reads as a fraction at a glance, but it's routes
+              // generated against vehicles available - when routes exceed
+              // vehicles, at least one vehicle is doing more than one trip
+              // today, which is worth knowing, not confusing. A title
+              // attribute gives that context on hover without needing
+              // permanent space in an already-compact tile.
+              title={hasVehicles ? `${routes.length} route${routes.length === 1 ? '' : 's'} today, ${cars + bikes} vehicle${cars + bikes === 1 ? '' : 's'} available` : undefined}
+              onClick={() => handleNavClick(findNavItem('generate'))}
+            />
             <KpiTile variant="distance" icon={IconGauge} value={totalDistanceKm} suffix=" km" label="Total distance" onClick={() => handleNavClick(findNavItem('generate'))} />
             <KpiTile variant="eta" icon={IconFlag} value={avgEtaMinutes} suffix=" min" label="Average ETA" onClick={() => handleNavClick(findNavItem('generate'))} />
           </div>

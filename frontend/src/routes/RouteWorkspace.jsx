@@ -1442,14 +1442,19 @@ function ManualAddressModal({ onConfirm, onClose, isSubmitting }) {
   const handleConfirm = async () => {
     if (!canSubmit) return;
     setError(null);
-    const ok = await onConfirm({
+    const result = await onConfirm({
       address: address.trim(),
       customerName: customerName.trim(),
       deliveryTime: deliveryTime.trim(),
       vehicleType,
     });
-    if (ok) onClose();
-    else setError('Could not add this address - see the warning banner above for details.');
+    // handleAddManualAddress returns `true` on success, or
+    // `{ ok: false, error }` on failure - the real backend/geocoding
+    // error, shown right here where the admin is already looking,
+    // instead of a placeholder pointing at a banner elsewhere on the
+    // page that isn't even visible behind this modal's backdrop.
+    if (result === true) onClose();
+    else setError((result && result.error) || 'Could not add this address. Please try again.');
   };
 
   return (
