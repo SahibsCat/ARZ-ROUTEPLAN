@@ -1826,11 +1826,44 @@ function App() {
     const formData = new FormData();
     formData.append('file', file);
 
+    // Real complaint this answers: "I click the upload button and nothing
+    // happens." The click itself was never the problem (it reliably opens
+    // the file picker) - what actually happened is Render's backend spins
+    // down when idle and can take 20-50s+ to wake back up (same cold-start
+    // behavior the session-restore effect above already retries around),
+    // and this fetch had NO timeout at all - a cold backend just left the
+    // dropzone silently disabled (isProcessing stays true, correctly, but
+    // with no clear signal WHY) for however long the wake-up took, which
+    // reads as "broken" rather than "still working." Two independent fixes:
+    // an honest status update if it's taking a while (not silence), and a
+    // hard timeout so a genuinely stuck request can't disable the dropzone
+    // forever - unlike the session-restore fetch (a plain read, safe to
+    // retry freely), retrying THIS request outright risks a second upload
+    // actually landing and creating a duplicate batch, so this fails
+    // cleanly instead of silently resubmitting.
+    const stillWakingUpTimer = setTimeout(() => {
+      setStatus('Still working - the server may be waking up from being idle, this can take up to a minute…');
+    }, 8000);
+    const uploadTimeoutController = new AbortController();
+    const hardTimeout = setTimeout(() => uploadTimeoutController.abort(), 90000);
+
     try {
       const response = await apiFetch('/api/orders/upload', {
         method: 'POST',
+        signal: uploadTimeoutController.signal,
         body: formData,
       });
+      // A response arrived, so the server is proven awake - the "still
+      // waking up" message no longer applies even if the route-generation
+      // request below (still to come) takes a while for its own reasons.
+      // Real bug this closes (found live, right after adding the timer
+      // above): without clearing it here too, the timer could fire WHILE
+      // route generation was still in flight, and nothing downstream ever
+      // calls setStatus again on the success path - the "still waking
+      // up" text was winning permanently, stuck on screen even after a
+      // fully successful upload, because clearTimeout in the finally
+      // block runs too late to matter once the callback has already run.
+      clearTimeout(stillWakingUpTimer);
 
       const data = await response.json();
       setStatus(data.message);
@@ -1876,6 +1909,7 @@ function App() {
         const routeResponse = await apiFetch('/api/routes/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: uploadTimeoutController.signal,
           body: JSON.stringify({
             orders: routeOrders,
             available_cars: cars,
@@ -1893,11 +1927,18 @@ function App() {
       }
       refreshUnassignedOrders();
     } catch (error) {
-      setStatus('Upload failed. Please try again.');
-      setErrors(['Unable to reach the backend service.']);
+      if (error.name === 'AbortError') {
+        setStatus('Upload timed out. The server may still be waking up - please try again in a moment.');
+        setErrors(['Upload timed out waiting for the server.']);
+      } else {
+        setStatus('Upload failed. Please try again.');
+        setErrors(['Unable to reach the backend service.']);
+      }
       setIsValid(false);
       console.error(error);
     } finally {
+      clearTimeout(stillWakingUpTimer);
+      clearTimeout(hardTimeout);
       setIsProcessing(false);
     }
   };
