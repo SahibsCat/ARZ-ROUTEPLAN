@@ -1955,6 +1955,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
   transition: all 0.2s ease;
 }
 .topbar__palette-btn:hover { background: var(--surface-2); color: var(--ink); }
+/* Icon shown only below 720px (see the mobile media query) - kept in the
+   DOM at every width rather than conditionally rendered, so there's no
+   layout shift the moment the breakpoint crosses. */
+.topbar__palette-btn__icon { display: none; flex: none; }
 
 .modal__header, .history-panel__head {
   padding: 1.5rem 1.75rem;
@@ -2357,9 +2361,36 @@ select { max-width: 100%; }
   .topbar__search,
   .topbar__date,
   .topbar__account-name { display: none; }
+  /* Real bug this fixes: .topbar__title's base rule is flex: 0 1 auto -
+     shrinkable but never GROWS to claim space. With search/date hidden
+     here, that space should go to the title (the page's actual heading),
+     but instead sat unclaimed while four flex:none icon buttons kept
+     their full size and the title alone absorbed all the compression -
+     measured at 375px: title squeezed to ~51px, rendering "Dashboard" as
+     "Das…" and its subtitle as "Deliver…".
+     `flex: 1 1 auto`, NOT the bare `flex: 1` shorthand (which sets
+     flex-basis: 0%) - a 0% basis made title start from nothing and split
+     leftover space evenly with .topbar__spacer (which exists to push the
+     icon cluster to the right edge and still needs to grow), measured
+     making title even narrower than before the fix. `auto` basis
+     reserves title's own content size FIRST, so it only competes with
+     the spacer for space genuinely left over beyond what "Dashboard"
+     itself needs. */
+  .topbar__title { flex: 1 1 auto; }
+  /* "⌘K" (a keyboard-shortcut hint) means nothing with no physical
+     keyboard, and cost this button ~53px - shrinking it to a plain icon
+     button (matching .topbar__icon-btn's own footprint) is what actually
+     freed enough room for the title above to stop truncating. */
+  .topbar__palette-btn { padding: 0.4rem; }
+  .topbar__palette-btn__kbd { display: none; }
+  .topbar__palette-btn__icon { display: flex; }
   .topbar__spacer { min-width: 0; }
   .topbar__account { padding: 0.35rem; }
   .topbar__account .topbar__avatar { width: 34px; height: 34px; }
+  /* A dropdown indicator on a name that's already hidden (.topbar__account-
+     name, above) - the avatar alone is still obviously tappable, and this
+     is more room the title needs more than a chevron does. */
+  .topbar__account-chevron { display: none; }
   .quick-action { width: 42px; padding: 0; font-size: 0; }
   .quick-action svg { width: 18px; height: 18px; }
   .console { padding: 1.25rem 1rem 2.5rem; }

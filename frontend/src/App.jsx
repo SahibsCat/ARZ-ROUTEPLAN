@@ -163,10 +163,24 @@ function AddressComponentEditor({ order, geocodeError, currentAddress, onAddress
     onAddressChange(combined);
   };
 
-  const isHouseError = /house\/door number|door|house/i.test(errorText) || breakdownMissing.includes('house/door number');
-  const isStreetError = /street name|street/i.test(errorText) || breakdownMissing.includes('street name');
-  const isAreaError = /area\/locality|area|locality|landmark/i.test(errorText) || breakdownMissing.includes('area/locality');
-  const isCityError = /pin code|city/i.test(errorText) || breakdownMissing.includes('city') || breakdownMissing.includes('PIN code');
+  // LOAD-BEARING: matches only the EXACT reason phrasing google_geocoder.py
+  // always uses (see _score_component_match's non_pin_flags strings), not
+  // loose single words. Real bug this fixes: geocode_error also ends with
+  // a "— We read: House: 12 | Street: main road | ..." recap (see
+  // geocode_service._verification_message) - the recap ALWAYS contains
+  // the words "house"/"door"/"street"/"area"/"city", so the loose
+  // word-only patterns this replaced (`/door|house/i` etc.) matched that
+  // recap on every single flagged order, regardless of what was actually
+  // wrong - all four fields showed "Action Required" even when only the
+  // area and PIN disagreed. Every real reason clause names its own field
+  // by exact phrase ("House/door number mismatch", "Street name
+  // mismatch", "Area/locality mismatch", "PIN code mismatch" / "House/
+  // door number ... could not be confirmed") - matching only those
+  // phrases can't be fooled by the harmless recap that follows them.
+  const isHouseError = /house\/door number/i.test(errorText) || breakdownMissing.includes('house/door number');
+  const isStreetError = /street name mismatch/i.test(errorText) || breakdownMissing.includes('street name');
+  const isAreaError = /area\/locality mismatch/i.test(errorText) || breakdownMissing.includes('area/locality');
+  const isCityError = /pin code mismatch/i.test(errorText) || breakdownMissing.includes('city') || breakdownMissing.includes('PIN code');
 
   return (
     <div className="address-component-editor">
@@ -1012,6 +1026,21 @@ function App() {
   // click apart from activeNav simply passing through 'unassigned' on its
   // way past while scrolling.
   const [navCommandSeq, setNavCommandSeq] = useState(0);
+  // A separate guard for the SIDEBAR/HEADER's own activeNav (navCommandSeq
+  // above only protects RouteWorkspace's internal tab) - real bug this
+  // closes: clicking "View" on a Failed Order from the Issues panel calls
+  // handleNavClick('failed'), which sets activeNav correctly THEN starts
+  // an animated scrollIntoView. That animation takes a few hundred ms, and
+  // the scroll-spy effect below recomputes activeNav from scratch on every
+  // intersection change it fires DURING that scroll - including transient
+  // in-between frames where a section other than the one just clicked
+  // (observed: 'drivers', sitting right after 'failed' in the page) reads
+  // as "current" mid-flight. The header/sidebar would then show "Drivers"
+  // even though the failed-order detail the user just asked for is what's
+  // actually on screen. A short cooldown after a genuine click lets the
+  // scroll-spy's passive recompute stand down until the animation the
+  // click itself started has had time to settle.
+  const suppressScrollSpyUntilRef = useRef(0);
   // Whether RouteWorkspace is currently showing a single route's detail
   // page (as opposed to the Routes/Unassigned Orders list view) - lifted
   // up via onViewChange so the KPI row/shortcuts/Generate Routes panel
@@ -1130,6 +1159,11 @@ function App() {
     setActiveNav(item.key);
     setMobileNavOpen(false);
     setSoonOverlay(null);
+    // See suppressScrollSpyUntilRef's own comment above - gives the
+    // scroll-spy effect below a window to stand down while the smooth
+    // scroll THIS click just started is still animating, so it can't
+    // silently overwrite the section the user actually asked for.
+    suppressScrollSpyUntilRef.current = Date.now() + 900;
     // A genuine click, as opposed to activeNav merely passing through
     // 'unassigned'/'generate' while scrolling - see navCommandSeq's own
     // comment above for why this distinction is what actually matters.
@@ -1190,6 +1224,11 @@ function App() {
       // while it's open - don't let a section scrolling into view behind
       // it steal that back.
       if (historyOpen || driverDataOpen || soonOverlay) return;
+      // A genuine nav click just fired its own scrollIntoView animation -
+      // see suppressScrollSpyUntilRef's own comment above. Stand down
+      // until it's had time to settle instead of recomputing from
+      // whatever transient position the animation is mid-flight through.
+      if (Date.now() < suppressScrollSpyUntilRef.current) return;
       let current = 'dashboard';
       sections.forEach(({ key, el }) => {
         if (el.getBoundingClientRect().top <= LINE_PX) current = key;
@@ -3079,8 +3118,18 @@ function App() {
               className="topbar__palette-btn"
               onClick={() => { setPaletteOpen(true); setPaletteQuery(''); }}
               title="Command palette"
+              aria-label="Open search / command palette"
             >
-              <kbd>⌘K</kbd>
+              {/* The keyboard-shortcut hint is meaningless with no physical
+                  keyboard, but this button is mobile's ONLY way to reach
+                  search - .topbar__search is hidden below 720px, same as
+                  this button's own "⌘K" text at that width. Never hide the
+                  button itself; swap its content for a plain search icon
+                  instead (CSS - see .topbar__palette-btn's mobile rule),
+                  which is also what shrinks it enough to stop crowding out
+                  the page title next to it. */}
+              <kbd className="topbar__palette-btn__kbd">⌘K</kbd>
+              <IconSearch className="topbar__palette-btn__icon" width={16} height={16} />
             </button>
 
             <div className="topbar__spacer" />
