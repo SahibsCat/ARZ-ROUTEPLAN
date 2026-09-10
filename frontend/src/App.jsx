@@ -189,10 +189,14 @@ function AddressComponentEditor({ order, geocodeError, currentAddress, onAddress
   // mismatch", "Area/locality mismatch", "PIN code mismatch" / "House/
   // door number ... could not be confirmed") - matching only those
   // phrases can't be fooled by the harmless recap that follows them.
-  const isHouseError = /house\/door number/i.test(errorText) || breakdownMissing.includes('house/door number');
-  const isStreetError = /street name mismatch/i.test(errorText) || breakdownMissing.includes('street name');
-  const isAreaError = /area\/locality mismatch/i.test(errorText) || breakdownMissing.includes('area/locality');
-  const isCityError = /pin code mismatch/i.test(errorText) || breakdownMissing.includes('city') || breakdownMissing.includes('PIN code');
+  // Flagged AND still empty - once a field has something typed into it
+  // (whether from parsing or the dispatcher's own edit), it stops reading
+  // as "needs action" even if the original geocode failure named it, so
+  // the guidance never claims a filled-in box is missing.
+  const isHouseError = (/house\/door number/i.test(errorText) || breakdownMissing.includes('house/door number')) && !compState.houseNo;
+  const isStreetError = (/street name mismatch/i.test(errorText) || breakdownMissing.includes('street name')) && !compState.street;
+  const isAreaError = (/area\/locality mismatch/i.test(errorText) || breakdownMissing.includes('area/locality')) && !compState.area;
+  const isCityError = (/pin code mismatch/i.test(errorText) || breakdownMissing.includes('city') || breakdownMissing.includes('PIN code')) && !compState.cityPin;
 
   return (
     <div className="address-component-editor">
@@ -210,7 +214,7 @@ function AddressComponentEditor({ order, geocodeError, currentAddress, onAddress
           </div>
           <div className={`field-guidance ${isHouseError ? 'field-guidance--error' : ''}`}>
             {isHouseError
-              ? '⚠️ Missing Door/House Number — Enter flat, door, or house number (e.g. Door No. 42 / Flat 3B)'
+              ? 'Missing Door/House Number — Enter flat, door, or house number (e.g. Door No. 42 / Flat 3B)'
               : 'Enter flat, door, or house number'}
           </div>
           <input
@@ -231,7 +235,7 @@ function AddressComponentEditor({ order, geocodeError, currentAddress, onAddress
           </div>
           <div className={`field-guidance ${isStreetError ? 'field-guidance--error' : ''}`}>
             {isStreetError
-              ? '⚠️ Street Name Unclear or Missing — Enter street, road, or avenue name (e.g. Thirumalai Pillai Road)'
+              ? 'Street Name Unclear or Missing — Enter street, road, or avenue name (e.g. Thirumalai Pillai Road)'
               : 'Enter street, road, or avenue name'}
           </div>
           <input
@@ -252,7 +256,7 @@ function AddressComponentEditor({ order, geocodeError, currentAddress, onAddress
           </div>
           <div className={`field-guidance ${isAreaError ? 'field-guidance--error' : ''}`}>
             {isAreaError
-              ? '⚠️ Area or Locality Missing — Enter neighborhood, area, or landmark (e.g. T Nagar / Near Bus Stand)'
+              ? 'Area or Locality Missing — Enter neighborhood, area, or landmark (e.g. T Nagar / Near Bus Stand)'
               : 'Enter area, locality, or landmark'}
           </div>
           <input
@@ -273,7 +277,7 @@ function AddressComponentEditor({ order, geocodeError, currentAddress, onAddress
           </div>
           <div className={`field-guidance ${isCityError ? 'field-guidance--error' : ''}`}>
             {isCityError
-              ? '⚠️ City or PIN Code Issue — Enter 6-digit PIN code and city (e.g. Chennai 600017)'
+              ? 'City or PIN Code Issue — Enter 6-digit PIN code and city (e.g. Chennai 600017)'
               : 'Enter 6-digit PIN code and city name'}
           </div>
           <input
@@ -3064,8 +3068,24 @@ function App() {
     handleNavClick(findNavItem(navKey));
   };
 
+  // One flag covering every background operation in the app, regardless of
+  // where on the page it's happening - drives the top-edge progress bar so
+  // "something is working" is visible even when the panel doing the work is
+  // scrolled out of view (e.g. saving a driver while looking at Routes).
+  const isAnyBusy = Boolean(
+    isProcessing || isRestoringSession || isRegenerating || isDownloadingAll ||
+    isSavingPlan || isDeletingPlan || isLoadingHistory || isLoadingDriverData ||
+    isLoadingDrivers || isSavingDriver || isResettingPassword ||
+    isTogglingDriverStatus || isDeletingDriver || isMovingAddresses ||
+    isRemovingManualExtra || isCreatingRoute || isAddingManualAddress ||
+    isSettingManualLocation || isChangingVehicle || isDeletingRoute
+  );
+
   return (
     <div className="app-shell">
+      <div className={`route-progress${isAnyBusy ? ' is-active' : ''}`} aria-hidden="true">
+        <div className="route-progress__bar" />
+      </div>
       <div className={`sidebar__scrim${mobileNavOpen ? ' is-visible' : ''}`} onClick={() => setMobileNavOpen(false)} />
 
       <aside className={`sidebar${sidebarCollapsed ? ' sidebar--collapsed' : ''}${mobileNavOpen ? ' sidebar--mobile-open' : ''}`}>
@@ -3324,25 +3344,6 @@ function App() {
             onJump={handleIssueJump}
             describeErrorDetail={describeErrorDetail}
           />
-
-          <div className="dash-links">
-            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('generate'))}>
-              <IconRoute width={18} height={18} />
-              <div><strong>Routes</strong><span>{fileName ? `${fileName} · ${totalOrders} orders` : 'Generate today’s routes'}</span></div>
-            </button>
-            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('unassigned'))}>
-              <IconInbox width={18} height={18} />
-              <div><strong>Unassigned Orders</strong><span>{pendingOrders.length} waiting on assignment</span></div>
-            </button>
-            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('failed'))}>
-              <IconAlert width={18} height={18} />
-              <div><strong>Failed Addresses</strong><span>{failedOrders.length} needing attention</span></div>
-            </button>
-            <button type="button" className="dash-link" onClick={() => handleNavClick(findNavItem('drivers'))}>
-              <IconUsers width={18} height={18} />
-              <div><strong>Drivers</strong><span>{drivers.length} on the roster</span></div>
-            </button>
-          </div>
         </>
         )}
         {/* Toolbar, loading state, and manifest alerts - always mounted,
@@ -3658,99 +3659,6 @@ function App() {
           />
           </div>
 
-          {/* DRIVERS BOARD: roster + status - "Add Driver"
-              still opens a small modal (a creation form genuinely is a
-              focused, in-and-out task), but the roster and every driver's
-              live status sit on this page same as any other page content. */}
-          <div className="board board--drivers" id="drivers-board">
-            <div className="board__header">
-              <div className="board__header-group">
-                <h2 className="board__title"><LIconUsers width={18} height={18} /> Drivers</h2>
-                <span className="board__count mono-num">{drivers.length}</span>
-              </div>
-              <button type="button" className="btn btn--primary board__header-action" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
-                <UserPlus width={14} height={14} /> Add Driver
-              </button>
-            </div>
-            <p className="board__intro">
-              Create driver logins for the Driver App, and assign them to routes from each route's detail view.
-              Deactivating a driver signs them out everywhere immediately.
-            </p>
-            <div className="board__body">
-              {isLoadingDrivers ? (
-                <div className="history-panel__skeletons">
-                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
-                </div>
-              ) : driversError ? (
-                <div className="empty-state">{driversError}</div>
-              ) : drivers.length === 0 ? (
-                <div className="empty-state">
-                  No drivers yet. Click <strong>Add Driver</strong> to create the first login for the Driver App.
-                </div>
-              ) : (
-                <div className="drivers-table-wrap">
-                  <table className="drivers-table">
-                    <thead>
-                      <tr>
-                        <th>Driver</th>
-                        <th>Login</th>
-                        <th>Vehicle</th>
-                        <th>Status</th>
-                        <th>Assigned Route</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {drivers.map((driver) => (
-                        <tr key={driver.id}>
-                          <td>
-                            <div className="drivers-table__name">{driver.name}</div>
-                            <div className="drivers-table__code mono-num">{driver.driver_code}</div>
-                          </td>
-                          <td>
-                            <div>{driver.username}</div>
-                            {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
-                          </td>
-                          <td>{driver.vehicle_number || '—'}</td>
-                          <td><DriverStatusPill status={driver.status} /></td>
-                          <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
-                          <td>
-                            <div className="drivers-table__actions">
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>
-                                <Pencil width={12} height={12} /> Edit
-                              </button>
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>
-                                <KeyRound width={12} height={12} /> Reset Password
-                              </button>
-                              <button
-                                type="button"
-                                className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
-                                disabled={isTogglingDriverStatus === driver.id}
-                                onClick={() => handleToggleDriverStatus(driver)}
-                              >
-                                {isTogglingDriverStatus === driver.id ? <span className="spinner" /> : <UserX width={12} height={12} />}
-                                {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn--compact btn--danger-ghost"
-                                disabled={isDeletingDriver === driver.id}
-                                onClick={() => handleDeleteDriver(driver)}
-                              >
-                                {isDeletingDriver === driver.id ? <span className="spinner" /> : <Trash2 width={12} height={12} />}
-                                {isDeletingDriver === driver.id ? 'Deleting…' : 'Delete'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* RETURNS BOARD */}
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
@@ -3789,9 +3697,13 @@ function App() {
                           className={`failed-row${isActive ? ' failed-row--active' : ''}`}
                           onClick={() => setSelectedFailedId(order.order_id)}
                         >
-                          <span className="stop__id">#{order.order_id}</span>
-                          <span className="failed-row__name">{order.customer_name}</span>
-                          <span className="failed-row__reason">{order.geocode_error || 'Geocoding failed'}</span>
+                          <span className="failed-row__head">
+                            <span className="stop__id">#{order.order_id}</span>
+                            <span className="failed-row__name">{order.customer_name}</span>
+                          </span>
+                          <span className="failed-row__reason" title={order.geocode_error || 'Geocoding failed'}>
+                            {order.geocode_error || 'Geocoding failed'}
+                          </span>
                           {feedback?.status === 'error' && <span className="failed-row__flag" title="Last retry didn't match either" />}
                         </button>
                       );
@@ -3888,6 +3800,99 @@ function App() {
                       </>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* DRIVERS BOARD: roster + status - "Add Driver"
+              still opens a small modal (a creation form genuinely is a
+              focused, in-and-out task), but the roster and every driver's
+              live status sit on this page same as any other page content. */}
+          <div className="board board--drivers" id="drivers-board">
+            <div className="board__header">
+              <div className="board__header-group">
+                <h2 className="board__title"><LIconUsers width={18} height={18} /> Drivers</h2>
+                <span className="board__count mono-num">{drivers.length}</span>
+              </div>
+              <button type="button" className="btn btn--primary board__header-action" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
+                <UserPlus width={14} height={14} /> Add Driver
+              </button>
+            </div>
+            <p className="board__intro">
+              Create driver logins for the Driver App, and assign them to routes from each route's detail view.
+              Deactivating a driver signs them out everywhere immediately.
+            </p>
+            <div className="board__body">
+              {isLoadingDrivers ? (
+                <div className="history-panel__skeletons">
+                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
+                </div>
+              ) : driversError ? (
+                <div className="empty-state">{driversError}</div>
+              ) : drivers.length === 0 ? (
+                <div className="empty-state">
+                  No drivers yet. Click <strong>Add Driver</strong> to create the first login for the Driver App.
+                </div>
+              ) : (
+                <div className="drivers-table-wrap">
+                  <table className="drivers-table">
+                    <thead>
+                      <tr>
+                        <th>Driver</th>
+                        <th>Login</th>
+                        <th>Vehicle</th>
+                        <th>Status</th>
+                        <th>Assigned Route</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drivers.map((driver) => (
+                        <tr key={driver.id}>
+                          <td>
+                            <div className="drivers-table__name">{driver.name}</div>
+                            <div className="drivers-table__code mono-num">{driver.driver_code}</div>
+                          </td>
+                          <td>
+                            <div>{driver.username}</div>
+                            {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
+                          </td>
+                          <td>{driver.vehicle_number || '—'}</td>
+                          <td><DriverStatusPill status={driver.status} /></td>
+                          <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
+                          <td>
+                            <div className="drivers-table__actions">
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>
+                                <Pencil width={12} height={12} /> Edit
+                              </button>
+                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>
+                                <KeyRound width={12} height={12} /> Reset Password
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
+                                disabled={isTogglingDriverStatus === driver.id}
+                                onClick={() => handleToggleDriverStatus(driver)}
+                              >
+                                {isTogglingDriverStatus === driver.id ? <span className="spinner" /> : <UserX width={12} height={12} />}
+                                {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--compact btn--danger-ghost"
+                                disabled={isDeletingDriver === driver.id}
+                                onClick={() => handleDeleteDriver(driver)}
+                              >
+                                {isDeletingDriver === driver.id ? <span className="spinner" /> : <Trash2 width={12} height={12} />}
+                                {isDeletingDriver === driver.id ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

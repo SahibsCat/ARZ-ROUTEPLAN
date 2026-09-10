@@ -283,7 +283,7 @@ select.add-route-select:hover:not(:disabled) {
   display: block;
   height: 100%;
   border-radius: 6px;
-  background: linear-gradient(90deg, #38bdf8 0%, #4f46e5 100%);
+  background: linear-gradient(90deg, #38bdf8 0%, #0d9488 100%);
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .capacity-bar__fill--warn {
@@ -1236,7 +1236,7 @@ select.add-route-select:hover:not(:disabled) {
   background: var(--accent-soft);
   padding: 0.15rem 0.55rem;
   border-radius: var(--radius-xs);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(20, 184, 166, 0.2);
   line-height: 1.2;
 }
 

@@ -22,16 +22,16 @@
   --rule-soft: #f3f4f6;
 
   /* Electric Violet Primary */
-  --primary: #6d28d9;
-  --primary-strong: #5b21b6;
-  --primary-soft: #f5f3ff;
-  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  --primary: #0f766e;
+  --primary-strong: #115e59;
+  --primary-soft: #f0fdfa;
+  --primary-gradient: linear-gradient(135deg, #14b8a6 0%, #115e59 100%);
   
-  --accent: #4f46e5;
-  --accent-strong: #4338ca;
-  --accent-soft: #e0e7ff;
-  --accent-glow: rgba(79, 70, 229, 0.15);
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+  --accent: #0d9488;
+  --accent-strong: #115e59;
+  --accent-soft: #ccfbf1;
+  --accent-glow: rgba(13, 148, 136, 0.15);
+  --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #115e59 100%);
 
   --btn-fill: #111827;
   --btn-fill-hover: #1f2937;
@@ -78,7 +78,7 @@
   --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
   --sidebar-active-bg: rgba(255, 255, 255, 0.1);
   --sidebar-active-ink: #ffffff;
-  --sidebar-active-border: #7c3aed;
+  --sidebar-active-border: #14b8a6;
   --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
   /* Radii */
@@ -111,16 +111,16 @@
     --rule: rgba(255, 255, 255, 0.1);
     --rule-soft: rgba(255, 255, 255, 0.05);
 
-    --primary: #8b5cf6;
-    --primary-strong: #a78bfa;
-    --primary-soft: rgba(139, 92, 246, 0.15);
-    --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+    --primary: #2dd4bf;
+    --primary-strong: #5eead4;
+    --primary-soft: rgba(45, 212, 191, 0.15);
+    --primary-gradient: linear-gradient(135deg, #14b8a6 0%, #115e59 100%);
     
-    --accent: #6366f1;
-    --accent-strong: #818cf8;
-    --accent-soft: rgba(99, 102, 241, 0.15);
-    --accent-glow: rgba(99, 102, 241, 0.2);
-    --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+    --accent: #2dd4bf;
+    --accent-strong: #5eead4;
+    --accent-soft: rgba(20, 184, 166, 0.15);
+    --accent-glow: rgba(20, 184, 166, 0.2);
+    --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #115e59 100%);
 
     --btn-fill: #ffffff;
     --btn-fill-hover: #f3f4f6;
@@ -154,7 +154,7 @@
     --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
     --sidebar-active-bg: rgba(255, 255, 255, 0.1);
     --sidebar-active-ink: #ffffff;
-    --sidebar-active-border: #8b5cf6;
+    --sidebar-active-border: #2dd4bf;
     --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
@@ -175,16 +175,16 @@
   --rule: rgba(255, 255, 255, 0.1);
   --rule-soft: rgba(255, 255, 255, 0.05);
 
-  --primary: #8b5cf6;
-  --primary-strong: #a78bfa;
-  --primary-soft: rgba(139, 92, 246, 0.15);
-  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  --primary: #2dd4bf;
+  --primary-strong: #5eead4;
+  --primary-soft: rgba(45, 212, 191, 0.15);
+  --primary-gradient: linear-gradient(135deg, #14b8a6 0%, #115e59 100%);
 
-  --accent: #6366f1;
-  --accent-strong: #818cf8;
-  --accent-soft: rgba(99, 102, 241, 0.15);
-  --accent-glow: rgba(99, 102, 241, 0.2);
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+  --accent: #2dd4bf;
+  --accent-strong: #5eead4;
+  --accent-soft: rgba(20, 184, 166, 0.15);
+  --accent-glow: rgba(20, 184, 166, 0.2);
+  --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #115e59 100%);
 
   --btn-fill: #ffffff;
   --btn-fill-hover: #f3f4f6;
@@ -218,7 +218,7 @@
   --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
   --sidebar-active-bg: rgba(255, 255, 255, 0.1);
   --sidebar-active-ink: #ffffff;
-  --sidebar-active-border: #8b5cf6;
+  --sidebar-active-border: #2dd4bf;
   --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
@@ -238,16 +238,16 @@
   --rule: #e5e7eb;
   --rule-soft: #f3f4f6;
 
-  --primary: #6d28d9;
-  --primary-strong: #5b21b6;
-  --primary-soft: #f5f3ff;
-  --primary-gradient: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  --primary: #0f766e;
+  --primary-strong: #115e59;
+  --primary-soft: #f0fdfa;
+  --primary-gradient: linear-gradient(135deg, #14b8a6 0%, #115e59 100%);
 
-  --accent: #4f46e5;
-  --accent-strong: #4338ca;
-  --accent-soft: #e0e7ff;
-  --accent-glow: rgba(79, 70, 229, 0.15);
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+  --accent: #0d9488;
+  --accent-strong: #115e59;
+  --accent-soft: #ccfbf1;
+  --accent-glow: rgba(13, 148, 136, 0.15);
+  --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #115e59 100%);
 
   --btn-fill: #111827;
   --btn-fill-hover: #1f2937;
@@ -281,7 +281,7 @@
   --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
   --sidebar-active-bg: rgba(255, 255, 255, 0.1);
   --sidebar-active-ink: #ffffff;
-  --sidebar-active-border: #7c3aed;
+  --sidebar-active-border: #14b8a6;
   --sidebar-soon-active-bg: rgba(245, 158, 11, 0.1);
 
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -798,13 +798,22 @@ textarea:focus-visible, [tabindex]:focus-visible {
 }
 
 /* A primary button inside an operational section (Routes/Unassigned
-   Orders/Drivers/Failed Addresses) picks up that section's own color
-   instead of the Dashboard's monochrome fill - "Create Route" reads as
-   a Routes action, "Add Driver" as a Drivers action, on sight, rather
-   than every primary button in the app looking identical regardless of
-   what board it's in. Scoped by container (a descendant selector), not
-   by touching every button's own className at every call site - matches
-   the left-spine accent already on each of these sections' own panel. */
+   Orders/Drivers) picks up that section's own color instead of the
+   Dashboard's monochrome fill - "Create Route" reads as a Routes action,
+   "Add Driver" as a Drivers action, on sight, rather than every primary
+   button in the app looking identical regardless of what board it's in.
+   Scoped by container (a descendant selector), not by touching every
+   button's own className at every call site - matches the left-spine
+   accent already on each of these sections' own panel.
+
+   Failed Addresses is deliberately left out of this list: it's the one
+   board where --critical already carries real meaning (the reason
+   banner, the flagged fields), so its own action buttons ("Save Pin
+   Position", "Retry geocode") stay neutral instead of also going red.
+   Painting every button on the page the same alarm color as the actual
+   error was drowning the error out, not highlighting it - the fix here
+   is what keeps red meaning "this is the problem" instead of "this is a
+   button", so the one real error banner stands out again. */
 .board.board--workspace-routes .btn--primary,
 .board--drivers .btn--primary {
   background: var(--op-routes);
@@ -817,14 +826,9 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .board--drivers .btn--primary {
   background: var(--op-drivers);
 }
-.board--returns .btn--primary {
-  background: var(--critical);
-  color: #ffffff;
-}
 .board.board--workspace-routes .btn--primary:hover:not(:disabled),
 .board.board--workspace-unassigned .btn--primary:hover:not(:disabled),
-.board--drivers .btn--primary:hover:not(:disabled),
-.board--returns .btn--primary:hover:not(:disabled) {
+.board--drivers .btn--primary:hover:not(:disabled) {
   filter: brightness(0.9);
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
 }
@@ -981,17 +985,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--rule-soft);
   transition: background 0.25s ease;
 }
-.kpi-tile--orders::before { background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%); }
-.kpi-tile--bikes::before { background: linear-gradient(90deg, #10b981 0%, #34d399 100%); }
-.kpi-tile--cars::before { background: linear-gradient(90deg, #6366f1 0%, #818cf8 100%); }
-.kpi-tile--routes::before { background: linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%); }
-.kpi-tile--distance::before { background: linear-gradient(90deg, #06b6d4 0%, #22d3ee 100%); }
-.kpi-tile--eta::before { background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+/* One accent, not six: every tile shares the same hairline and icon
+   treatment so color reads as "this is a KPI tile", not as a per-metric
+   label picked from six unrelated hues. */
+.kpi-tile::before { background: var(--accent-gradient); opacity: 0.55; }
 
 .kpi-tile:hover {
-  box-shadow: var(--shadow-lg), 0 0 20px rgba(124, 58, 237, 0.08);
+  box-shadow: var(--shadow-lg), 0 0 20px var(--accent-glow);
   transform: translateY(-3px);
-  border-color: var(--primary-soft);
+  border-color: var(--accent-soft);
 }
 .kpi-tile--clickable {
   cursor: pointer;
@@ -1015,12 +1017,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .kpi-tile:hover .kpi-tile__icon {
   transform: scale(1.08);
 }
-.kpi-tile--orders .kpi-tile__icon { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
-.kpi-tile--bikes .kpi-tile__icon { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-.kpi-tile--cars .kpi-tile__icon { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
-.kpi-tile--routes .kpi-tile__icon { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
-.kpi-tile--distance .kpi-tile__icon { background: rgba(6, 182, 212, 0.12); color: #06b6d4; }
-.kpi-tile--eta .kpi-tile__icon { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+.kpi-tile .kpi-tile__icon { background: var(--accent-soft); color: var(--accent-strong); }
 
 .kpi-tile__value {
   font-size: 1.8rem;
@@ -1046,57 +1043,6 @@ textarea:focus-visible, [tabindex]:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Shortcuts */
-.dash-links {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.25rem;
-  padding: 0 0 2rem;
-}
-.dash-link {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-lg);
-  padding: 1.1rem 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  text-align: left;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease;
-  color: var(--ink);
-  outline: none;
-}
-.dash-link:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--primary);
-  transform: translateY(-2px);
-}
-.dash-link svg {
-  color: var(--primary);
-  flex: none;
-}
-.dash-link > div {
-  min-width: 0;
-  flex: 1;
-}
-.dash-link div strong {
-  display: block;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--ink);
-}
-.dash-link div span {
-  display: block;
-  font-size: 0.8rem;
-  color: var(--ink-soft);
-  margin-top: 0.2rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Toolbar */
@@ -1422,12 +1368,14 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .drivers-table-wrap {
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
 .drivers-table {
   width: 100%;
+  min-width: 560px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.9rem;
@@ -1589,33 +1537,36 @@ textarea:focus-visible, [tabindex]:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
-  padding: 1rem 1.15rem;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem 0.85rem 1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--rule);
+  border-left: 3px solid var(--critical);
   background: var(--surface);
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
   min-width: 0;
   width: 100%;
 }
 .failed-row:hover {
   border-color: var(--critical);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08);
+  background: var(--surface-2);
 }
 .failed-row--active {
   border-color: var(--critical);
   background: var(--critical-soft);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.1);
 }
-.failed-row__name { font-weight: 700; color: var(--ink); font-size: 0.95rem; }
+.failed-row__head { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; width: 100%; }
+.failed-row__name { font-weight: 700; color: var(--ink); font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .failed-row__reason {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--critical);
-  overflow-wrap: break-word;
-  word-break: break-word;
-  font-weight: 500;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .failed-split__detail {
@@ -1648,23 +1599,30 @@ textarea:focus-visible, [tabindex]:focus-visible {
   color: var(--ink-faint);
 }
 
-/* ERROR BANNER - High contrast red block */
+/* Reason banner - a soft, token-driven alert (matches .alert used
+   elsewhere in the app) instead of a solid red block. The full sentence
+   already lives here in one clear place, so the list row and the per-field
+   guidance below don't need to restate it - they can stay short. */
 .failed-detail__reason {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  padding: 1rem 1.25rem;
+  padding: 0.9rem 1.15rem;
   border-radius: var(--radius-md);
-  background: #b91c1c;
-  color: #ffffff;
-  font-size: 0.95rem;
-  font-weight: 600;
+  background: var(--critical-soft);
+  border: 1px solid var(--critical-soft);
+  border-left: 3px solid var(--critical);
+  font-size: 0.92rem;
   line-height: 1.5;
-  box-shadow: 0 4px 12px rgba(185, 28, 28, 0.25);
-  border: 1px solid #991b1b;
 }
-.failed-detail__reason svg { flex: none; margin-top: 0.2rem; color: #ffffff; width: 18px; height: 18px; }
-.failed-detail__reason span { overflow-wrap: break-word; word-break: break-word; min-width: 0; color: #ffffff; }
+.failed-detail__reason svg { flex: none; margin-top: 0.15rem; color: var(--critical); width: 16px; height: 16px; }
+.failed-detail__reason span {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+  color: var(--critical);
+  font-weight: 700;
+}
 
 /* ADDRESS COMPONENT EDITOR */
 .address-component-editor {
@@ -1706,20 +1664,18 @@ textarea:focus-visible, [tabindex]:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-glow);
 }
-/* Specific highlight for errored fields */
+/* Flagged field - a quiet left-accent stripe rather than a fully
+   red-tinted card, so a page with several flagged fields still reads
+   calmly rather than as four separate alarms stacked side by side. */
 .component-field-box--error {
-  border: 2px solid #ef4444;
-  background: #fef2f2;
-}
-:root[data-theme="dark"] .component-field-box--error {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: #ef4444;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--critical);
+  background: var(--surface);
 }
 .component-field-box--error .field-box__head label {
-  color: #b91c1c;
+  color: var(--critical);
   font-weight: 800;
 }
-:root[data-theme="dark"] .component-field-box--error .field-box__head label { color: #f87171; }
 
 .field-box__head {
   display: flex;
@@ -1736,16 +1692,15 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .field-box__error-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
+  gap: 0.3rem;
+  font-size: 0.7rem;
   font-weight: 800;
-  color: #ffffff;
-  background: #dc2626;
-  padding: 0.25rem 0.65rem;
+  color: var(--critical);
+  background: var(--critical-soft);
+  padding: 0.2rem 0.55rem;
   border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);
 }
 
 .field-guidance {
@@ -1755,12 +1710,11 @@ textarea:focus-visible, [tabindex]:focus-visible {
   font-weight: 500;
 }
 .field-guidance--error {
-  color: #ffffff;
+  color: var(--critical);
   font-weight: 600;
-  background: #b91c1c;
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-xs);
-  box-shadow: 0 2px 4px rgba(185, 28, 28, 0.2);
+  background: none;
+  padding: 0;
+  box-shadow: none;
 }
 
 .component-field-input {
@@ -2258,6 +2212,88 @@ textarea.modal__input {
 }
 .busy-overlay .spinner { width: 26px; height: 26px; border-width: 3px; color: var(--primary); }
 
+/* Global "something is happening" indicator - a slim bar pinned to the very
+   top of the viewport, above the sidebar and topbar both, so it stays
+   visible no matter which panel triggered it or how far the page is
+   scrolled. Driven by isAnyBusy, which ORs together every loading/saving/
+   deleting flag in the app - this is the one place all of them converge. */
+.route-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 300;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.15s;
+}
+.route-progress.is-active {
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+.route-progress__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  min-width: 160px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-gradient);
+  box-shadow: 0 0 10px 1px var(--accent-soft);
+  animation: route-progress-slide 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes route-progress-slide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-progress__bar { animation-duration: 2.6s; }
+}
+
+/* Skeleton placeholders - shown the first time a panel (Drivers, Route
+   History, Driver Data, Unassigned Orders) is populating, so it reads as
+   "working" instead of blank while its fetch is in flight. */
+.history-panel__skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+.skeleton-card {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.skeleton-line {
+  height: 11px;
+  border-radius: 6px;
+  width: 100%;
+  background: linear-gradient(
+    100deg,
+    var(--rule) 30%,
+    var(--accent-soft) 50%,
+    var(--rule) 70%
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-line--title { width: 45%; height: 13px; }
+.skeleton-line--short { width: 65%; }
+@keyframes skeleton-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -20% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line { animation-duration: 2.8s; }
+}
+
 /* Toast Notifications */
 .toast {
   position: fixed;
@@ -2472,7 +2508,6 @@ select { max-width: 100%; }
   .kpi-tile { padding: 1rem; gap: 0.75rem; }
   .kpi-tile__icon { width: 38px; height: 38px; }
   .kpi-tile__value { font-size: 1.4rem; }
-  .dash-links { grid-template-columns: 1fr; gap: 0.85rem; }
   .toolbar { padding: 1.25rem; border-radius: var(--radius-lg); }
   .toolbar__summary,
   .toolbar__row,
