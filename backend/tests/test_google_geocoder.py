@@ -129,6 +129,75 @@ def test_geocode_once_without_validate_against_still_validates_the_queried_text(
     assert result.status == "NEEDS_MANUAL_VERIFICATION"
 
 
+def test_geocode_once_picks_the_best_scoring_candidate_not_just_the_first():
+    # LOAD-BEARING - real production miss: "...Aminjikarai 600029..."
+    # came back from Google with TWO candidates in one response -
+    # candidate [0] a same-named street in an unrelated colony with no
+    # PIN at all, candidate [1] the correct match, with both the
+    # locality AND the exact PIN. Always taking results[0] silently threw
+    # away the better candidate sitting right there in the same response.
+    # Every candidate must be scored on equal terms and the best one used
+    # - not merely "the first one that happens to satisfy the threshold".
+    weak_components = [
+        {"long_name": "Some Other Colony", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+    ]
+    strong_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Gandhi Road", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+        {"long_name": "600042", "types": ["postal_code"]},
+    ]
+    data = {
+        "status": "OK",
+        "results": [
+            {
+                "formatted_address": "Some Other Colony, Chennai, Tamil Nadu, India",
+                "geometry": {"location": {"lat": 13.05, "lng": 80.25}, "location_type": "APPROXIMATE"},
+                "types": ["political"],
+                "address_components": weak_components,
+            },
+            {
+                "formatted_address": "12, Gandhi Road, Velachery, Chennai, Tamil Nadu 600042, India",
+                "geometry": {"location": {"lat": 12.99, "lng": 80.22}, "location_type": "ROOFTOP"},
+                "types": ["premise"],
+                "address_components": strong_components,
+            },
+        ],
+    }
+    client = _DummyClient([data])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder._geocode_once("12, Gandhi Road, Velachery, Chennai 600042")
+
+    assert result.status == "OK"
+    assert result.lat == 12.99
+    assert result.lng == 80.22
+    assert result.formatted_address == "12, Gandhi Road, Velachery, Chennai, Tamil Nadu 600042, India"
+
+
+def test_geocode_once_keeps_the_first_candidate_when_no_candidate_scores_higher():
+    # When every candidate scores the same (the common case: only one
+    # candidate, or several equally-good ones), behavior is unchanged -
+    # Google's own first-listed candidate wins, exactly as before this
+    # picked among multiple candidates at all.
+    components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Gandhi Road", "types": ["route"]},
+        {"long_name": "Velachery", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "Chennai", "types": ["locality"]},
+    ]
+    client = _DummyClient([_ok_response("ROOFTOP", ["premise"], address_components=components)])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder._geocode_once("12, Gandhi Road, Velachery, Chennai")
+
+    assert result.status == "OK"
+    assert result.lat == 13.0
+    assert result.lng == 80.2
+
+
 def test_geocode_tries_a_spelling_corrected_query_when_the_plain_one_fails():
     # End-to-end through geocode()'s own orchestration: the plain query
     # finds nothing at all, the spelling-corrected retry succeeds.
@@ -290,6 +359,21 @@ def test_extract_house_numbers_handles_a_letter_prefixed_number():
     # A single leading letter still requires a digit right after it - a
     # real word must never be mistaken for a house number.
     assert _extract_house_numbers("Sri Sai Apartments, Anna Nagar, Chennai") == []
+
+
+def test_extract_house_numbers_handles_a_letter_prefix_joined_by_a_dash():
+    # Real production miss: "T-146 Voc Nagar 19th Link Street..." had its
+    # house number reported as entirely MISSING, even though it's right
+    # there at the front of the address - only the fused form ("T146")
+    # was recognized, not the equally common dash-joined block/door-letter
+    # form ("T-146", "S-21") seen constantly in government/board housing.
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("T-146 Voc Nagar 19th Link Street, t.nagar, 600081") == ["T-146"]
+    assert _extract_house_numbers("S-21, MRC Nagar, Chennai 600028") == ["S-21"]
+    # A single leading letter still requires a digit right after the dash
+    # - a real word followed by an unrelated dash must never match.
+    assert _extract_house_numbers("Near-Bus Stand, Anna Nagar, Chennai") == []
 
 
 def test_extract_house_numbers_handles_a_period_between_the_prefix_and_no():

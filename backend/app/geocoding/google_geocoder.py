@@ -302,15 +302,20 @@ _HOUSE_NUMBER_PREFIX = re.compile(
 )
 # A house number token - plain (24), letter-suffixed (12A), letter-
 # PREFIXED (D1/5, A1C - a block/door-letter leading the number, common in
-# gated communities and government housing), or with a second part after
-# a slash/dash that's itself a number+letter or a bare letter (12/2,
-# 12/2A, 12-B). The leading letter is capped at exactly one - anything
-# longer is a word (a locality/building name), not a number - and still
-# requires a digit right after it, so a real word ("Sri", "New") can
-# never match. Anchored to the START of whatever segment is being checked
-# - Indian addresses reliably lead each relevant segment with the number,
-# never bury it mid-sentence.
-_HOUSE_NUMBER_TOKEN = re.compile(r"^([A-Za-z]?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
+# gated communities and government housing), a letter prefix joined by a
+# DASH instead of fused directly to the number (T-146, S-21 - equally
+# common, especially in government/board housing block-plot numbering;
+# real case: "T-146 Voc Nagar..." was missing its house number entirely
+# because only the fused form, "T146", was recognized), or with a second
+# part after a slash/dash that's itself a number+letter or a bare letter
+# (12/2, 12/2A, 12-B). The leading letter is capped at exactly one -
+# anything longer is a word (a locality/building name), not a number -
+# and still requires a digit right after it (allowing for that one
+# optional dash), so a real word ("Sri", "New") can never match. Anchored
+# to the START of whatever segment is being checked - Indian addresses
+# reliably lead each relevant segment with the number, never bury it
+# mid-sentence.
+_HOUSE_NUMBER_TOKEN = re.compile(r"^([A-Za-z]?-?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
 
 # Joins two house numbers stated together in one segment - "78 And 79A",
 # "78 & 79A", "78-79A" (already handled by _HOUSE_NUMBER_TOKEN's own
@@ -1426,21 +1431,48 @@ class GoogleGeocoder(GeocodingProvider):
                 results = data.get("results") or []
                 if not results:
                     return None
-                result = results[0]
-                geometry = result.get("geometry", {})
-                location = geometry.get("location", {})
-                if "lat" not in location or "lng" not in location:
-                    return None
 
+                # Google routinely returns more than one candidate for the
+                # same query - real production case: "...Aminjikarai
+                # 600029..." came back with candidate [0] a same-named
+                # street in an unrelated colony with no PIN at all, and
+                # candidate [1] the correct match - Aminjikarai locality
+                # AND the exact PIN. Always taking results[0] meant that
+                # second, genuinely better candidate was silently ignored
+                # even though it was sitting right there in the same
+                # response. Every candidate is scored with the exact same
+                # validation used below, on equal terms - the same
+                # component checks, judged against the same
+                # `validation_text` - and the highest-CONFIDENCE one wins;
+                # ties keep Google's own ordering (first candidate at that
+                # confidence), so behavior is unchanged for the (large
+                # majority) of queries where results[0] already was the
+                # best or only candidate.
+                validation_text = validate_against or address
+                best = None
+                for candidate in results:
+                    geometry = candidate.get("geometry", {})
+                    location = geometry.get("location", {})
+                    if "lat" not in location or "lng" not in location:
+                        continue
+                    location_type = geometry.get("location_type")
+                    result_types = candidate.get("types") or []
+                    partial_match = bool(candidate.get("partial_match", False))
+                    address_components = candidate.get("address_components") or []
+                    precision_confidence = _score_result(location_type, result_types, partial_match)
+                    match = _score_component_match(validation_text, address_components, precision_confidence)
+                    component_cap, component_reason = match if match is not None else (None, None)
+                    confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
+                    if best is None or confidence > best[0]:
+                        best = (confidence, candidate, location, precision_confidence, component_cap, component_reason)
+
+                if best is None:
+                    return None
+                confidence, result, location, precision_confidence, component_cap, component_reason = best
+                geometry = result.get("geometry", {})
                 location_type = geometry.get("location_type")
                 result_types = result.get("types") or []
                 partial_match = bool(result.get("partial_match", False))
-                address_components = result.get("address_components") or []
-                precision_confidence = _score_result(location_type, result_types, partial_match)
-                validation_text = validate_against or address
-                match = _score_component_match(validation_text, address_components, precision_confidence)
-                component_cap, component_reason = match if match is not None else (None, None)
-                confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
                 result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION
 
                 mismatch_reason = None
