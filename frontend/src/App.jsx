@@ -2391,13 +2391,48 @@ function App() {
       // comes out of the Failed Addresses queue.
       setFailedOrders((prev) => prev.filter((o) => String(o.order_id) !== idStr));
       setOrders((prev) => prev.map((o) => (String(o.order_id) === idStr ? { ...o, ...updatedOrder } : o)));
-      setSuccessfulOrders((prev) => {
-        const exists = prev.some((o) => String(o.order_id) === idStr);
-        return exists
-          ? prev.map((o) => (String(o.order_id) === idStr ? { ...o, ...updatedOrder } : o))
-          : [...prev, updatedOrder];
+
+      // Computed synchronously (not read back from successfulOrders state,
+      // which wouldn't have this update yet) so it can be sent straight to
+      // /api/routes/generate below - otherwise a manually-placed pin only
+      // ever updated the order's own row and never actually made it into a
+      // route; the admin had to notice it sitting in Unassigned and add it
+      // by hand. This mirrors what a successful Retry already does.
+      const nextSuccessfulOrders = successfulOrders.some((o) => String(o.order_id) === idStr)
+        ? successfulOrders.map((o) => (String(o.order_id) === idStr ? { ...o, ...updatedOrder } : o))
+        : [...successfulOrders, updatedOrder];
+      setSuccessfulOrders(nextSuccessfulOrders);
+
+      if (!hasVehicles) {
+        setStatus(`Location for order #${orderId} saved - marked as manually verified. Set at least one car or bike to route it.`);
+        return true;
+      }
+
+      const routeResponse = await apiFetch('/api/routes/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: nextSuccessfulOrders,
+          available_cars: cars,
+          available_bikes: bikes,
+          batch_id: batchId,
+        }),
       });
-      setStatus(`Location for order #${orderId} saved - marked as manually verified.`);
+      const routeData = await routeResponse.json();
+      setRoutes(routeData.routes || []);
+      setPendingOrders(routeData.pending_orders || []);
+      setWarnings(routeData.warnings || []);
+      setPlanId(routeData.plan_id ?? null);
+      setIsPlanSaved(routeData.is_saved ?? false);
+      setEditedRoutes([]);
+      refreshUnassignedOrders();
+
+      const stillPending = (routeData.pending_orders || []).some((o) => String(o.order_id) === idStr);
+      setStatus(
+        stillPending
+          ? `Location for order #${orderId} saved, but no vehicle had room for it - it's in Pending. Add a vehicle or assign it manually.`
+          : `Location for order #${orderId} saved and added to a route.`
+      );
       return true;
     } catch (err) {
       console.error('Set manual location failed:', err);
