@@ -903,6 +903,59 @@ def test_places_fallback_still_ok_when_place_details_confirms_the_right_locality
     assert client.call_count == 4
 
 
+def test_places_fallback_flags_a_match_that_never_names_the_customers_building():
+    # The Places path is always a POI match by construction - wired the
+    # same way as the Geocoding API path (see
+    # test_score_component_match_flags_a_geometric_center_poi_match_that_
+    # never_names_the_building): a Place Details result whose name AND
+    # formatted_address never mention the customer's stated building must
+    # not be trusted at the flat PLACES_FALLBACK_CONFIDENCE.
+    responses = [
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # raw geocode: street only
+        _ok_response("GEOMETRIC_CENTER", ["route"]),  # name-stripped retry: still street only
+        _find_place_response(),
+        {
+            "status": "OK",
+            "result": {
+                "geometry": {"location": {"lat": 12.9696, "lng": 80.2503}},
+                "formatted_address": "282/5, Rajiv Gandhi Salai, OMR Service Rd, Kottivakkam, Chennai, Tamil Nadu 600096, India",
+                "name": "Some Unrelated Business",
+                "types": ["establishment", "point_of_interest"],
+                "address_components": [
+                    {"long_name": "Rajiv Gandhi Salai", "types": ["route"]},
+                    {"long_name": "Kottivakkam", "types": ["sublocality", "sublocality_level_1"]},
+                    {"long_name": "600096", "types": ["postal_code"]},
+                ],
+            },
+        },
+        _find_place_response(),
+        {
+            "status": "OK",
+            "result": {
+                "geometry": {"location": {"lat": 12.9696, "lng": 80.2503}},
+                "formatted_address": "282/5, Rajiv Gandhi Salai, OMR Service Rd, Kottivakkam, Chennai, Tamil Nadu 600096, India",
+                "name": "Some Unrelated Business",
+                "types": ["establishment", "point_of_interest"],
+                "address_components": [
+                    {"long_name": "Rajiv Gandhi Salai", "types": ["route"]},
+                    {"long_name": "Kottivakkam", "types": ["sublocality", "sublocality_level_1"]},
+                    {"long_name": "600096", "types": ["postal_code"]},
+                ],
+            },
+        },
+    ]
+    client = _DummyClient(responses)
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder.geocode(
+        "Appaswamy Altezza, door no. C 2007, Rajiv Gandhi Salai, OMR Service Rd, Kottivakkam, Chennai 600096"
+    )
+
+    assert result.status == "NEEDS_MANUAL_VERIFICATION"
+    assert result.confidence < 0.5
+    assert "Appaswamy Altezza" in result.mismatch_reason
+
+
 def test_geocode_returns_none_on_zero_results_after_places_fallback_also_empty():
     # ZERO_RESULTS doesn't retry the Geocoding API itself (that's still
     # pointless - retrying identical input gets identical ZERO_RESULTS) but
@@ -1296,6 +1349,27 @@ def test_locality_token_matches_a_run_together_acronym():
     assert _locality_token_matches("velachery", ["thiruvanmiyur"]) is False
 
 
+def test_locality_token_matches_the_mrc_nagar_alias_in_both_directions():
+    # LOAD-BEARING - real production case: a recurring weekly customer's
+    # "MRC Nagar" (which literally stands for "Mandaveli-Raja
+    # Annamalaipuram Colony") was silently geocoded over a kilometre away
+    # to an unrelated, differently-named "Pattinapakkam" near Mylapore,
+    # every single week, because a plain "mrc" shares no letters with
+    # "annamalaipuram"/"mandavelipakkam"/"mandaveli" for either fuzzy or
+    # acronym-containment matching to find. The comparison in
+    # _score_component_match runs Google-token-against-customer-
+    # candidates at least as often as the reverse, so the alias has to
+    # work in both directions, not just customer-side.
+    from app.geocoding.google_geocoder import _locality_token_matches
+
+    assert _locality_token_matches("annamalaipuram", ["mrc", "nagar"]) is True
+    assert _locality_token_matches("mandavelipakkam", ["mrc", "nagar"]) is True
+    assert _locality_token_matches("mrc", ["raja", "annamalaipuram"]) is True
+    # "raja" alone is deliberately NOT aliased - too generic a word to
+    # trust globally.
+    assert _locality_token_matches("raja", ["mrc", "nagar"]) is False
+
+
 def test_score_component_match_trusts_a_nearby_house_number_when_street_and_area_both_confirm():
     # Explicit product decision (confirmed with the user): "you entered
     # 24, Google found 22" on a street and locality we've independently
@@ -1438,6 +1512,75 @@ def test_score_component_match_confirms_a_locality_nested_three_levels_deep():
     ]
 
     assert _score_component_match(customer, google_components) is None
+
+
+def test_score_component_match_flags_a_geometric_center_poi_match_that_never_names_the_building():
+    # Real production case: "Appaswamy Altezza... door no. C 2007, Rajiv
+    # Gandhi Salai, OMR Service Rd, Kottivakkam 600096" matched a
+    # completely different, unnamed establishment at "282/5" on the same
+    # many-kilometre road (GEOMETRIC_CENTER, partial_match - Google's own
+    # admission it couldn't match the building). _score_result alone
+    # grants this 0.65 purely for being tagged establishment/
+    # point_of_interest - this must cap it back down, since nothing in
+    # the match actually confirms it's the customer's named building.
+    from app.geocoding.google_geocoder import POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP, _score_component_match
+
+    customer = "Appaswamy Altezza, door no. C 2007, Rajiv Gandhi Salai, OMR Service Rd, Kottivakkam, Chennai 600096"
+    google_components = [
+        {"long_name": "282/5", "types": ["street_number"]},
+        {"long_name": "Rajiv Gandhi Salai", "types": ["route"]},
+        {"long_name": "OMR Service Rd", "types": ["route"]},
+        {"long_name": "Kottivakkam", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600096", "types": ["postal_code"]},
+    ]
+
+    cap, reason = _score_component_match(
+        customer, google_components, precision_confidence=0.65,
+        result_types=["establishment", "point_of_interest"],
+    )
+    assert cap == POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP
+    assert "Appaswamy Altezza" in reason
+
+
+def test_score_component_match_does_not_flag_a_poi_match_when_the_building_name_is_confirmed():
+    # The exact same shape of match, but this time the building name DOES
+    # show up in Google's response (a real apartment complex Google
+    # indexes by name) - must not be penalized just for being an
+    # establishment/POI type.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Block 2, 1B, Ramaniyam Ocean Dew, 200 Feet Road, Pallikaranai, Chennai 600100"
+    google_components = [
+        {"long_name": "318/A", "types": ["street_number"]},
+        {"long_name": "Ramaniyam Ocean Dew", "types": ["premise"]},
+        {"long_name": "200 Feet Radial Rd", "types": ["route"]},
+        {"long_name": "Pallikaranai", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600100", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(
+        customer, google_components, precision_confidence=0.8,
+        result_types=["establishment", "point_of_interest", "premise"],
+    ) is None
+
+
+def test_score_component_match_does_not_flag_a_poi_match_when_no_result_types_given():
+    # Callers that don't pass result_types at all (unrelated existing
+    # tests, any future caller that doesn't have the signal) must see no
+    # behavior change - this check is opt-in, same as the PIN-typo
+    # override being opt-in on precision_confidence.
+    from app.geocoding.google_geocoder import _score_component_match
+
+    customer = "Appaswamy Altezza, door no. C 2007, Rajiv Gandhi Salai, OMR Service Rd, Kottivakkam, Chennai 600096"
+    google_components = [
+        {"long_name": "282/5", "types": ["street_number"]},
+        {"long_name": "Rajiv Gandhi Salai", "types": ["route"]},
+        {"long_name": "OMR Service Rd", "types": ["route"]},
+        {"long_name": "Kottivakkam", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600096", "types": ["postal_code"]},
+    ]
+
+    assert _score_component_match(customer, google_components, precision_confidence=0.65) is None
 
 
 def test_score_component_match_trusts_precision_over_a_lone_pin_typo():

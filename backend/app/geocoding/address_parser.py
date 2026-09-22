@@ -133,6 +133,19 @@ _HOUSE_PREFIX_PATTERN = re.compile(
 )
 _HOUSE_TOKEN_PATTERN = re.compile(r"^([A-Za-z]?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b")
 
+# The prefix pattern above only catches "No 64" when it OPENS the
+# segment. Plenty of real addresses put a block/wing letter in front of
+# it instead ("B Block No 64 11th Street", "Tower C No 12") - the "No"
+# marker there sits mid-segment, so the prefix check never fires and the
+# whole thing (including the actual house number) falls through to being
+# read as one long street name with no house number at all. Anchored on
+# the explicit "no" word (not a bare number) so it doesn't start grabbing
+# unrelated digits like a block number or "11th" out of the street name.
+_EMBEDDED_HOUSE_NUMBER_PATTERN = re.compile(
+    r"\bno[.:]?\s*([A-Za-z]?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b",
+    re.IGNORECASE,
+)
+
 # The keyword needs its own \b at the END too: without it "Apartments"
 # matches "apartment" and then reads the trailing "s" as the flat
 # number. The captured number must contain a digit for the same reason -
@@ -494,6 +507,15 @@ def parse(address: str) -> ParsedAddress:
                     segment = remainder
                 else:
                     continue
+            else:
+                embedded_match = _EMBEDDED_HOUSE_NUMBER_PATTERN.search(segment)
+                if embedded_match and not re.fullmatch(r"\d{6}", embedded_match.group(1)):
+                    parsed.house_number = embedded_match.group(1).upper()
+                    segment = (
+                        segment[: embedded_match.start()] + " " + segment[embedded_match.end() :]
+                    ).strip(" ,.")
+                    if not segment:
+                        continue
 
         if parsed.building is None and _looks_like_building(segment):
             parsed.building = segment

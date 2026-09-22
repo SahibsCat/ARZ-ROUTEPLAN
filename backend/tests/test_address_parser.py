@@ -152,6 +152,29 @@ def test_parse_reads_house_numbers_in_every_format_customers_use():
         assert parse(text).house_number == expected, text
 
 
+def test_parse_finds_a_house_number_that_sits_behind_a_block_letter():
+    # Real production case: "Flat F-1, (first floor) B Block No 64 11th
+    # Street Annanagar East" - the "No 64" prefix pattern only fires when
+    # it OPENS a segment, so "B Block No 64..." (the number sitting behind
+    # a block/wing letter, not at the very start) fell through entirely,
+    # swallowing the whole thing - including the actual house number -
+    # into one long street name. Common in Chennai government/board
+    # housing block numbering, not just this one address.
+    parsed = parse("(first floor) B Block No 64 11th Street Annanagar East")
+
+    assert parsed.house_number == "64"
+    assert "11th Street" in parsed.street
+
+
+def test_parse_still_prefers_the_leading_house_number_over_an_embedded_one():
+    # The embedded "No <number>" fallback must never override a house
+    # number that's already been found at the start of the address - it
+    # only fires when the prefix-anchored check found nothing.
+    parsed = parse("12, Tower C No 45, Guindy")
+
+    assert parsed.house_number == "12"
+
+
 def test_parse_separates_a_flat_number_from_the_door_number():
     parsed = parse("Flat No 4B, 12 Gandhi Road, Velachery, Chennai 600042")
 

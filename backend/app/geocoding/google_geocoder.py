@@ -256,6 +256,22 @@ STREET_NUMBER_MISMATCH_CONFIDENCE_CAP = 0.3
 # locality mismatch: everything else about the match can look fine, only
 # the street itself is wrong.
 STREET_NAME_MISMATCH_CONFIDENCE_CAP = 0.4
+
+# _score_result grants a GEOMETRIC_CENTER/APPROXIMATE match its higher
+# "precise type" score (0.65/0.55, vs 0.3/0.2) purely because the result
+# is tagged establishment/point_of_interest - but that tag alone doesn't
+# mean Google actually found the customer's named building. Its POI
+# search is fuzzy enough to return a real, nearby, but UNRELATED business
+# along a long road instead. Real case that forced this: "Appaswamy
+# Altezza... door no. C 2007, Rajiv Gandhi Salai, OMR Service Rd,
+# Kottivakkam 600096" matched a completely different, unnamed POI at
+# "282/5" on the same many-kilometre road (GEOMETRIC_CENTER,
+# partial_match=True - Google's own admission it couldn't match the
+# building) - landing at exactly 0.50, the auto-accept floor, while the
+# actual building could be anywhere along OMR's Kottivakkam stretch.
+# Same tier as "found the street, not the house": the road is real, the
+# specific place on it is not confirmed.
+POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP = 0.45
 # Common Indian street-type suffixes - the token immediately before one
 # of these in the customer's own text is treated as the street's
 # identifying name ("Bhavani" in "Bhavani St"). Deliberately excludes
@@ -623,17 +639,52 @@ def _transliteration_match(token: str, candidates: Iterable[str]) -> bool:
 _UNNAMED_STREET_WORDS = {"cross", "main", "new", "old", "north", "south", "east", "west"}
 
 
+# Chennai neighborhoods with a well-known colloquial name that shares no
+# letters with the name(s) Google's own locality components actually use -
+# the same shape of problem _ROAD_ALIASES solves for roads, but for
+# sublocalities. Real, confirmed case: "MRC Nagar" (Mandaveli-Raja
+# Annamalaipuram Colony - the name literally IS that abbreviation) got
+# silently geocoded to an entirely different, unrelated "Pattinapakkam"
+# near Mylapore, over a kilometre away, for a recurring weekly customer -
+# Google's own geocoder only returns "MRC Nagar" as a named sublocality
+# for a plain "MRC Nagar" query; combined with a building name in the
+# same address (the realistic case) it falls back to a Plus Code inside
+# Raja Annamalaipuram/Mandavelipakkam instead, which "mrc" alone can't be
+# matched against by fuzzy or acronym-containment matching - neither
+# shares a substring with "mandavelipakkam" or "raja annamalaipuram".
+# Bidirectional, like _ROAD_ALIASES - the comparison runs in whichever
+# direction has "specific" tokens on both sides (see _score_component_match),
+# which is Google-token-against-customer-candidates at least as often as
+# the reverse, so an alias entry only pointing one way silently never
+# fires for half of real queries.
+_LOCALITY_ALIASES = {
+    "mrc": ("annamalaipuram", "mandavelipakkam", "mandaveli"),
+    # Deliberately NOT keying "raja" back to "mrc" - it's too generic a
+    # word to trust globally (an unrelated "Raja ... Nagar" elsewhere in
+    # Chennai would falsely satisfy this); "annamalaipuram" alone is
+    # distinctive enough to catch the same real Google responses.
+    "annamalaipuram": ("mrc",),
+    "mandavelipakkam": ("mrc",),
+    "mandaveli": ("mrc",),
+}
+
+
 def _locality_token_matches(token: str, candidates: Iterable[str]) -> bool:
     """_transliteration_match, plus containment for short acronym-style
-    names. Real case: a customer's "w.k.k.nagar" against Google's "KK
-    Nagar West" - the same place, written as a run-together abbreviation.
-    Fuzzy matching can't see it ("kk" vs "w.k.k.nagar" scores far too
-    low), but the acronym appearing INSIDE the customer's token is real
-    evidence. Restricted to short tokens (2-4 characters), since a longer
-    substring coincidence between two different place names is a genuine
-    risk while a 2-4 character acronym landing inside the customer's own
-    locality word essentially isn't."""
+    names, plus a known-alias table for a colloquial name that shares no
+    letters with Google's own. Real case: a customer's "w.k.k.nagar"
+    against Google's "KK Nagar West" - the same place, written as a
+    run-together abbreviation. Fuzzy matching can't see it ("kk" vs
+    "w.k.k.nagar" scores far too low), but the acronym appearing INSIDE
+    the customer's token is real evidence. Restricted to short tokens
+    (2-4 characters), since a longer substring coincidence between two
+    different place names is a genuine risk while a 2-4 character
+    acronym landing inside the customer's own locality word essentially
+    isn't."""
     if _transliteration_match(token, candidates):
+        return True
+    aliases = _LOCALITY_ALIASES.get(token)
+    if aliases and any(alias in candidates for alias in aliases):
         return True
     if not 2 <= len(token) <= 4:
         return False
@@ -696,6 +747,8 @@ def _score_component_match(
     original_address: str,
     address_components: List[Dict[str, object]],
     precision_confidence: Optional[float] = None,
+    result_types: Optional[Iterable[str]] = None,
+    place_name: Optional[str] = None,
 ) -> Optional[Tuple[float, str]]:
     """Returns (confidence CAP, plain-English reason) when a real mismatch
     is found, or None when nothing meaningful was found to flag - callers
@@ -913,6 +966,45 @@ def _score_component_match(
                 STREET_NAME_MISMATCH_CONFIDENCE_CAP,
                 f"Street name mismatch: '{street_keyword}' not found in Google's match",
             ))
+
+    # The result's "precise type" credit (see
+    # POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP's own comment) came
+    # from an establishment/point_of_interest tag, not a real premise/
+    # subpremise/street_address - only trustworthy when the customer
+    # actually named a building AND it shows up somewhere in Google's
+    # match. Gated on `result_types` being passed at all - the Geocoding
+    # path provides the candidate's own `types`; the Places fallback
+    # (always a POI match by construction, no `types` in its response)
+    # passes a synthetic ("point_of_interest",) instead, plus `place_name`
+    # (the Places "name" field - the actual place Google's fuzzy business
+    # search landed on, which isn't part of address_components at all and
+    # is often the ONLY field that would ever contradict a wrong match).
+    if result_types is not None:
+        result_types_set = set(result_types)
+        poi_only_precision = bool(
+            result_types_set & {"point_of_interest", "establishment"}
+        ) and not (result_types_set & {"premise", "subpremise", "street_address"})
+        if poi_only_precision:
+            parsed_building = address_parser.parse(address_parser.normalize(original_address)).building
+            building_words = [
+                w for w in re.findall(r"[A-Za-z]+", parsed_building or "")
+                if len(w) >= 4 and w.lower() not in address_parser._BUILDING_KEYWORDS
+            ]
+            if building_words:
+                all_component_text = " ".join(
+                    str(c.get("long_name") or "") for c in address_components
+                )
+                if place_name:
+                    all_component_text = f"{all_component_text} {place_name}"
+                component_tokens = _component_text_tokens(all_component_text)
+                building_confirmed = bool(component_tokens) and any(
+                    _transliteration_match(w.lower(), component_tokens) for w in building_words
+                )
+                if not building_confirmed:
+                    non_pin_flags.append((
+                        POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP,
+                        f"Building '{parsed_building}' could not be confirmed in Google's match",
+                    ))
 
     # The house/door number, decided last because it depends on what the
     # street and locality checks concluded.
@@ -1336,7 +1428,7 @@ class GoogleGeocoder(GeocodingProvider):
         accepted outright at a flat 0.65 with no cross-check at all."""
         params = {
             "place_id": place_id,
-            "fields": "geometry,formatted_address,name,address_component",
+            "fields": "geometry,formatted_address,name,address_component,type",
             "key": self._places_api_key,
         }
 
@@ -1360,7 +1452,21 @@ class GoogleGeocoder(GeocodingProvider):
             return None
 
         address_components = result.get("address_components") or []
-        match = _score_component_match(original_address, address_components)
+        # Google routinely folds a named establishment's own name into
+        # formatted_address even where it's absent from address_components
+        # entirely (see POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP's own
+        # comment) - both are checked, not just "name", so a match is
+        # never penalized just because this particular response happened
+        # to carry the name in one field and not the other.
+        place_name = " ".join(
+            filter(None, [result.get("name"), result.get("formatted_address")])
+        )
+        match = _score_component_match(
+            original_address,
+            address_components,
+            result_types=result.get("types") or ("point_of_interest",),
+            place_name=place_name,
+        )
         component_cap, mismatch_reason = match if match is not None else (None, None)
         confidence = PLACES_FALLBACK_CONFIDENCE if component_cap is None else min(PLACES_FALLBACK_CONFIDENCE, component_cap)
         result_status = STATUS_OK if confidence >= self._min_confidence else STATUS_NEEDS_MANUAL_VERIFICATION
@@ -1460,7 +1566,9 @@ class GoogleGeocoder(GeocodingProvider):
                     partial_match = bool(candidate.get("partial_match", False))
                     address_components = candidate.get("address_components") or []
                     precision_confidence = _score_result(location_type, result_types, partial_match)
-                    match = _score_component_match(validation_text, address_components, precision_confidence)
+                    match = _score_component_match(
+                        validation_text, address_components, precision_confidence, result_types
+                    )
                     component_cap, component_reason = match if match is not None else (None, None)
                     confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
                     if best is None or confidence > best[0]:
