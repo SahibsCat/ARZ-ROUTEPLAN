@@ -1477,6 +1477,28 @@ def test_extract_house_numbers_handles_a_bare_door_prefix_with_no_no():
     assert _extract_house_numbers("Door 2 Plot 107 Yeshwanth nagar link street Madambakkam") == ["2"]
 
 
+def test_extract_house_numbers_finds_a_number_that_sits_behind_another_word():
+    # Real production case: "new no 22/70 Rammiyam mayura apartments" -
+    # _HOUSE_NUMBER_TOKEN is anchored to the segment's START, so a word
+    # ("new") in front of the "No" marker hid the real door number
+    # entirely - the customer's actual house number was never even a
+    # candidate to validate Google's match against.
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("new no 22/70 Rammiyam mayura apartments") == ["22/70"]
+
+
+def test_extract_house_numbers_still_ignores_a_flat_number_behind_the_word_flat():
+    # The embedded fallback must respect the same "Flat No" exclusion the
+    # start-anchored prefix pattern already makes (see
+    # test_extract_house_numbers_ignores_a_flat_number_inside_a_named_
+    # building) - it has no start-anchor to rely on, so the word right
+    # before "No" is checked by hand instead.
+    from app.geocoding.google_geocoder import _extract_house_numbers
+
+    assert _extract_house_numbers("A Block, Flat No: 202, 2nd floor, Pantheon Road") == []
+
+
 def test_score_component_match_confirms_against_any_stated_house_number():
     """The exact bug this fixes: Google's confirmed street_number ("17-10")
     matches the customer's SECOND stated number ("17/10"), not the first

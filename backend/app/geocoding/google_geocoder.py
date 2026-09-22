@@ -339,6 +339,24 @@ _HOUSE_NUMBER_TOKEN = re.compile(r"^([A-Za-z]?-?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z
 # number like "79A" needs this instead), "78 / 79A".
 _HOUSE_NUMBER_CONNECTOR = re.compile(r"^\s*(?:and|&|/|-)\s*", re.IGNORECASE)
 
+# _HOUSE_NUMBER_TOKEN is anchored to the START of the segment (see its own
+# comment) - real case that slips past it: "New No 22/70, Rammiyam Mayura
+# Apartments" has a word ("New") sitting in front of the "No" marker, so
+# the segment doesn't open with it and the real door number is missed
+# entirely, same as the address_parser.py "B Block No 64" gap. Only tried
+# when the start-anchored match already failed, so it never overrides a
+# number that's already been found there.
+_EMBEDDED_HOUSE_NUMBER_TOKEN = re.compile(
+    r"\bno[.:]?\s*([A-Za-z]?-?\d+[A-Za-z]?(?:[/-](?:\d+[A-Za-z]?|[A-Za-z]))?)\b",
+    re.IGNORECASE,
+)
+# Same exclusion _HOUSE_NUMBER_PREFIX already makes on purpose (see its own
+# comment): "Flat No: 202"/"Unit No 5" names an internal designator, not a
+# street-level door number - the embedded search has no start-anchor to
+# rely on to exclude these the way the prefix pattern does, so the word
+# immediately before the "No" marker is checked by hand instead.
+_UNIT_DESIGNATOR_WORDS = {"flat", "unit", "apt", "apartment"}
+
 
 def _extract_house_numbers(address: str) -> List[str]:
     """Every house/door/plot-number-shaped token found in the first few
@@ -375,6 +393,14 @@ def _extract_house_numbers(address: str) -> List[str]:
         candidate = _HOUSE_NUMBER_PREFIX.sub("", segment).strip()
         match = _HOUSE_NUMBER_TOKEN.match(candidate)
         if not match or re.fullmatch(r"\d{6}", match.group(1)):
+            embedded = _EMBEDDED_HOUSE_NUMBER_TOKEN.search(segment)
+            if embedded and not re.fullmatch(r"\d{6}", embedded.group(1)):
+                preceding_words = re.findall(r"[A-Za-z]+", segment[: embedded.start()])
+                preceding_word = preceding_words[-1].lower() if preceding_words else ""
+                if preceding_word not in _UNIT_DESIGNATOR_WORDS:
+                    embedded_number = embedded.group(1).upper()
+                    if embedded_number not in numbers:
+                        numbers.append(embedded_number)
             continue
         number = match.group(1).upper()
         if number not in numbers:
