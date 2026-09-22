@@ -177,6 +177,58 @@ def test_geocode_once_picks_the_best_scoring_candidate_not_just_the_first():
     assert result.formatted_address == "12, Gandhi Road, Velachery, Chennai, Tamil Nadu 600042, India"
 
 
+def test_geocode_once_prefers_a_building_confirmed_candidate_over_a_coincidental_number_match():
+    # Real production case: "...Door No.12, Emerlad Flats, Thirumangalam,
+    # Anna Nagar West..." - candidate [0] is a plain street_address on a
+    # COMPLETELY different, unrelated apartment complex that just happens
+    # to share the customer's exact door number ("12"), scoring higher on
+    # raw precision; candidate [1] is the customer's actual building
+    # (correctly spelled "Emerald Flats" in Google's data) but its own
+    # door number isn't confirmed. The building match must win regardless
+    # of which one scores higher on confidence alone.
+    wrong_building_components = [
+        {"long_name": "12", "types": ["street_number"]},
+        {"long_name": "Anantha Eden Apartments", "types": ["premise"]},
+        {"long_name": "Anna Nagar", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600040", "types": ["postal_code"]},
+    ]
+    correct_building_components = [
+        {"long_name": "Emerald Flats", "types": ["premise"]},
+        {"long_name": "Thirumangalam", "types": ["neighborhood"]},
+        {"long_name": "Anna Nagar West", "types": ["sublocality", "sublocality_level_1"]},
+        {"long_name": "600040", "types": ["postal_code"]},
+    ]
+    data = {
+        "status": "OK",
+        "results": [
+            {
+                "formatted_address": "Door No 12, Anantha Eden Apartments, Anna Nagar, Chennai, Tamil Nadu 600040, India",
+                "geometry": {"location": {"lat": 13.10, "lng": 80.22}, "location_type": "ROOFTOP"},
+                "types": ["street_address", "subpremise"],
+                "partial_match": True,
+                "address_components": wrong_building_components,
+            },
+            {
+                "formatted_address": "Emerald Flats, Thirumangalam, Anna Nagar West, Chennai, Tamil Nadu 600040, India",
+                "geometry": {"location": {"lat": 13.09, "lng": 80.20}, "location_type": "ROOFTOP"},
+                "types": ["premise", "point_of_interest"],
+                "partial_match": True,
+                "address_components": correct_building_components,
+            },
+        ],
+    }
+    client = _DummyClient([data])
+    geocoder = GoogleGeocoder(api_key="test-key", client=client, retry_backoff_seconds=0)
+
+    result = geocoder._geocode_once(
+        "Block No.130, Door No.12, Emerlad Flats, Thirumangalam, Anna Nagar West, Chennai -600101"
+    )
+
+    assert result.lat == 13.09
+    assert result.lng == 80.20
+    assert "Emerald Flats" in result.formatted_address
+
+
 def test_geocode_once_keeps_the_first_candidate_when_no_candidate_scores_higher():
     # When every candidate scores the same (the common case: only one
     # candidate, or several equally-good ones), behavior is unchanged -
@@ -1534,6 +1586,55 @@ def test_score_component_match_confirms_a_locality_nested_three_levels_deep():
     ]
 
     assert _score_component_match(customer, google_components) is None
+
+
+def test_rank_prefers_a_building_confirmed_result_over_higher_raw_confidence():
+    # Real production case: "...Emerlad Flats, Thirumangalam, Anna Nagar
+    # West..." - the original query's best candidate was the customer's
+    # actual building (correctly spelled "Emerald Flats" in Google's
+    # data) at low confidence, because ITS door number wasn't confirmed.
+    # geocode()'s pincode-repair retry substitutes a "corrected" PIN,
+    # which changed which candidates Google returned at all - the retry's
+    # best candidate was a higher-confidence but completely different,
+    # unrelated building that happened to share the customer's door
+    # number by coincidence. Comparing by raw confidence alone let that
+    # wrong retry silently win; building-name confirmation must be
+    # checked first.
+    from app.geocoding.base import GeocodeResult
+    from app.geocoding.google_geocoder import _extract_building_words, _rank
+
+    building_words = _extract_building_words(
+        "Block No.130, Door No.12, Emerlad Flats, Thirumangalam, Anna Nagar West, Chennai -600101"
+    )
+    correct_building_low_confidence = GeocodeResult(
+        lat=13.09, lng=80.20,
+        formatted_address="Emerald Flats, Anna Nagar West, Thirumangalam, Chennai, Tamil Nadu 600040, India",
+        status="NEEDS_MANUAL_VERIFICATION", provider="google", confidence=0.30,
+    )
+    wrong_building_high_confidence = GeocodeResult(
+        lat=13.10, lng=80.22,
+        formatted_address="Door No 12, Anantha Eden Apartments, Plot No 31, Anna Nagar, Chennai, Tamil Nadu 600040, India",
+        status="OK", provider="google", confidence=0.8,
+    )
+
+    assert _rank(correct_building_low_confidence, building_words) > _rank(
+        wrong_building_high_confidence, building_words
+    )
+
+
+def test_rank_falls_back_to_plain_confidence_when_no_building_was_named():
+    # The (large majority) of addresses don't name a building at all -
+    # ranking must degrade to plain confidence comparison exactly as
+    # before this change, not treat "no building named" as some special
+    # tie-break state of its own.
+    from app.geocoding.base import GeocodeResult
+    from app.geocoding.google_geocoder import _rank
+
+    lower = GeocodeResult(lat=13.09, lng=80.20, formatted_address="X", status="OK", provider="google", confidence=0.5)
+    higher = GeocodeResult(lat=13.10, lng=80.22, formatted_address="Y", status="OK", provider="google", confidence=0.8)
+
+    assert _rank(higher, []) > _rank(lower, [])
+    assert _rank(None, []) < _rank(lower, [])
 
 
 def test_score_component_match_flags_a_geometric_center_poi_match_that_never_names_the_building():

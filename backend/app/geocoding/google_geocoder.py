@@ -746,6 +746,40 @@ def _street_alias_matches(street_keyword: str, component_tokens: Iterable[str]) 
     return any(alias in tokens for alias in aliases)
 
 
+def _extract_building_words(original_address: str) -> List[str]:
+    """The customer's stated building name, broken into its distinctive
+    words - generic descriptors ("Apartments", "Towers", short filler)
+    are dropped since their absence from Google's response proves
+    nothing, the same way _extract_street_keyword skips positional words
+    like "Cross"/"Main". Empty when the customer never named a building
+    at all (most addresses don't - a bare street+number is complete on
+    its own)."""
+    parsed_building = address_parser.parse(address_parser.normalize(original_address)).building
+    return [
+        w for w in re.findall(r"[A-Za-z]+", parsed_building or "")
+        if len(w) >= 4 and w.lower() not in address_parser._BUILDING_KEYWORDS
+    ]
+
+
+def _building_name_confirmed(
+    building_words: List[str],
+    address_components: List[Dict[str, object]],
+    extra_text: Optional[str] = None,
+) -> bool:
+    """Whether any of the customer's distinctive building words shows up
+    anywhere in Google's own response text - `extra_text` folds in a
+    Places "name"/formatted_address field, which often carries the only
+    text that would ever confirm (or contradict) a POI match (see
+    POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP's own comment)."""
+    all_component_text = " ".join(str(c.get("long_name") or "") for c in address_components)
+    if extra_text:
+        all_component_text = f"{all_component_text} {extra_text}"
+    component_tokens = _component_text_tokens(all_component_text)
+    return bool(component_tokens) and any(
+        _transliteration_match(w.lower(), component_tokens) for w in building_words
+    )
+
+
 def _extract_street_keyword(address: str) -> Optional[str]:
     """The customer's stated street NAME, not its type-suffix - "bhavani"
     out of "Bhavani St". Optional by nature (an address with no street-
@@ -1011,22 +1045,13 @@ def _score_component_match(
             result_types_set & {"point_of_interest", "establishment"}
         ) and not (result_types_set & {"premise", "subpremise", "street_address"})
         if poi_only_precision:
-            parsed_building = address_parser.parse(address_parser.normalize(original_address)).building
-            building_words = [
-                w for w in re.findall(r"[A-Za-z]+", parsed_building or "")
-                if len(w) >= 4 and w.lower() not in address_parser._BUILDING_KEYWORDS
-            ]
+            building_words = _extract_building_words(original_address)
             if building_words:
-                all_component_text = " ".join(
-                    str(c.get("long_name") or "") for c in address_components
-                )
-                if place_name:
-                    all_component_text = f"{all_component_text} {place_name}"
-                component_tokens = _component_text_tokens(all_component_text)
-                building_confirmed = bool(component_tokens) and any(
-                    _transliteration_match(w.lower(), component_tokens) for w in building_words
+                building_confirmed = _building_name_confirmed(
+                    building_words, address_components, place_name
                 )
                 if not building_confirmed:
+                    parsed_building = " ".join(building_words)
                     non_pin_flags.append((
                         POI_BUILDING_NAME_UNCONFIRMED_CONFIDENCE_CAP,
                         f"Building '{parsed_building}' could not be confirmed in Google's match",
@@ -1216,12 +1241,40 @@ def _strip_leading_name_segment(address: str) -> Optional[str]:
     return ", ".join(segments[1:])
 
 
-def _rank(result: Optional[GeocodeResult]) -> float:
+def _text_confirms_building_words(building_words: List[str], text: Optional[str]) -> bool:
+    """Plain-text sibling of _building_name_confirmed, for callers (like
+    _rank below) that only ever have a GeocodeResult's formatted_address
+    string to check against, not a structured address_components list."""
+    if not building_words or not text:
+        return False
+    tokens = _component_text_tokens(text)
+    return bool(tokens) and any(_transliteration_match(w.lower(), tokens) for w in building_words)
+
+
+def _rank(result: Optional[GeocodeResult], building_words: Iterable[str] = ()) -> Tuple[bool, float]:
     """Comparable score for 'is this candidate better than that one' - a
-    missing result never beats even the lowest real confidence."""
+    missing result never beats even the lowest real confidence.
+
+    Building-name confirmation is checked AHEAD of raw confidence, not
+    folded into it - real case: geocode()'s pincode-repair retry
+    substitutes a "corrected" PIN into the query text, which can change
+    which candidates Google even returns at all. For "...Emerlad Flats,
+    Thirumangalam..." the original query's candidate set included the
+    customer's actual building (correctly spelled "Emerald Flats") at
+    low confidence (its own door number unconfirmed) - the PIN-corrected
+    retry's query dropped that candidate from Google's response entirely
+    and landed a HIGHER-confidence but completely different, wrong
+    building instead (a plain street match that happened to share the
+    customer's door number by coincidence). Comparing by raw confidence
+    alone let that worse retry silently overwrite the better original
+    result. `building_words` is empty for the (large majority) of
+    addresses that don't name one, where this degrades to plain
+    confidence comparison exactly as before."""
     if result is None:
-        return -1.0
-    return result.confidence if result.confidence is not None else 0.0
+        return (False, -1.0)
+    confidence = result.confidence if result.confidence is not None else 0.0
+    building_confirmed = _text_confirms_building_words(list(building_words), result.formatted_address)
+    return (building_confirmed, confidence)
 
 
 class GoogleGeocoder(GeocodingProvider):
@@ -1314,6 +1367,12 @@ class GoogleGeocoder(GeocodingProvider):
         if not address or not self._api_key:
             return None
 
+        # Computed once, off the customer's ORIGINAL text - every retry
+        # variant below still gets judged against what the customer
+        # actually named, never against its own rewritten query (see
+        # _rank's own comment for why that matters).
+        building_words = _extract_building_words(address)
+
         best = self._geocode_once(address)
         if best is not None and best.status == STATUS_OK:
             return best
@@ -1328,7 +1387,7 @@ class GoogleGeocoder(GeocodingProvider):
         corrected_spelling = correct_locality_spelling(address)
         if corrected_spelling and corrected_spelling.lower() != address.lower():
             variant = self._geocode_once(corrected_spelling, validate_against=address)
-            if _rank(variant) > _rank(best):
+            if _rank(variant, building_words) > _rank(best, building_words):
                 print(f"Google Geocoding: spelling-corrected retry '{address}' -> '{corrected_spelling}' improved the match")
                 best = variant
             if best is not None and best.status == STATUS_OK:
@@ -1339,7 +1398,7 @@ class GoogleGeocoder(GeocodingProvider):
             repaired_pin = repair_pincode_by_locality(address)
             if repaired_pin and repaired_pin.lower() != address.lower():
                 variant = self._geocode_once(repaired_pin, validate_against=address)
-                if _rank(variant) > _rank(best):
+                if _rank(variant, building_words) > _rank(best, building_words):
                     print(f"Google Geocoding: pincode-repaired retry '{address}' -> '{repaired_pin}' improved the match")
                     best = variant
                 if best is not None and best.status == STATUS_OK:
@@ -1348,7 +1407,7 @@ class GoogleGeocoder(GeocodingProvider):
         stripped_landmark = _strip_landmark_phrase(address)
         if stripped_landmark and stripped_landmark.lower() != address.lower():
             variant = self._geocode_once(stripped_landmark)
-            if _rank(variant) > _rank(best):
+            if _rank(variant, building_words) > _rank(best, building_words):
                 print(f"Google Geocoding: landmark-stripped retry '{address}' -> '{stripped_landmark}' improved the match")
                 best = variant
             if best is not None and best.status == STATUS_OK:
@@ -1360,14 +1419,14 @@ class GoogleGeocoder(GeocodingProvider):
         cleaned_text = _strip_leading_name_segment(address) or _reorder_house_number_to_street(address)
         if cleaned_text and cleaned_text.lower() != address.lower():
             variant = self._geocode_once(cleaned_text)
-            if _rank(variant) > _rank(best):
+            if _rank(variant, building_words) > _rank(best, building_words):
                 print(f"Google Geocoding: cleaned-text retry '{address}' -> '{cleaned_text}' improved the match")
                 best = variant
             if best is not None and best.status == STATUS_OK:
                 return best
 
         fallback = self._find_place(address)
-        if _rank(fallback) > _rank(best):
+        if _rank(fallback, building_words) > _rank(best, building_words):
             best = fallback
         if best is not None and best.status == STATUS_OK:
             return best
@@ -1378,7 +1437,7 @@ class GoogleGeocoder(GeocodingProvider):
             area_part = parsed_addr.area or parsed_addr.city or "Chennai"
             building_query = f"{parsed_addr.building}, {area_part}, India"
             building_fallback = self._find_place(building_query)
-            if _rank(building_fallback) > _rank(best):
+            if _rank(building_fallback, building_words) > _rank(best, building_words):
                 print(f"Places API building fallback: '{address}' -> '{building_query}' improved the match")
                 best = building_fallback
             if best is not None and best.status == STATUS_OK:
@@ -1386,7 +1445,7 @@ class GoogleGeocoder(GeocodingProvider):
 
         if cleaned_text and cleaned_text.lower() != address.lower():
             fallback_cleaned = self._find_place(cleaned_text)
-            if _rank(fallback_cleaned) > _rank(best):
+            if _rank(fallback_cleaned, building_words) > _rank(best, building_words):
                 print(f"Places API fallback: cleaned-text retry '{address}' -> '{cleaned_text}' improved the match")
                 best = fallback_cleaned
 
@@ -1580,8 +1639,28 @@ class GoogleGeocoder(GeocodingProvider):
                 # confidence), so behavior is unchanged for the (large
                 # majority) of queries where results[0] already was the
                 # best or only candidate.
+                #
+                # One signal is checked AHEAD of raw confidence, not folded
+                # into it: whether the customer's own named building shows
+                # up in the candidate at all. Real case that forced this:
+                # "...Emerlad Flats, Thirumangalam, Anna Nagar West..." -
+                # candidate [1] was a plain street_address that happened to
+                # repeat the customer's exact door number ("Door No 12") on
+                # a COMPLETELY different, unrelated apartment complex, and
+                # scored 0.8 purely on that coincidence; candidate [3], a
+                # premise result actually named "Emerald Flats" (the
+                # customer's building, correctly spelled) in the right
+                # neighbourhood, scored lower only because Google's data
+                # for IT doesn't expose a structured door number to match
+                # against - the building's own name confirming is stronger,
+                # much rarer-to-coincide evidence than one shared digit.
+                # Only engages when the customer named a building at all
+                # (`building_words` empty otherwise) - every address without
+                # one sorts by confidence exactly as before.
                 validation_text = validate_against or address
+                building_words = _extract_building_words(validation_text)
                 best = None
+                best_building_confirmed = False
                 for candidate in results:
                     geometry = candidate.get("geometry", {})
                     location = geometry.get("location", {})
@@ -1597,8 +1676,15 @@ class GoogleGeocoder(GeocodingProvider):
                     )
                     component_cap, component_reason = match if match is not None else (None, None)
                     confidence = precision_confidence if component_cap is None else min(precision_confidence, component_cap)
-                    if best is None or confidence > best[0]:
+                    building_confirmed = bool(building_words) and _building_name_confirmed(
+                        building_words, address_components
+                    )
+                    is_better = best is None or (
+                        (building_confirmed, confidence) > (best_building_confirmed, best[0])
+                    )
+                    if is_better:
                         best = (confidence, candidate, location, precision_confidence, component_cap, component_reason)
+                        best_building_confirmed = building_confirmed
 
                 if best is None:
                     return None
