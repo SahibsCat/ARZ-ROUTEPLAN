@@ -3,11 +3,13 @@ import pytest
 from app.distance_service import (
     build_distance_matrix,
     build_order_matrix,
+    build_route_geometry,
     clear_route_cache,
     get_distances_from_point,
     prime_route_cache,
     route_distance_time,
 )
+from app.distance_service import _decode_google_polyline
 
 
 @pytest.fixture(autouse=True)
@@ -247,3 +249,109 @@ def test_prime_route_cache_is_silently_a_no_op_when_osrm_fails(monkeypatch):
     # if prime_route_cache didn't exist at all.
     result = route_distance_time(depot["lat"], depot["lng"], orders[0]["lat"], orders[0]["lng"])
     assert result["distance_km"] is None
+
+
+# --- build_route_geometry: Google Directions first, OSRM as its fallback ---
+
+def test_decode_google_polyline_matches_googles_own_published_example():
+    # Reference example straight from Google's polyline algorithm docs.
+    result = _decode_google_polyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")
+
+    expected = [(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)]
+    for point, (lat, lng) in zip(result, expected):
+        assert point["lat"] == pytest.approx(lat, abs=1e-4)
+        assert point["lng"] == pytest.approx(lng, abs=1e-4)
+
+
+def test_build_route_geometry_uses_google_directions_when_a_key_is_configured(monkeypatch):
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+    response_data = {
+        "status": "OK",
+        "routes": [{"overview_polyline": {"points": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}}],
+    }
+    monkeypatch.setattr(
+        "app.distance_service.httpx.Client",
+        lambda timeout, follow_redirects: DummyClient(response_data),
+    )
+
+    depot = {"lat": 12.0, "lng": 80.0}
+    stops = [{"lat": 12.1, "lng": 80.1}, {"lat": 12.2, "lng": 80.2}]
+
+    result = build_route_geometry(depot, stops)
+
+    assert result is not None
+    assert result[0] == {"lat": pytest.approx(38.5, abs=1e-4), "lng": pytest.approx(-120.2, abs=1e-4)}
+
+
+def test_build_route_geometry_falls_back_to_osrm_when_no_google_key_is_configured(monkeypatch):
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    osrm_response = {
+        "routes": [{"geometry": {"coordinates": [[80.0, 12.0], [80.1, 12.1]]}}],
+    }
+    monkeypatch.setattr(
+        "app.distance_service.httpx.Client",
+        lambda timeout, follow_redirects: DummyClient(osrm_response),
+    )
+
+    depot = {"lat": 12.0, "lng": 80.0}
+    stops = [{"lat": 12.1, "lng": 80.1}]
+
+    result = build_route_geometry(depot, stops)
+
+    # GeoJSON [lng, lat] flipped to {lat, lng} - only OSRM was ever called.
+    assert result == [{"lat": 12.0, "lng": 80.0}, {"lat": 12.1, "lng": 80.1}]
+
+
+def test_build_route_geometry_falls_back_to_osrm_when_google_directions_fails(monkeypatch):
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+    osrm_response = {
+        "routes": [{"geometry": {"coordinates": [[80.0, 12.0], [80.1, 12.1]]}}],
+    }
+    google_and_then_osrm = [
+        DummyResponse({"status": "ZERO_RESULTS", "routes": []}),
+        DummyResponse(osrm_response),
+    ]
+
+    class SequencedClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, url, params=None):
+            return google_and_then_osrm.pop(0)
+
+    monkeypatch.setattr("app.distance_service.httpx.Client", SequencedClient)
+
+    depot = {"lat": 12.0, "lng": 80.0}
+    stops = [{"lat": 12.1, "lng": 80.1}]
+
+    result = build_route_geometry(depot, stops)
+
+    assert result == [{"lat": 12.0, "lng": 80.0}, {"lat": 12.1, "lng": 80.1}]
+
+
+def test_build_route_geometry_skips_google_over_the_waypoint_limit(monkeypatch):
+    from app.distance_service import GOOGLE_DIRECTIONS_MAX_STOPS
+
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+    osrm_response = {
+        "routes": [{"geometry": {"coordinates": [[80.0, 12.0], [80.1, 12.1]]}}],
+    }
+    monkeypatch.setattr(
+        "app.distance_service.httpx.Client",
+        lambda timeout, follow_redirects: DummyClient(osrm_response),
+    )
+
+    depot = {"lat": 12.0, "lng": 80.0}
+    stops = [{"lat": 12.0 + i * 0.001, "lng": 80.0} for i in range(GOOGLE_DIRECTIONS_MAX_STOPS + 1)]
+
+    result = build_route_geometry(depot, stops)
+
+    # Google is never even called - straight to OSRM, whose (differently-
+    # shaped) response is what comes back here.
+    assert result == [{"lat": 12.0, "lng": 80.0}, {"lat": 12.1, "lng": 80.1}]

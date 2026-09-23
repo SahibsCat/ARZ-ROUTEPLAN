@@ -1,3 +1,4 @@
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
@@ -11,6 +12,19 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 0.5
 TABLE_CHUNK_SIZE = 90
 MAX_CONCURRENT_OSRM_REQUESTS = 3
+
+# Only for build_route_geometry's map-display line (see its own docstring) -
+# every distance/duration number the optimizer itself decides sequencing
+# from (route_distance_time, get_distances_from_point, build_order_matrix)
+# still comes from OSRM, untouched. Google's road data is what the
+# customer's own phone uses, so it's the fix for a real class of "the map
+# shows a longer loop than the actual shortest drivable road" reports the
+# free OSRM demo server's own map snapshot can't be relied on for. The
+# Directions API's standard (non-premium) waypoint limit is 25 points
+# including origin/destination - GOOGLE_DIRECTIONS_MAX_STOPS leaves room
+# for that plus the depot.
+GOOGLE_DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
+GOOGLE_DIRECTIONS_MAX_STOPS = 23
 
 
 def _fetch_osrm_json(url: str, params: Dict[str, str]) -> Optional[Dict[str, object]]:
@@ -72,18 +86,103 @@ def route_distance_time(lat1: float, lng1: float, lat2: float, lng2: float) -> D
     return result
 
 
+def _decode_google_polyline(encoded: str) -> List[Dict[str, float]]:
+    """Google's polyline encoding (precision 5) - the standard reference
+    algorithm, verified against Google's own published example
+    ("_p~iF~ps|U_ulLnnqC_mqNvxq`@" -> (38.5,-120.2), (40.7,-120.95),
+    (43.252,-126.453)). No third-party dependency needed for something
+    this small and stable."""
+    points: List[Dict[str, float]] = []
+    index = lat = lng = 0
+    length = len(encoded)
+    while index < length:
+        result = 1
+        shift = 0
+        while True:
+            b = ord(encoded[index]) - 63 - 1
+            index += 1
+            result += b << shift
+            shift += 5
+            if b < 0x1F:
+                break
+        lat += (~result >> 1) if (result & 1) != 0 else (result >> 1)
+
+        result = 1
+        shift = 0
+        while True:
+            b = ord(encoded[index]) - 63 - 1
+            index += 1
+            result += b << shift
+            shift += 5
+            if b < 0x1F:
+                break
+        lng += (~result >> 1) if (result & 1) != 0 else (result >> 1)
+
+        points.append({"lat": lat * 1e-5, "lng": lng * 1e-5})
+    return points
+
+
+def _build_google_route_geometry(
+    depot: Dict[str, float], stops: List[Dict[str, float]]
+) -> Optional[List[Dict[str, float]]]:
+    """Google Directions equivalent of the OSRM call below - waypoints are
+    passed in the route's own delivery order with no `optimize:` prefix,
+    so Google draws the road path for the sequence this app already
+    decided rather than picking its own stop order. Returns None on
+    anything short of a clean OK (missing key, over the waypoint limit,
+    network error, no routes) so the caller can fall back to OSRM exactly
+    as if this function didn't exist."""
+    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
+    if not api_key or len(stops) > GOOGLE_DIRECTIONS_MAX_STOPS:
+        return None
+
+    origin = f"{depot['lat']},{depot['lng']}"
+    destination = f"{stops[-1]['lat']},{stops[-1]['lng']}"
+    waypoints = stops[:-1]
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "mode": "driving",
+        "key": api_key,
+    }
+    if waypoints:
+        params["waypoints"] = "|".join(f"{p['lat']},{p['lng']}" for p in waypoints)
+
+    try:
+        with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True) as client:
+            response = client.get(GOOGLE_DIRECTIONS_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
+        return None
+
+    if data.get("status") != "OK":
+        return None
+    routes = data.get("routes")
+    if not routes or not isinstance(routes, list):
+        return None
+    encoded = (routes[0].get("overview_polyline") or {}).get("points")
+    if not encoded:
+        return None
+    return _decode_google_polyline(encoded) or None
+
+
 def build_route_geometry(depot: Dict[str, float], stops: List[Dict[str, float]]) -> Optional[List[Dict[str, float]]]:
     """The actual road-following path for depot -> every stop, in delivery
-    order, as a list of {lat, lng} points - one multi-waypoint OSRM request
-    returns the whole route's shape in a single call, via the same free
-    OSRM server route_distance_time already relies on above. This exists
-    for the admin live-tracking map's "planned route" line: the Maps key
-    only has the JavaScript API enabled, not the (separately-gated)
-    Directions/Routes API, so drawing the road-following line server-side
-    with what's already proven reliable here avoids needing that turned on.
-    """
+    order, as a list of {lat, lng} points. Tries Google Directions first
+    (see _build_google_route_geometry's own docstring for why - it's the
+    fix for the free OSRM demo server's map data missing/mis-tagging a
+    real road, sending the drawn line the long way round), falling back
+    to the original one-request OSRM call whenever Google can't answer
+    (no key configured, over the waypoint limit, a network hiccup) - this
+    never regresses below what already worked before Google was added."""
     if not stops:
         return None
+
+    google_geometry = _build_google_route_geometry(depot, stops)
+    if google_geometry:
+        return google_geometry
+
     points = [depot] + list(stops)
     coordinates = ";".join(f"{p['lng']},{p['lat']}" for p in points)
     params = {"overview": "full", "geometries": "geojson"}

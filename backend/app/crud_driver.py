@@ -622,9 +622,9 @@ def get_route_planned_path(db: Session, route_id: int) -> List[Dict[str, float]]
     order - the live-tracking map's "planned route" line, so an admin can
     see whether the driver is actually on it, not just a dot with nothing
     to judge it against. Fetched once per map open (see distance_service.
-    build_route_geometry for why this goes via OSRM rather than Google's
-    Directions/Routes API), not on every tracking poll - the stop sequence
-    doesn't change while a route is in progress."""
+    build_route_geometry - Google Directions first, OSRM as its fallback),
+    not on every tracking poll - the stop sequence doesn't change while a
+    route is in progress."""
     route = db.query(Route).options(joinedload(Route.stops)).filter(Route.id == route_id).first()
     if route is None:
         raise RouteNotFoundError("Route not found")
