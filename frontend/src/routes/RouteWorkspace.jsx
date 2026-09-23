@@ -476,8 +476,9 @@ function RoutesFilterBar({
   );
 }
 
-function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
+function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute, drivers, onAssignDriver }) {
   const [open, setOpen] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   // Where to draw the panel, in viewport coordinates - computed fresh each
   // time the menu opens (see triggerRef.getBoundingClientRect() below).
   const [panelPos, setPanelPos] = useState(null);
@@ -533,6 +534,10 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
       </button>
       {open && panelPos && createPortal(
         <div className="row-menu__panel" ref={panelRef} style={{ top: panelPos.top, right: panelPos.right }}>
+          <button type="button" onClick={() => { setShowAssignModal(true); setOpen(false); }}>
+            <IconUsers width={13} height={13} />
+            Assign Driver
+          </button>
           <button type="button" onClick={() => { onDownload(route); setOpen(false); }}>
             <LIconDownload width={13} height={13} />
             Download sheet
@@ -554,11 +559,19 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute }) {
         </div>,
         document.body,
       )}
+      {showAssignModal && (
+        <AssignDriverModal
+          route={route}
+          drivers={drivers}
+          onClose={() => setShowAssignModal(false)}
+          onAssign={(driverId, force) => onAssignDriver(route.route_id, driverId, force)}
+        />
+      )}
     </div>
   );
 }
 
-function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute, selected, onToggleSelect }) {
+function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute, selected, onToggleSelect, drivers, onAssignDriver }) {
   const capacity = capacityFor(route.vehicle_type);
   const count = route.orders.length;
   const status = routeStatus(route, capacity);
@@ -621,7 +634,7 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
         <button type="button" className="btn btn--outline route-row__view" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
           View
         </button>
-        <RowMenu route={route} onDownload={onDownload} onDeleteRoute={onDeleteRoute} isDeletingRoute={isDeletingRoute} />
+        <RowMenu route={route} onDownload={onDownload} onDeleteRoute={onDeleteRoute} isDeletingRoute={isDeletingRoute} drivers={drivers} onAssignDriver={onAssignDriver} />
       </div>
     </div>
   );
@@ -1167,7 +1180,7 @@ function SplitRouteList({ routes, capacityFor, selectedRouteName, onSelectRoute 
 
 function RoutesTable({
   routes, capacityFor, onOpen, onDownload, onDeleteRoute, isDeletingRoute, hasActiveFilters, onClearFilters,
-  selectedRouteNames, onToggleSelect, onToggleSelectAll,
+  selectedRouteNames, onToggleSelect, onToggleSelectAll, drivers, onAssignDriver,
 }) {
   if (routes.length === 0) {
     return (
@@ -1216,6 +1229,8 @@ function RoutesTable({
             isDeletingRoute={isDeletingRoute}
             selected={selectedRouteNames.includes(route.route_name)}
             onToggleSelect={onToggleSelect}
+            drivers={drivers}
+            onAssignDriver={onAssignDriver}
           />
         ))}
       </div>
@@ -3165,6 +3180,8 @@ export default function RouteWorkspace({
               selectedRouteNames={selectedRouteNames}
               onToggleSelect={toggleRouteSelected}
               onToggleSelectAll={toggleSelectAllRoutes}
+              drivers={drivers}
+              onAssignDriver={onAssignDriver}
             />
             {isBulkActing && (
               <div className="busy-overlay">
