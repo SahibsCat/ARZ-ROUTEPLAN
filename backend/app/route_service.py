@@ -1,4 +1,5 @@
 import re
+from itertools import permutations
 from math import asin, cos, radians, sin, sqrt
 from statistics import median
 from typing import Dict, List, Optional, Tuple
@@ -47,6 +48,26 @@ RELOCATE_SWEEPS = 2
 # and forth for a few hundred meters of "improvement" that isn't real
 # given how approximate road-distance estimates already are.
 RELOCATE_MIN_SAVINGS_KM = 1.5
+
+# _improve_route's 2-opt only accepts a reordering once it clears
+# SWAP_MIN_SAVINGS_MINUTES (8 minutes) - a deliberate anti-thrashing floor
+# for a HEURISTIC search, where "is this really better or just noise"
+# needs a real margin. But for a small enough route, there's no need to
+# guess at all: every possible visiting order can just be tried directly
+# and the genuinely cheapest FEASIBLE one used - no threshold, no
+# heuristic, the actual answer. Real case this was written for: a
+# 3-stop route (Ambattur -> Avadi -> Red Hills) sat one stop out of
+# order because the 2-opt swap that would have fixed it only saved ~1
+# minute, under the 8-minute floor - correct by that heuristic's own
+# logic, but not the best actual route, and looked like an obvious
+# backtrack on the map to anyone looking at it. 7! = 5,040 permutations
+# is still cheap (each leg's distance is cache-backed after the first
+# pass - see distance_service._ROUTE_CACHE), and 7 covers every
+# auto-generated route's largest possible size (CAR_MAX_CAPACITY, the
+# one deliberate way a route can exceed its normal 6-stop cap). Larger
+# routes fall through to the existing 2-opt sweep below, where brute
+# force would stop being cheap.
+BRUTE_FORCE_STOP_ORDER_MAX_STOPS = 7
 
 # Consolidation bias: picking a vehicle that's still sitting at the depot
 # (never assigned a stop yet) is treated as if it were this many km farther
@@ -287,6 +308,41 @@ def _simulate_route(
     return etas, round(total_distance, 2), round(total_time, 1), feasible_all
 
 
+def _optimize_small_route_exactly(vehicle: Dict[str, object], depot: Dict[str, float], route_start_minutes: float) -> bool:
+    """Tries every possible visiting order for a small route and keeps
+    the genuinely cheapest FEASIBLE one - see BRUTE_FORCE_STOP_ORDER_MAX_
+    STOPS' own comment for why this exists alongside 2-opt below, not
+    instead of it. Returns True (and leaves vehicle["orders"] optimized)
+    when it ran; False when the route was too large for this and the
+    caller should fall through to 2-opt instead."""
+    route_orders = vehicle["orders"]
+    if len(route_orders) > BRUTE_FORCE_STOP_ORDER_MAX_STOPS:
+        return False
+
+    best_orders = list(route_orders)
+    _, best_distance, best_time, best_feasible = _simulate_route(best_orders, depot, route_start_minutes)
+    if best_time is None:
+        return True  # too large to fall back to a permutation search either - leave the order as-is
+    if not best_feasible:
+        best_distance = None  # an infeasible starting order must never block a feasible one from winning below
+
+    for candidate in permutations(route_orders):
+        candidate = list(candidate)
+        if candidate == best_orders:
+            continue
+        if not _slot_order_preserved(candidate):
+            continue
+        _, candidate_distance, candidate_time, candidate_feasible = _simulate_route(candidate, depot, route_start_minutes)
+        if candidate_time is None or not candidate_feasible:
+            continue
+        if best_distance is None or candidate_distance < best_distance:
+            best_orders = candidate
+            best_distance = candidate_distance
+
+    vehicle["orders"] = best_orders
+    return True
+
+
 def _improve_route(vehicle: Dict[str, object], depot: Dict[str, float], route_start_minutes: float) -> None:
     """2-opt local search: the standard fix for a route whose path
     crosses itself - a stop near the end that's actually much closer to
@@ -302,11 +358,18 @@ def _improve_route(vehicle: Dict[str, object], depot: Dict[str, float], route_st
     Checks every pair of edges in the route (cheap for the route sizes
     here - a handful to ~20 stops - and cache-backed distance lookups
     after the first pass), not just nearby ones, since a crossing can
-    span the whole route."""
+    span the whole route.
+
+    Only reached for a route too large for _optimize_small_route_exactly
+    (see BRUTE_FORCE_STOP_ORDER_MAX_STOPS) - small routes get the exact
+    answer instead of this heuristic's threshold-gated approximation."""
     route_orders = vehicle["orders"]
     if len(route_orders) < 2:
         return
     if not all(has_coordinates(order) for order in route_orders):
+        return
+
+    if _optimize_small_route_exactly(vehicle, depot, route_start_minutes):
         return
 
     best_orders = list(route_orders)

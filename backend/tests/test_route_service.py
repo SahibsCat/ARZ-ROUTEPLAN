@@ -695,6 +695,119 @@ def test_improve_route_uncrosses_a_self_crossing_route_with_mixed_delivery_times
     assert bad_distance - improved_distance > 10  # a real, substantial fix, not a rounding artifact
 
 
+def test_improve_route_finds_the_true_optimum_for_a_small_route(monkeypatch):
+    # Real production case: a 3-stop route (Ambattur -> Avadi -> Red
+    # Hills) sat one stop out of its true best order because the
+    # improvement it needed only saved about a minute - correct by
+    # 2-opt's own anti-thrashing threshold (SWAP_MIN_SAVINGS_MINUTES),
+    # but not the actual best route, and looked like an obvious backtrack
+    # on the map. For a route this small, there's no need to accept a
+    # near-optimal heuristic result at all - every order can be tried
+    # directly (see BRUTE_FORCE_STOP_ORDER_MAX_STOPS) and the genuinely
+    # cheapest one used, full stop, no threshold.
+    import itertools
+    from app.route_service import _improve_route, _simulate_route
+
+    depot = {"lat": 0.0, "lng": 0.0}
+    # Same relative shape as the real case: a "west" point and a "center"
+    # point close together, a "northeast" point far from both - the true
+    # best order visits the close pair before jumping to the far one, but
+    # the gap between that and the reported (sub-optimal) order is small
+    # enough that 2-opt's 8-minute floor would never have crossed it.
+    center = {"order_id": "center", "customer_name": "center", "address": "center", "delivery_time": None, "lat": 10.0, "lng": 10.0}
+    west = {"order_id": "west", "customer_name": "west", "address": "west", "delivery_time": None, "lat": 10.05, "lng": 4.0}
+    northeast = {"order_id": "northeast", "customer_name": "northeast", "address": "northeast", "delivery_time": None, "lat": 16.0, "lng": 12.0}
+
+    def euclid(a, b):
+        return ((a["lat"] - b["lat"]) ** 2 + (a["lng"] - b["lng"]) ** 2) ** 0.5
+
+    def fake_road_distance_time(source, destination):
+        d = euclid(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+    reported_order = [center, west, northeast]
+    vehicle = {"vehicle_type": "bike", "capacity": 3, "orders": list(reported_order), "current_time": 480.0, "current_location": dict(depot), "is_auto_created": True}
+
+    best_possible = min(
+        _simulate_route(list(perm), depot, 480.0)[1]
+        for perm in itertools.permutations(reported_order)
+    )
+
+    _improve_route(vehicle, depot, 480.0)
+
+    _, improved_distance, _, _ = _simulate_route(vehicle["orders"], depot, 480.0)
+    assert abs(improved_distance - best_possible) < 0.001
+
+
+def test_improve_route_exact_search_still_respects_delivery_slot_order(monkeypatch):
+    # The brute-force search below BRUTE_FORCE_STOP_ORDER_MAX_STOPS must
+    # never consider a permutation that serves a later delivery slot
+    # before an earlier one, same invariant 2-opt's own reversal already
+    # enforces (_slot_order_preserved) - it's just trying every order
+    # instead of one segment reversal at a time.
+    from app.route_service import _improve_route, _simulate_route
+
+    depot = {"lat": 0.0, "lng": 0.0}
+    # Geographically, visiting "late" before "early" would be the
+    # shorter path - only the delivery-slot constraint should stop it.
+    early = {"order_id": "early", "customer_name": "early", "address": "early", "delivery_time": "10:00", "lat": 20.0, "lng": 20.0}
+    late = {"order_id": "late", "customer_name": "late", "address": "late", "delivery_time": "12:00", "lat": 5.0, "lng": 5.0}
+
+    def fake_road_distance_time(source, destination):
+        d = ((source["lat"] - destination["lat"]) ** 2 + (source["lng"] - destination["lng"]) ** 2) ** 0.5
+        return {"distance_km": d, "time_minutes": d}
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+    vehicle = {"vehicle_type": "bike", "capacity": 3, "orders": [early, late], "current_time": 480.0, "current_location": dict(depot), "is_auto_created": False}
+    _improve_route(vehicle, depot, 480.0)
+
+    assert [o["order_id"] for o in vehicle["orders"]] == ["early", "late"]
+
+
+def test_improve_route_falls_back_to_2opt_above_the_brute_force_size_cap(monkeypatch):
+    # A route larger than BRUTE_FORCE_STOP_ORDER_MAX_STOPS must still go
+    # through the existing 2-opt sweep (permutations would stop being
+    # cheap well before this size) - same crossing-uncrossing behavior as
+    # test_improve_route_uncrosses_a_self_crossing_route, just confirming
+    # the size-based branch doesn't accidentally skip optimization
+    # entirely for a route this large.
+    import itertools
+    from app.route_service import BRUTE_FORCE_STOP_ORDER_MAX_STOPS, _improve_route, _simulate_route
+
+    depot = {"lat": 0.0, "lng": 0.0}
+    coords = [
+        (10.0, 50.0), (12.0, 40.0), (15.0, 38.0), (20.0, 35.0), (22.0, 33.0),
+        (-30.0, 10.0), (40.0, 10.0), (-35.0, 5.0),
+    ]
+    orders = [
+        {"order_id": f"p{i}", "customer_name": f"p{i}", "address": f"p{i}", "delivery_time": None, "lat": lat, "lng": lng}
+        for i, (lat, lng) in enumerate(coords)
+    ]
+    assert len(orders) > BRUTE_FORCE_STOP_ORDER_MAX_STOPS
+
+    def euclid(a, b):
+        return ((a["lat"] - b["lat"]) ** 2 + (a["lng"] - b["lng"]) ** 2) ** 0.5
+
+    def fake_road_distance_time(source, destination):
+        d = euclid(source, destination)
+        return {"distance_km": d, "time_minutes": d}
+
+    monkeypatch.setattr("app.route_service._road_distance_time", fake_road_distance_time)
+
+    bad_order = [orders[0], orders[5], orders[1], orders[2], orders[6], orders[3], orders[4], orders[7]]
+    vehicle = {"vehicle_type": "car", "capacity": 8, "orders": list(bad_order), "current_time": 480.0, "current_location": dict(depot), "is_auto_created": False}
+
+    _, bad_distance, _, _ = _simulate_route(bad_order, depot, 480.0)
+    _improve_route(vehicle, depot, 480.0)
+    _, improved_distance, _, _ = _simulate_route(vehicle["orders"], depot, 480.0)
+
+    assert {o["order_id"] for o in vehicle["orders"]} == {o["order_id"] for o in bad_order}
+    assert improved_distance < bad_distance
+
+
 def test_relocate_across_routes_moves_stray_stop_to_closer_route_with_capacity(monkeypatch):
     # Reproduces a real dispatcher-reported bug: a route with 5
     # tightly-clustered stops that also picked up one stop from a totally
