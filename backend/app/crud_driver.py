@@ -83,6 +83,7 @@ class RouteStillActiveError(RootplanError):
 def create_driver(
     db: Session, name: str, username: str, password: str,
     mobile: Optional[str] = None, vehicle_number: Optional[str] = None, notes: Optional[str] = None,
+    status: str = "active",
 ) -> Driver:
     existing = db.query(Driver).filter(Driver.username == username).first()
     if existing is not None:
@@ -104,12 +105,34 @@ def create_driver(
         password_salt=password_salt,
         vehicle_number=vehicle_number,
         notes=notes,
-        status="active",
+        status=status,
     )
     db.add(driver)
     db.commit()
     db.refresh(driver)
     return driver
+
+
+def signup_driver(
+    db: Session, name: str, username: str, password: str,
+    mobile: Optional[str] = None, vehicle_number: Optional[str] = None,
+) -> Driver:
+    """Self-service signup from the Driver App's own Sign Up screen -
+    distinct from the admin-side create_driver (same uniqueness/driver-
+    code logic underneath, reused rather than duplicated) only in that it
+    always lands on 'pending', never 'active'. A driver anyone with the
+    app can register for themselves, with no admin in the loop first,
+    would mean any stranger who installs the app can start receiving
+    real delivery routes - 'pending' means authenticate_driver refuses to
+    issue a session (and get_current_driver refuses any token that
+    somehow existed) until an admin reviews the new row on the Drivers
+    page and flips it to 'active' (the same approve action already used
+    to reactivate a deactivated driver) or rejects it (deletes the row).
+    """
+    return create_driver(
+        db, name=name, username=username, password=password,
+        mobile=mobile, vehicle_number=vehicle_number, status="pending",
+    )
 
 
 def list_drivers(db: Session) -> List[Driver]:
@@ -216,6 +239,8 @@ def authenticate_driver(db: Session, username: str, password: str) -> Tuple[Driv
     driver = db.query(Driver).filter(Driver.username == username).first()
     if driver is None or not verify_password(password, driver.password_hash, driver.password_salt):
         raise InvalidCredentialsError("Invalid username or password.")
+    if driver.status == "pending":
+        raise InactiveDriverError("Your signup is still awaiting admin approval. Please check back shortly.")
     if driver.status != "active":
         raise InactiveDriverError("Your account has been deactivated. Please contact the administrator.")
     session = create_session(db, driver)
@@ -511,19 +536,65 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 # essentially always still counted, while sub-threshold jitter is not.
 _MIN_MOVEMENT_KM = 0.015  # 15 metres
 
+# A fix this imprecise (metres of uncertainty the OS itself reports) is
+# coarse/cell-tower positioning, not real GPS - urban canyons, indoors,
+# or a cold fix right after backgrounding all commonly report 100m+
+# accuracy. Folding one straight into the odometer sum produces exactly
+# the "why does it say 8km when he only drove 2km" reports: the reported
+# position itself can jump 100+ metres between two consecutive samples
+# with the phone barely moving at all. Dropped entirely (not used as
+# either hop endpoint) rather than counted - the next genuinely precise
+# fix picks the trail back up from wherever the driver actually is.
+_MAX_ACCURACY_METERS = 60.0
+
+# Catches the other half of the same failure mode: a single bad fix that
+# *is* under the accuracy threshold above but still reports a position
+# that would require travelling faster than any delivery vehicle
+# plausibly does (a multipath/reflection glitch, or a stale cached fix
+# replaced a second later by the real one). Expressed as a speed rather
+# than a flat distance cap because the right threshold scales with the
+# gap between samples - 200m in 5s is impossible, 200m in 60s (stopped at
+# a signal, phone drifts, then a real move) is not.
+_MAX_PLAUSIBLE_SPEED_KMH = 140.0
+
 
 def _sum_haversine_km(pings: List[DriverLocationPing]) -> float:
     """pings must already be in chronological order (oldest first) -
     callers pass a reversed slice of the newest-first lists _run_pings
-    returns. Each hop under _MIN_MOVEMENT_KM is dropped - GPS jitter from
-    an otherwise-stationary phone (see that constant's own comment), not
-    genuine travel - so the running total only advances on real movement
-    instead of accumulating noise every 5 seconds a driver isn't moving."""
+    returns. Three kinds of non-movement are excluded from the running
+    total, all real causes of a visibly wrong "km travelled" reported
+    against this exact function before these checks existed:
+      1. GPS jitter from an otherwise-stationary phone - any hop under
+         _MIN_MOVEMENT_KM.
+      2. A fix too coarse to trust at all (_MAX_ACCURACY_METERS) - never
+         used as either endpoint of a hop.
+      3. A fix that's precise enough individually but implies an
+         impossible speed versus its neighbour (_MAX_PLAUSIBLE_SPEED_KMH)
+         - a momentary glitch, not a real hop; skipped without losing the
+         trail, since the next ping still measures from the last *good*
+         fix rather than from this one.
+    """
     total = 0.0
-    for a, b in zip(pings, pings[1:]):
-        hop = _haversine_km(a.lat, a.lng, b.lat, b.lng)
-        if hop >= _MIN_MOVEMENT_KM:
-            total += hop
+    last_good: Optional[DriverLocationPing] = None
+    for ping in pings:
+        if ping.accuracy is not None and ping.accuracy > _MAX_ACCURACY_METERS:
+            continue
+        if last_good is None:
+            last_good = ping
+            continue
+        hop = _haversine_km(last_good.lat, last_good.lng, ping.lat, ping.lng)
+        if hop < _MIN_MOVEMENT_KM:
+            continue
+        # Speed is only a meaningful signal once there's enough elapsed
+        # time to compute one - two fixes a few milliseconds apart (back-
+        # to-back pings right after a cold start, or simply two samples
+        # landing in the same scheduler tick) would otherwise read as an
+        # absurd speed for even a perfectly real, GPS-accurate hop.
+        elapsed_seconds = (_as_aware_utc(ping.recorded_at) - _as_aware_utc(last_good.recorded_at)).total_seconds()
+        if elapsed_seconds >= 2 and (hop / (elapsed_seconds / 3600.0)) > _MAX_PLAUSIBLE_SPEED_KMH:
+            continue  # implausible jump - treat as a glitch, keep last_good as the reference point
+        total += hop
+        last_good = ping
     return total
 
 

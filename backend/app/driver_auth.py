@@ -94,6 +94,8 @@ def get_current_driver(
     driver = db.query(Driver).filter(Driver.id == session.driver_id).first()
     if driver is None:
         raise HTTPException(status_code=401, detail="Session expired or revoked - please log in again")
+    if driver.status == "pending":
+        raise HTTPException(status_code=403, detail="Your signup is still awaiting admin approval. Please check back shortly.")
     if driver.status != "active":
         raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact the administrator.")
     return driver

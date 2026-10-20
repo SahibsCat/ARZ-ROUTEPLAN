@@ -100,6 +100,26 @@ def test_delete_driver_removes_them(db_session):
     assert crud_driver.get_driver(db_session, driver.id) is None
 
 
+def test_signup_driver_lands_on_pending(db_session):
+    driver = crud_driver.signup_driver(db_session, "Kumar", "kumar", "pass123", mobile="9800000001")
+    assert driver.status == "pending"
+    assert driver.driver_code == "DRV-0001"
+
+
+def test_pending_driver_cannot_log_in_until_approved(db_session):
+    crud_driver.signup_driver(db_session, "Kumar", "kumar", "pass123")
+    with pytest.raises(crud_driver.InactiveDriverError):
+        crud_driver.authenticate_driver(db_session, "kumar", "pass123")
+
+
+def test_approving_a_pending_driver_lets_them_log_in(db_session):
+    driver = crud_driver.signup_driver(db_session, "Kumar", "kumar", "pass123")
+    crud_driver.set_driver_status(db_session, driver.id, "active")
+    logged_in, session = crud_driver.authenticate_driver(db_session, "kumar", "pass123")
+    assert logged_in.id == driver.id
+    assert session.token
+
+
 def test_delete_driver_unassigns_their_route_without_touching_it(db_session):
     route = _route(db_session)
     driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
@@ -534,33 +554,86 @@ def test_sum_haversine_km_ignores_gps_jitter_from_a_stationary_phone():
     # guards: that noise summing into a visibly-inflated distance figure
     # over a full day of stops.
     class _FakePing:
-        def __init__(self, lat, lng):
+        def __init__(self, lat, lng, recorded_at):
             self.lat = lat
             self.lng = lng
+            self.accuracy = None
+            self.recorded_at = recorded_at
 
-    # ~5m apart (well under the 15m floor) - simulates 5 pings from a
-    # phone that never actually moved.
+    # ~5m apart (well under the 15m floor), 5s apart in time - simulates
+    # 5 pings from a phone that never actually moved.
+    base = datetime.now(timezone.utc)
     stationary = [
-        _FakePing(13.00000, 80.20000),
-        _FakePing(13.00003, 80.20002),
-        _FakePing(13.00001, 80.20004),
-        _FakePing(13.00004, 80.20001),
-        _FakePing(13.00002, 80.20003),
+        _FakePing(13.00000, 80.20000, base),
+        _FakePing(13.00003, 80.20002, base + timedelta(seconds=5)),
+        _FakePing(13.00001, 80.20004, base + timedelta(seconds=10)),
+        _FakePing(13.00004, 80.20001, base + timedelta(seconds=15)),
+        _FakePing(13.00002, 80.20003, base + timedelta(seconds=20)),
     ]
     assert crud_driver._sum_haversine_km(stationary) == 0.0
 
 
 def test_sum_haversine_km_still_counts_genuine_movement():
     class _FakePing:
-        def __init__(self, lat, lng):
+        def __init__(self, lat, lng, recorded_at):
             self.lat = lat
             self.lng = lng
+            self.accuracy = None
+            self.recorded_at = recorded_at
 
     # Real ~1.11km hops must be counted in full, same as before this fix -
     # the floor only ever drops sub-threshold noise, never real distance.
-    moving = [_FakePing(13.00, 80.20), _FakePing(13.01, 80.20), _FakePing(13.02, 80.20)]
+    # 30s apart in time - well under the plausible-speed cap for a ~1.11km hop.
+    base = datetime.now(timezone.utc)
+    moving = [
+        _FakePing(13.00, 80.20, base),
+        _FakePing(13.01, 80.20, base + timedelta(seconds=30)),
+        _FakePing(13.02, 80.20, base + timedelta(seconds=60)),
+    ]
     expected = crud_driver._haversine_km(13.00, 80.20, 13.01, 80.20) + crud_driver._haversine_km(13.01, 80.20, 13.02, 80.20)
     assert crud_driver._sum_haversine_km(moving) == pytest.approx(expected, abs=1e-9)
+
+
+def test_sum_haversine_km_drops_a_low_accuracy_fix():
+    class _FakePing:
+        def __init__(self, lat, lng, recorded_at, accuracy=None):
+            self.lat = lat
+            self.lng = lng
+            self.accuracy = accuracy
+            self.recorded_at = recorded_at
+
+    base = datetime.now(timezone.utc)
+    # The middle fix is a coarse (150m accuracy) cell-tower-grade reading
+    # reporting a position 1km further along than it should be - exactly
+    # the "why does it say 8km when he drove 2km" failure mode. It must
+    # be excluded entirely, not used as an endpoint for either hop.
+    pings = [
+        _FakePing(13.00, 80.20, base, accuracy=10),
+        _FakePing(13.02, 80.20, base + timedelta(seconds=30), accuracy=150),
+        _FakePing(13.01, 80.20, base + timedelta(seconds=60), accuracy=10),
+    ]
+    expected = crud_driver._haversine_km(13.00, 80.20, 13.01, 80.20)
+    assert crud_driver._sum_haversine_km(pings) == pytest.approx(expected, abs=1e-9)
+
+
+def test_sum_haversine_km_drops_an_implausible_speed_jump():
+    class _FakePing:
+        def __init__(self, lat, lng, recorded_at, accuracy=None):
+            self.lat = lat
+            self.lng = lng
+            self.accuracy = accuracy
+            self.recorded_at = recorded_at
+
+    base = datetime.now(timezone.utc)
+    # A good-accuracy fix that still jumps ~1.11km in 2 seconds - ~2000
+    # km/h, impossible for a delivery vehicle. Treated as a glitch: the
+    # next ping measures from the last *good* fix, not from this one.
+    pings = [
+        _FakePing(13.00, 80.20, base, accuracy=10),
+        _FakePing(13.01, 80.20, base + timedelta(seconds=2), accuracy=10),
+        _FakePing(13.00, 80.20, base + timedelta(seconds=4), accuracy=10),
+    ]
+    assert crud_driver._sum_haversine_km(pings) == 0.0
 
 
 def test_route_progress_sums_distance_from_the_pings_actually_recorded(db_session):

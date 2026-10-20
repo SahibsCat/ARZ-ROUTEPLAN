@@ -214,6 +214,14 @@ class DriverLoginRequest(BaseModel):
     password: str
 
 
+class DriverSignupRequest(BaseModel):
+    name: str
+    username: str
+    password: str
+    mobile: Optional[str] = None
+    vehicle_number: Optional[str] = None
+
+
 class DriverLocationRequest(BaseModel):
     route_id: int
     lat: float

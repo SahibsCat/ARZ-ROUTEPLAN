@@ -1459,6 +1459,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
   background: var(--neutral-soft);
   color: var(--neutral);
 }
+.driver-status-pill--pending {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
 
 .btn--compact {
   padding: 0.4rem 0.85rem;

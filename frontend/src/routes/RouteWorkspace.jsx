@@ -142,9 +142,25 @@ function useTrackingSocket(enabled, onMessage) {
 function useAnimatedPositions(targets) {
   const [displayed, setDisplayed] = useState({});
   const displayedRef = useRef({});
-  const animsRef = useRef({}); // key -> { from, to, start }
+  const animsRef = useRef({}); // key -> { from, to, start, duration }
+  const lastRetargetAtRef = useRef({}); // key -> performance.now() of the previous retarget
   const rafIdRef = useRef(null);
-  const GLIDE_MS = 4200; // just past the driver's ~5s ping interval, so a glide mostly finishes before the next one rather than visibly stalling at the end
+  // A fixed glide length was the actual cause of tracking still reading as
+  // "stuck, then teleports" even though this whole hook exists to prevent
+  // exactly that: pings don't arrive on a steady beat (distanceInterval
+  // makes a moving driver's pings land every 1-3s, a stationary driver's
+  // every 15s - see locationTask.js - and any real network hiccup widens
+  // a single gap further). Gliding every retarget over the same ~4s
+  // regardless of how far apart in time the two fixes actually were means
+  // a short gap glides at the right speed but a long one gets covered in
+  // the same 4s - i.e. it visibly speeds up/teleports right after a
+  // stall. Sizing each glide's duration to the real gap since this key's
+  // last retarget (clamped to a sane range) keeps the marker's apparent
+  // speed roughly consistent with how the driver is actually moving,
+  // instead of a one-size-fits-all duration.
+  const MIN_GLIDE_MS = 600;
+  const MAX_GLIDE_MS = 6000;
+  const DEFAULT_GLIDE_MS = 4200; // used only for a key's very first real retarget, with no prior gap to measure
 
   useEffect(() => {
     Object.entries(targets).forEach(([key, pos]) => {
@@ -163,7 +179,12 @@ function useAnimatedPositions(targets) {
       // position either way, so the distance check would otherwise always
       // read as 0 and silently never render the dot at all).
       if (hasDisplayedPosition && haversineMeters(from, pos) < GPS_NOISE_METERS) return;
-      animsRef.current[key] = { from, to: { lat: pos.lat, lng: pos.lng }, start: performance.now() };
+      const now = performance.now();
+      const lastRetargetAt = lastRetargetAtRef.current[key];
+      const gap = lastRetargetAt != null ? now - lastRetargetAt : DEFAULT_GLIDE_MS;
+      const duration = Math.min(MAX_GLIDE_MS, Math.max(MIN_GLIDE_MS, gap));
+      lastRetargetAtRef.current[key] = now;
+      animsRef.current[key] = { from, to: { lat: pos.lat, lng: pos.lng }, start: now, duration };
     });
     // Pruning happens *here*, in the effect body, not inside tick() below -
     // this is the fresh `targets` for this specific effect invocation.
@@ -177,7 +198,11 @@ function useAnimatedPositions(targets) {
     // `{}` at mount is never "key in targets"). Confirmed via a real
     // instant-snap-instead-of-glide bug caused by exactly that.
     Object.keys(animsRef.current).forEach((key) => {
-      if (!(key in targets)) { delete animsRef.current[key]; delete displayedRef.current[key]; }
+      if (!(key in targets)) {
+        delete animsRef.current[key];
+        delete displayedRef.current[key];
+        delete lastRetargetAtRef.current[key];
+      }
     });
 
     if (rafIdRef.current != null) return; // a loop is already running and will pick up the retarget above
@@ -186,12 +211,13 @@ function useAnimatedPositions(targets) {
       let stillAnimating = false;
       Object.entries(animsRef.current).forEach(([key, anim]) => {
         const noOp = anim.from.lat === anim.to.lat && anim.from.lng === anim.to.lng;
-        const t = noOp ? 1 : Math.min(1, (now - anim.start) / GLIDE_MS);
+        const t = noOp ? 1 : Math.min(1, (now - anim.start) / anim.duration);
         // A no-op animation (a brand-new key's first fix, animated "from"
         // itself) is already at its target on frame one - counting it as
-        // still-animating just because elapsed time hasn't reached
-        // GLIDE_MS yet would keep this rAF loop spinning for a full
-        // 4.2s doing nothing on every fresh key, for no visible benefit.
+        // still-animating just because elapsed time hasn't reached this
+        // glide's duration yet would keep this rAF loop spinning for
+        // several seconds doing nothing on every fresh key, for no
+        // visible benefit.
         if (t < 1) stillAnimating = true;
         displayedRef.current[key] = {
           lat: anim.from.lat + (anim.to.lat - anim.from.lat) * t,
@@ -293,15 +319,23 @@ function dotIconUrl(color, { size = 16, opacity = 1, strokeColor = '#fff' } = {}
   };
 }
 
-// A plain dot says "the driver is here" but not which way they're
-// actually moving - a real navigation-style arrow (drawn pointing due
-// north/up by default) does. Rotated per-instance via a CSS `rotate()`
-// transform on the rendered <img> (see FleetMap's pin rendering below),
-// not baked into the SVG itself - one static icon shape reused for every
-// heading, rather than generating a fresh data URI per rotation.
-function arrowIconUrl(color, { size = 26, opacity = 1 } = {}) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24">`
-    + `<path d="M12 1.5 L21 20.5 L12 16 L3 20.5 Z" fill="${color}" fill-opacity="${opacity}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>`
+// The live driver marker itself - a bike or car emoji (matching the
+// route's own vehicle_type, exactly what the admin already picks when
+// creating/switching a route - see VehicleBadge elsewhere in this file)
+// inside the route's own colored, white-ringed badge, same visual
+// language as every other marker here. Replaces the old plain rotated
+// arrow: a generic triangle doesn't say *what* the driver is actually
+// out on, which matters on a fleet map mixing bikes and cars - the
+// emoji answers that at a glance, the same way Swiggy/Zomato-style live
+// maps use a vehicle glyph rather than an arrow. Not rotated by heading
+// (an emoji glyph rotated sideways/upside-down reads as broken, not
+// "turning") - which way the driver is moving is still visible from the
+// breadcrumb trail/line itself.
+function vehicleIconUrl(vehicleType, color, { size = 28, opacity = 1 } = {}) {
+  const emoji = vehicleType === 'car' ? '\u{1F697}' : '\u{1F3CD}\u{FE0F}'; // car / motorcycle
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="${color}" fill-opacity="${opacity}" stroke="#fff" stroke-width="2"/>`
+    + `<text x="${size / 2}" y="${size / 2 + 1}" font-size="${size * 0.58}" text-anchor="middle" dominant-baseline="central">${emoji}</text>`
     + `</svg>`;
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
@@ -1050,27 +1084,18 @@ function FleetMap({
             const p = projectPoint(animated.lat, animated.lng);
             if (p) {
               const halo = dotIconUrl(color, { size: 40, opacity: 0.18 });
-              const arrow = arrowIconUrl(color, { size: 26 });
+              const vehicle = vehicleIconUrl(route.vehicle_type, color, { size: 28 });
               pins.push(
                 <img key={`${route.route_name}-driver-halo`} src={halo.url} width={40} height={40} alt="" className="fleet-map__pin fleet-map__pin--dot" style={{ left: p.x, top: p.y, zIndex: 5, pointerEvents: 'none' }} />,
-                // Rotated per the driver's real GPS heading (see
-                // applyLocationFix - not animated the way position is,
-                // just snaps to each new reading) so this actually shows
-                // which way they're moving, not just where they are. The
-                // rotation has to be set inline, alongside the same
-                // translate(-50%,-50%) centering .fleet-map__pin--dot
-                // normally supplies via CSS - an inline `transform`
-                // replaces the class's entirely rather than combining
-                // with it.
                 <img
                   key={`${route.route_name}-driver`}
-                  src={arrow.url}
-                  width={26}
-                  height={26}
+                  src={vehicle.url}
+                  width={28}
+                  height={28}
                   alt=""
                   className="fleet-map__pin fleet-map__pin--dot"
-                  style={{ left: p.x, top: p.y, zIndex: 6, transform: `translate(-50%, -50%) rotate(${driverPos.heading || 0}deg)` }}
-                  title={`${route.route_name} · driver`}
+                  style={{ left: p.x, top: p.y, zIndex: 6 }}
+                  title={`${route.route_name} · driver (${route.vehicle_type === 'car' ? 'car' : 'bike'})`}
                 />
               );
             }
@@ -1921,17 +1946,6 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
       return [...prev, { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at }].slice(-200);
     });
   });
-  // GPS heading is only meaningful while actually moving - most phones
-  // report null/undefined the instant the vehicle stops, which would
-  // otherwise snap the arrow back to "pointing north" every time the
-  // driver pauses. Remembers the last real heading instead. Separate from
-  // lastPannedRef below (which only updates while autoFollow is on) -
-  // this needs to track the last real position regardless of whether the
-  // admin has dragged the map away, or the noise comparison below would
-  // silently break the moment autoFollow turns off.
-  const lastHeadingRef = useRef(0);
-  const lastHeadingSourcePositionRef = useRef(null);
-
   // The actual road route the driver is meant to be following - depot ->
   // every stop in delivery order -> last stop - so you can see whether
   // they're on it, not just a bare dot with no path to judge it against.
@@ -1976,16 +1990,6 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
       return next.length === prev.length ? prev : next;
     });
   }, [restPathLastRecordedAt]);
-  // Below the GPS noise floor, the vehicle isn't really moving, so the
-  // heading shouldn't drift either (same reasoning as FleetMap's
-  // applyLocationFix) - otherwise a parked driver's arrow could still
-  // wobble a degree or two between noisy-but-technically-different
-  // headings on each fix.
-  const isHeadingNoise = position && lastHeadingSourcePositionRef.current
-    && haversineMeters(lastHeadingSourcePositionRef.current, position) < GPS_NOISE_METERS;
-  if (position && !isHeadingNoise) lastHeadingSourcePositionRef.current = position;
-  if (!isHeadingNoise && last?.heading != null && !Number.isNaN(last.heading)) lastHeadingRef.current = last.heading;
-  const heading = lastHeadingRef.current;
   // Real GPS accuracy (meters, from the phone's own location provider) -
   // rendered as a circle around the arrow below rather than pretending
   // the dot marks an exact point. A phone's GPS is commonly 5-20m off
@@ -2151,15 +2155,7 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                 position={displayedPosition}
                 zIndex={3}
                 onClick={() => setShowInfo((v) => !v)}
-                icon={{
-                  path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                  rotation: heading,
-                  scale: 5.5,
-                  fillColor: '#2457d6',
-                  fillOpacity: 1,
-                  strokeColor: '#fff',
-                  strokeWeight: 2,
-                }}
+                icon={vehicleIconUrl(route.vehicle_type, '#2457d6', { size: 32 })}
               >
                 {showInfo && (
                   <InfoWindow onCloseClick={() => setShowInfo(false)}>

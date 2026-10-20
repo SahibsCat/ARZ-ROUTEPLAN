@@ -578,9 +578,10 @@ function CommandPalette({ open, query, onQueryChange, onClose, groups }) {
 }
 
 function DriverStatusPill({ status }) {
+  const label = status === 'active' ? '🟢 Active' : status === 'pending' ? '🟡 Pending approval' : '⚪ Inactive';
   return (
     <span className={`driver-status-pill driver-status-pill--${status}`}>
-      {status === 'active' ? '🟢 Active' : '⚪ Inactive'}
+      {label}
     </span>
   );
 }
@@ -1601,6 +1602,12 @@ function App() {
   // with on their end (server-side, on the next status check) - worth
   // saying plainly in the confirm, not just doing it silently.
   const handleToggleDriverStatus = async (driver) => {
+    // A 'pending' driver (self-signed-up via the Driver App, awaiting
+    // approval - see crud_driver.signup_driver) also lands on 'active'
+    // here, same as the ordinary inactive->active toggle - approving a
+    // signup and reactivating a deactivated driver are the same backend
+    // call either way.
+    const wasPending = driver.status === 'pending';
     const nextStatus = driver.status === 'active' ? 'inactive' : 'active';
     if (nextStatus === 'inactive') {
       const warn = driver.assigned_route_name
@@ -1619,7 +1626,8 @@ function App() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || `Could not update status (${response.status})`);
       }
-      showToast(`${driver.name} ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`);
+      const verb = nextStatus === 'active' ? (wasPending ? 'approved' : 'activated') : 'deactivated';
+      showToast(`${driver.name} ${verb}.`);
       await refreshDrivers();
     } catch (err) {
       showToast(err.message || 'Could not update driver status.');
@@ -1635,7 +1643,10 @@ function App() {
     const routeWarning = driver.assigned_route_name
       ? ` They'll be removed from ${driver.assigned_route_name} first - the route itself is untouched.`
       : '';
-    if (!window.confirm(`Permanently delete ${driver.name} (${driver.driver_code})? This can't be undone - their login and location history are removed for good.${routeWarning}`)) return;
+    const confirmMessage = driver.status === 'pending'
+      ? `Reject ${driver.name}'s signup (${driver.driver_code})? This removes their request for good - they'd need to sign up again to be reconsidered.`
+      : `Permanently delete ${driver.name} (${driver.driver_code})? This can't be undone - their login and location history are removed for good.${routeWarning}`;
+    if (!window.confirm(confirmMessage)) return;
     setIsDeletingDriver(driver.id);
     try {
       const response = await apiFetch(`/api/drivers/${driver.id}`, { method: 'DELETE' });
@@ -1643,7 +1654,7 @@ function App() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || `Could not delete driver (${response.status})`);
       }
-      showToast(`${driver.name} deleted.`);
+      showToast(driver.status === 'pending' ? `${driver.name}'s signup rejected.` : `${driver.name} deleted.`);
       await refreshDrivers();
     } catch (err) {
       showToast(err.message || 'Could not delete driver.');
@@ -3911,7 +3922,7 @@ function App() {
                                 onClick={() => handleToggleDriverStatus(driver)}
                               >
                                 {isTogglingDriverStatus === driver.id ? <span className="spinner" /> : <UserX width={12} height={12} />}
-                                {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : 'Activate'}
+                                {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : driver.status === 'pending' ? 'Approve' : 'Activate'}
                               </button>
                               <button
                                 type="button"
@@ -3920,7 +3931,7 @@ function App() {
                                 onClick={() => handleDeleteDriver(driver)}
                               >
                                 {isDeletingDriver === driver.id ? <span className="spinner" /> : <Trash2 width={12} height={12} />}
-                                {isDeletingDriver === driver.id ? 'Deleting…' : 'Delete'}
+                                {isDeletingDriver === driver.id ? (driver.status === 'pending' ? 'Rejecting…' : 'Deleting…') : driver.status === 'pending' ? 'Reject' : 'Delete'}
                               </button>
                             </div>
                           </td>

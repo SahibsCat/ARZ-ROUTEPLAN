@@ -44,6 +44,7 @@ from app.schemas import (
     DashboardResponse,
     DriverLocationRequest,
     DriverLoginRequest,
+    DriverSignupRequest,
     DriverStatusRequest,
     ManualAddressRequest,
     ManualLocationRequest,
@@ -1107,6 +1108,25 @@ def driver_login_endpoint(payload: DriverLoginRequest = Body(...), db: Session =
     except crud.RootplanError as e:
         _raise_for_driver_error(e)
     return {"token": session.token, "driver": crud_driver.driver_summary(driver)}
+
+
+# No auth dependency - this is how a driver gets into the system in the
+# first place. Always lands on 'pending' (crud_driver.signup_driver), never
+# issues a token, and the response carries no session - see that
+# function's own docstring for why a driver can't just self-activate.
+# Shows up on the dashboard's existing Drivers page exactly like an
+# admin-created driver, just with a Pending status pill and Approve/
+# Reject actions instead of Activate/Deactivate.
+@app.post("/api/driver/signup")
+def driver_signup_endpoint(payload: DriverSignupRequest = Body(...), db: Session = Depends(get_db)):
+    try:
+        driver = crud_driver.signup_driver(
+            db, name=payload.name, username=payload.username, password=payload.password,
+            mobile=payload.mobile, vehicle_number=payload.vehicle_number,
+        )
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"driver": crud_driver.driver_summary(driver)}
 
 
 # --- Driver app (driver-authenticated - identity always comes from the
