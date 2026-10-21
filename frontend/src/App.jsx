@@ -24,8 +24,9 @@ import {
   Route as LIconRoute, PackageSearch, MapPinOff, History as LIconHistory, Radar,
   Users as LIconUsers, ClipboardList, CarFront, FileBarChart, TrendingUp, BellRing, Settings2,
   MapPinPlus, RotateCw, Eye, Trash2, UserPlus, UserX, KeyRound, Pencil, ListFilter,
-  Map as LIconMap, Columns2, Download as LIconDownload, MoreHorizontal,
+  Map as LIconMap, Columns2, Download as LIconDownload, MoreHorizontal, UserCheck,
 } from 'lucide-react';
+import ActionMenu from './ActionMenu';
 
 // Backend origin for deployments where frontend and backend aren't
 // same-origin (e.g. Render, where they're two separate services). Empty
@@ -52,43 +53,31 @@ const maxCapacityFor = (vehicleType) => (vehicleType === 'car' ? CAR_MAX_CAPACIT
 // glance - cycles if there are more routes than colors.
 const ROUTE_HUES = 6;
 
-// Sidebar structure - grouped by what you're actually trying to do, not by
-// "is this real yet" (that used to split a plain Workspace/Platform-Soon
-// list, which put Vehicles nowhere near Drivers and Live Tracking nowhere
-// near Routes). Dashboard/Routes/Unassigned Orders/Failed Addresses/Drivers
-// are all one continuous page again - clicking one of these just smooth-
-// scrolls to its anchor rather than swapping the console's content out.
-// Drivers used to be a right-side overlay panel; it's a full board in the
-// page flow now, same as Failed Addresses, so both creating a driver and
-// seeing every driver's status live on a real board instead of a drawer
-// you dip into and dismiss. 'history' (Route History) and 'driver-data'
-// (every driver's past work runs - start/end time, km travelled, with a
-// delete option) are both long append-only record lists rather than
-// something you work in, so they're the nav items that open as an overlay
-// instead. Items marked soon:true have no real content to scroll to, so
-// clicking one opens ComingSoonPage as its own small overlay instead (see
-// soonOverlay).
+// Sidebar structure - grouped by task. Each plain item is its own page
+// (see pageView); 'history' and 'driver-data' are record lists that open
+// as overlays over the current page, and soon:true items open
+// ComingSoonPage as an overlay.
 const NAV_GROUPS = [
   {
     label: 'Overview',
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid, anchor: 'top' },
+      { key: 'dashboard', label: 'Dashboard', icon: IconLayoutGrid },
     ],
   },
   {
     label: 'Dispatch',
     items: [
-      { key: 'generate', label: 'Routes', icon: LIconRoute, anchor: 'toolbar-section' },
-      { key: 'unassigned', label: 'Unassigned Orders', icon: PackageSearch, anchor: 'unassigned-board' },
-      { key: 'failed', label: 'Failed Addresses', icon: MapPinOff, anchor: 'returns-board' },
+      { key: 'generate', label: 'Routes', icon: LIconRoute },
+      { key: 'unassigned', label: 'Unassigned Orders', icon: PackageSearch },
+      { key: 'failed', label: 'Failed Addresses', icon: MapPinOff },
       { key: 'history', label: 'Route History', icon: LIconHistory },
-      { key: 'live-tracking', label: 'Live Tracking', icon: Radar, anchor: 'unassigned-board' },
+      { key: 'live-tracking', label: 'Live Tracking', icon: Radar },
     ],
   },
   {
     label: 'Fleet',
     items: [
-      { key: 'drivers', label: 'Drivers', icon: LIconUsers, anchor: 'drivers-board' },
+      { key: 'drivers', label: 'Drivers', icon: LIconUsers },
       { key: 'driver-data', label: 'Driver Data', icon: ClipboardList },
       { key: 'vehicles', label: 'Vehicles', icon: CarFront, soon: true },
     ],
@@ -113,6 +102,8 @@ const NAV_GROUPS = [
 const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 const NAV_ITEMS_SOON = NAV_ITEMS.filter((item) => item.soon);
 const findNavItem = (key) => NAV_ITEMS.find((item) => item.key === key);
+const WORKSPACE_PAGES = ['generate', 'unassigned', 'live-tracking'];
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const SOON_BLURBS = {
   vehicles: 'Individual vehicle records - plate number, type, and which driver each one belongs to - not just the car/bike counts on the Routes page. Needs its own backend table.',
   notifications: 'A persistent inbox for alerts like route-started - today those are toasts that vanish once you dismiss them or leave the page.',
@@ -578,9 +569,10 @@ function CommandPalette({ open, query, onQueryChange, onClose, groups }) {
 }
 
 function DriverStatusPill({ status }) {
-  const label = status === 'active' ? '🟢 Active' : status === 'pending' ? '🟡 Pending approval' : '⚪ Inactive';
+  const label = status === 'active' ? 'Active' : status === 'pending' ? 'Pending approval' : 'Inactive';
   return (
     <span className={`driver-status-pill driver-status-pill--${status}`}>
+      <span className="driver-status-pill__dot" aria-hidden="true" />
       {label}
     </span>
   );
@@ -1029,35 +1021,18 @@ function App() {
   // Shell chrome: sidebar, theme, search, toast.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState('dashboard');
-  // A real click on "Routes"/"Unassigned Orders" in the sidebar should
-  // force-switch RouteWorkspace's internal tab (see requestedTab below) -
-  // but activeNav ALSO changes continuously while merely scrolling the
-  // page (the IntersectionObserver above), and RouteWorkspace and
-  // Unassigned Orders share one DOM anchor/component, so scrolling that
-  // section into view was setting activeNav to 'unassigned' too - which
-  // then silently flipped the visible tab away from Routes to Unassigned,
-  // making the route list "disappear" with no click involved at all.
-  // navCommandSeq only advances inside handleNavClick's own body, never
-  // from the scroll-tracking effect, so RouteWorkspace can tell a genuine
-  // click apart from activeNav simply passing through 'unassigned' on its
-  // way past while scrolling.
+  // Which page the console is showing - one per sidebar item, not one
+  // long scroll with anchors. The single-scroll layout made every page
+  // carry every other page's content (stat row, Generate panel, failed
+  // and unassigned lists, drivers) and needed scroll-spy workarounds that
+  // kept highlighting the wrong item. Overlays (Route History, Driver
+  // Data, Soon) don't change this - they open over whatever page you
+  // were on.
+  const [pageView, setPageView] = useState('dashboard');
+  // RouteWorkspace's internal Routes/Unassigned tab and map view only
+  // jump on an explicit navigation, not on every re-render - see
+  // requestedTab's effect in RouteWorkspace.
   const [navCommandSeq, setNavCommandSeq] = useState(0);
-  // A separate guard for the SIDEBAR/HEADER's own activeNav (navCommandSeq
-  // above only protects RouteWorkspace's internal tab) - real bug this
-  // closes: clicking "View" on a Failed Order from the Issues panel calls
-  // handleNavClick('failed'), which sets activeNav correctly THEN starts
-  // an animated scrollIntoView. That animation takes a few hundred ms, and
-  // the scroll-spy effect below recomputes activeNav from scratch on every
-  // intersection change it fires DURING that scroll - including transient
-  // in-between frames where a section other than the one just clicked
-  // (observed: 'drivers', sitting right after 'failed' in the page) reads
-  // as "current" mid-flight. The header/sidebar would then show "Drivers"
-  // even though the failed-order detail the user just asked for is what's
-  // actually on screen. A short cooldown after a genuine click lets the
-  // scroll-spy's passive recompute stand down until the animation the
-  // click itself started has had time to settle.
-  const suppressScrollSpyUntilRef = useRef(0);
   // Whether RouteWorkspace is currently showing a single route's detail
   // page (as opposed to the Routes/Unassigned Orders list view) - lifted
   // up via onViewChange so the KPI row/shortcuts/Generate Routes panel
@@ -1166,101 +1141,27 @@ function App() {
   const isDark = theme === 'system' ? systemPrefersDark : theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
-  // Each sidebar item is now a real, individual page - only one section of
-  // the console mounts at a time (see the activeNav gates around the
-  // toolbar/boards below), swapped straight away rather than scrolled to.
-  // Drivers and Route History stay as overlay panels layered on top, since
-  // that's genuinely how they work (a picker/record list you dip into and
-  // dismiss), not a page you'd otherwise navigate away from.
-  const handleNavClick = (item) => {
-    setActiveNav(item.key);
-    setMobileNavOpen(false);
-    setSoonOverlay(null);
-    // See suppressScrollSpyUntilRef's own comment above - gives the
-    // scroll-spy effect below a window to stand down while the smooth
-    // scroll THIS click just started is still animating, so it can't
-    // silently overwrite the section the user actually asked for.
-    suppressScrollSpyUntilRef.current = Date.now() + 900;
-    // A genuine click, as opposed to activeNav merely passing through
-    // 'unassigned'/'generate' while scrolling - see navCommandSeq's own
-    // comment above for why this distinction is what actually matters.
-    if (item.key === 'unassigned' || item.key === 'generate' || item.key === 'live-tracking') {
+  const goToPage = (key) => {
+    setPageView(key);
+    if (key === 'unassigned' || key === 'generate' || key === 'live-tracking') {
       setNavCommandSeq((n) => n + 1);
     }
-    if (item.key === 'history') {
-      openHistory();
-    } else if (item.key === 'driver-data') {
-      openDriverData();
-    } else if (item.anchor === 'top') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    window.scrollTo({ top: 0 });
   };
-  // "Soon" items have no real page content to scroll to, so they open
-  // ComingSoonPage as a small overlay instead - same idea as the Drivers
-  // panel, just for a page that's honestly not built yet.
+
+  const handleNavClick = (item) => {
+    setMobileNavOpen(false);
+    setSoonOverlay(null);
+    if (item.key === 'history') openHistory();
+    else if (item.key === 'driver-data') openDriverData();
+    else goToPage(item.key);
+  };
+  // "Soon" items have no page yet, so they open ComingSoonPage as a small
+  // overlay over the current page.
   const handleSoonClick = (item) => {
-    setActiveNav(item.key);
     setMobileNavOpen(false);
     setSoonOverlay(item.key);
   };
-
-  // Sidebar scroll-spy - the four boards below are one continuous page
-  // (see NAV_GROUPS' own comment above), reachable either by clicking a
-  // nav item (which smooth-scrolls to it) or just scrolling by hand. Only
-  // the click path used to update activeNav, so scrolling manually left
-  // whichever item was clicked last highlighted no matter what was
-  // actually on screen. Tracks the same anchors handleNavClick already
-  // scrolls to, so the two stay in sync automatically.
-  //
-  // Computed directly from each section's current position on every
-  // observer firing, rather than accumulated from separate enter/leave
-  // events - an earlier version tracked a Set built up from those events,
-  // which had a transient gap while crossing from one section into the
-  // next (the outgoing section's "leave" landing before the incoming
-  // one's "enter" registered): the Set went briefly empty, activeNav fell
-  // back to 'dashboard', then immediately flipped back once the next
-  // section registered - visible as the sidebar highlight flickering to
-  // Dashboard and back on every section boundary. Recomputing "the last
-  // section whose top has crossed the line" from scratch each time has no
-  // such gap state to flicker through.
-  useEffect(() => {
-    if (routeDetailOpen) return undefined;
-    const sectionKeys = ['generate', 'unassigned', 'failed', 'drivers'];
-    const sections = sectionKeys
-      .map((key) => ({ key, el: document.getElementById(findNavItem(key).anchor) }))
-      .filter((s) => s.el);
-    if (sections.length === 0) return undefined;
-
-    // Same line the old rootMargin top offset used - just past the
-    // sticky topbar/tabs strip.
-    const LINE_PX = 112;
-    const updateActive = () => {
-      // A History/Driver Data/Soon overlay owns the sidebar highlight
-      // while it's open - don't let a section scrolling into view behind
-      // it steal that back.
-      if (historyOpen || driverDataOpen || soonOverlay) return;
-      // A genuine nav click just fired its own scrollIntoView animation -
-      // see suppressScrollSpyUntilRef's own comment above. Stand down
-      // until it's had time to settle instead of recomputing from
-      // whatever transient position the animation is mid-flight through.
-      if (Date.now() < suppressScrollSpyUntilRef.current) return;
-      let current = 'dashboard';
-      sections.forEach(({ key, el }) => {
-        if (el.getBoundingClientRect().top <= LINE_PX) current = key;
-      });
-      setActiveNav((prev) => (prev === current ? prev : current));
-    };
-
-    updateActive();
-    const observer = new IntersectionObserver(updateActive, {
-      rootMargin: `-${LINE_PX}px 0px -65% 0px`,
-      threshold: [0, 1],
-    });
-    sections.forEach((s) => observer.observe(s.el));
-    return () => observer.disconnect();
-  }, [routeDetailOpen, historyOpen, driverDataOpen, soonOverlay]);
 
   // Client-side search across orders and routes - never mutates state,
   // just narrows what the three boards render.
@@ -1507,6 +1408,20 @@ function App() {
       setIsLoadingDriverData(false);
     }
   };
+
+  // Escape closes whichever sidebar overlay is open, like the menus and
+  // command palette already do.
+  useEffect(() => {
+    if (!historyOpen && !driverDataOpen && !soonOverlay) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setHistoryOpen(false);
+      setDriverDataOpen(false);
+      setSoonOverlay(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [historyOpen, driverDataOpen, soonOverlay]);
 
   // Deletes one run's record. Only finished runs can be deleted from here
   // (the backend refuses an in_progress one - see RouteStillActiveError) -
@@ -2984,9 +2899,8 @@ function App() {
   const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   const alertCount = errors.length + warnings.length;
 
-  // The header always said "Dashboard" no matter which section the
-  // sidebar had scrolled to - no way to confirm where you actually were.
-  // Tied to the same activeNav the sidebar highlights, so the two agree.
+  // Sidebar highlight: an open overlay wins, otherwise the current page.
+  const activeNav = soonOverlay || (historyOpen ? 'history' : driverDataOpen ? 'driver-data' : pageView);
   const HEADER_CONTENT = {
     dashboard: { title: 'Dashboard', subtitle: 'Delivery route planning & vehicle assignment' },
     generate: { title: 'Routes', subtitle: `${routes.length} route${routes.length === 1 ? '' : 's'} today` },
@@ -3000,7 +2914,7 @@ function App() {
     analytics: { title: 'Analytics', subtitle: 'Coming soon' },
     settings: { title: 'Settings', subtitle: 'Coming soon' },
   };
-  const headerContent = HEADER_CONTENT[activeNav] || HEADER_CONTENT.dashboard;
+  const headerContent = HEADER_CONTENT[pageView] || HEADER_CONTENT.dashboard;
 
   // The five stat-row KPIs, computed straight from live state - no
   // simulated history, no placeholder numbers.
@@ -3247,7 +3161,7 @@ function App() {
                   instead (CSS - see .topbar__palette-btn's mobile rule),
                   which is also what shrinks it enough to stop crowding out
                   the page title next to it. */}
-              <kbd className="topbar__palette-btn__kbd">⌘K</kbd>
+              <kbd className="topbar__palette-btn__kbd">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
               <IconSearch className="topbar__palette-btn__icon" width={16} height={16} />
             </button>
 
@@ -3289,8 +3203,9 @@ function App() {
             <button
               className="topbar__icon-btn"
               onClick={() => {
-                if (alertCount > 0) document.querySelector('.alert')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                else showToast('No active alerts.');
+                if (alertCount === 0) { showToast('No active alerts.'); return; }
+                goToPage('dashboard');
+                setTimeout(() => document.querySelector('.alert')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
               }}
               title="Alerts"
               aria-label="Alerts"
@@ -3345,16 +3260,11 @@ function App() {
         </div>
         )}
 
-      {/* Back to one continuous page: the stat row, shortcuts, Generate
-          Routes panel, Routes/Unassigned Orders board, Drivers board, and
-          Returns board are all always mounted here in sequence - sidebar
-          clicks smooth-scroll down to the relevant section instead of
-          swapping the page's content out. The one thing that still hides
-          this preamble is routeDetailOpen - drilled into a single route's
-          detail page is still meant to read as its own focused view, not
-          one more thing under the Dashboard's KPI row. */}
+      {/* One page per sidebar item (pageView). Dashboard = today's numbers,
+          issues and the Generate Routes panel; every other page shows only
+          its own board. */}
       <div className="console">
-        {!routeDetailOpen && (
+        {pageView === 'dashboard' && (
         <>
           {/* One flat row of compact stat cards */}
           <div className="stat-row">
@@ -3365,15 +3275,9 @@ function App() {
               variant="routes"
               icon={IconRoute}
               value={routes.length}
-              suffix={hasVehicles ? ` / ${cars + bikes}` : ''}
-              label="Routes today"
-              // "10 / 7" reads as a fraction at a glance, but it's routes
-              // generated against vehicles available - when routes exceed
-              // vehicles, at least one vehicle is doing more than one trip
-              // today, which is worth knowing, not confusing. A title
-              // attribute gives that context on hover without needing
-              // permanent space in an already-compact tile.
-              title={hasVehicles ? `${routes.length} route${routes.length === 1 ? '' : 's'} today, ${cars + bikes} vehicle${cars + bikes === 1 ? '' : 's'} available` : undefined}
+              // "7 / 3" read as a fraction (7 of 3?) - spell out what the
+              // second number is instead.
+              label={hasVehicles ? `Routes · ${cars + bikes} vehicle${cars + bikes === 1 ? '' : 's'}` : 'Routes today'}
               onClick={() => handleNavClick(findNavItem('generate'))}
             />
             <KpiTile variant="distance" icon={IconGauge} value={totalDistanceKm} suffix=" km" label="Total distance" onClick={() => handleNavClick(findNavItem('generate'))} />
@@ -3392,10 +3296,7 @@ function App() {
           />
         </>
         )}
-        {/* Toolbar, loading state, and manifest alerts - always mounted,
-            same as everything else on this continuous page. */}
-        {!routeDetailOpen && (
-        <>
+        {pageView === 'dashboard' && (
         <div className="toolbar" id="toolbar-section">
           <div className="toolbar__summary">
             <span className="toolbar__summary-title"><IconRoute width={15} height={15} /> Generate Routes</span>
@@ -3628,8 +3529,10 @@ function App() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Loading */}
+        {/* Loading - shown on whichever page started the upload (Quick
+            actions can start one from any page). */}
         {isProcessing && (
           <div className="loading-console">
             <div className="rp-scene">
@@ -3658,16 +3561,13 @@ function App() {
             <div className="progress-bar"><span className="progress-bar__fill" /></div>
           </div>
         )}
-        </>
-        )}
 
-        {/* Boards - all always mounted; sidebar clicks scroll to whichever
-            one is relevant instead of swapping the page's content. */}
         <div className="board-grid">
 
-          {/* Routes tab and Unassigned Orders tab share this component's
-              own internal tab-switching, driven by requestedTab below. */}
-          <div id="unassigned-board">
+          {/* Routes, Unassigned Orders and Live Tracking are three pages
+              over the same workspace. Kept mounted (just hidden) so its
+              filters, selection and map state survive switching pages. */}
+          <div hidden={!WORKSPACE_PAGES.includes(pageView)}>
           <RouteWorkspace
             routes={routes}
             pendingOrders={pendingOrders}
@@ -3692,10 +3592,11 @@ function App() {
             onMoveOrders={handleMoveOrdersBetweenRoutes}
             onRemoveManualExtra={handleRemoveManualExtra}
             onAdjustLocation={setAdjustLocationOrderId}
-            requestedTab={activeNav === 'unassigned' ? 'unassigned' : 'routes'}
-            requestedView={activeNav === 'live-tracking' ? 'map' : undefined}
-            requestedLiveTracking={activeNav === 'live-tracking'}
+            requestedTab={pageView === 'unassigned' ? 'unassigned' : 'routes'}
+            requestedView={pageView === 'live-tracking' ? 'map' : 'list'}
+            requestedLiveTracking={pageView === 'live-tracking'}
             navCommandSeq={navCommandSeq}
+            onTabChange={(tab) => setPageView(tab === 'unassigned' ? 'unassigned' : 'generate')}
             drivers={drivers}
             onAssignDriver={handleAssignDriver}
             onUnassignDriver={handleUnassignDriver}
@@ -3705,7 +3606,7 @@ function App() {
           />
           </div>
 
-          {/* RETURNS BOARD */}
+          {pageView === 'failed' && (
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               {/* Was labeled "Returns" here while the sidebar nav item
@@ -3850,11 +3751,9 @@ function App() {
               )}
             </div>
           </div>
+          )}
 
-          {/* DRIVERS BOARD: roster + status - "Add Driver"
-              still opens a small modal (a creation form genuinely is a
-              focused, in-and-out task), but the roster and every driver's
-              live status sit on this page same as any other page content. */}
+          {pageView === 'drivers' && (
           <div className="board board--drivers" id="drivers-board">
             <div className="board__header">
               <div className="board__header-group">
@@ -3904,35 +3803,44 @@ function App() {
                             <div>{driver.username}</div>
                             {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
                           </td>
-                          <td>{driver.vehicle_number || '—'}</td>
+                          <td className="drivers-table__nowrap">{driver.vehicle_number || '—'}</td>
                           <td><DriverStatusPill status={driver.status} /></td>
                           <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
                           <td>
+                            {/* One visible action per row - the decision a
+                                pending signup needs, or Edit - and the rest
+                                in a menu, instead of four equal buttons. */}
                             <div className="drivers-table__actions">
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>
-                                <Pencil width={12} height={12} /> Edit
-                              </button>
-                              <button type="button" className="btn btn--ghost btn--compact" onClick={() => setResetPasswordDriver(driver)}>
-                                <KeyRound width={12} height={12} /> Reset Password
-                              </button>
-                              <button
-                                type="button"
-                                className={`btn btn--compact ${driver.status === 'active' ? 'btn--danger-ghost' : 'btn--outline'}`}
-                                disabled={isTogglingDriverStatus === driver.id}
-                                onClick={() => handleToggleDriverStatus(driver)}
-                              >
-                                {isTogglingDriverStatus === driver.id ? <span className="spinner" /> : <UserX width={12} height={12} />}
-                                {isTogglingDriverStatus === driver.id ? 'Working…' : driver.status === 'active' ? 'Deactivate' : driver.status === 'pending' ? 'Approve' : 'Activate'}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn--compact btn--danger-ghost"
-                                disabled={isDeletingDriver === driver.id}
-                                onClick={() => handleDeleteDriver(driver)}
-                              >
-                                {isDeletingDriver === driver.id ? <span className="spinner" /> : <Trash2 width={12} height={12} />}
-                                {isDeletingDriver === driver.id ? (driver.status === 'pending' ? 'Rejecting…' : 'Deleting…') : driver.status === 'pending' ? 'Reject' : 'Delete'}
-                              </button>
+                              {isTogglingDriverStatus === driver.id || isDeletingDriver === driver.id ? (
+                                <span className="drivers-table__busy"><span className="spinner" /> Working…</span>
+                              ) : driver.status === 'pending' ? (
+                                <>
+                                  <button type="button" className="btn btn--primary btn--compact" onClick={() => handleToggleDriverStatus(driver)}>
+                                    <UserCheck width={12} height={12} /> Approve
+                                  </button>
+                                  <button type="button" className="btn btn--danger-ghost btn--compact" onClick={() => handleDeleteDriver(driver)}>
+                                    Reject
+                                  </button>
+                                </>
+                              ) : (
+                                <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>
+                                  <Pencil width={12} height={12} /> Edit
+                                </button>
+                              )}
+                              <ActionMenu
+                                label={`More actions for ${driver.name}`}
+                                items={[
+                                  ...(driver.status === 'pending'
+                                    ? [{ key: 'edit', label: 'Edit details', icon: Pencil, onClick: () => { setEditingDriver(driver); setDriverFormOpen(true); } }]
+                                    : [
+                                      { key: 'reset', label: 'Reset password', icon: KeyRound, onClick: () => setResetPasswordDriver(driver) },
+                                      driver.status === 'active'
+                                        ? { key: 'toggle', label: 'Deactivate', icon: UserX, onClick: () => handleToggleDriverStatus(driver) }
+                                        : { key: 'toggle', label: 'Activate', icon: UserCheck, onClick: () => handleToggleDriverStatus(driver) },
+                                      { key: 'delete', label: 'Delete driver', icon: Trash2, danger: true, onClick: () => handleDeleteDriver(driver) },
+                                    ]),
+                                ]}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -3943,6 +3851,7 @@ function App() {
               )}
             </div>
           </div>
+          )}
 
         </div>
       </div>

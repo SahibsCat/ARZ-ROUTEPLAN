@@ -398,7 +398,9 @@ function formatAreaPath(areas, max = 2) {
 
 function CapacityBar({ count, capacity }) {
   const pct = capacity ? Math.min(100, Math.round((count / capacity) * 100)) : 0;
-  const state = !capacity ? '' : count >= capacity ? ' capacity-bar__fill--full' : (capacity - count === 1 ? ' capacity-bar__fill--warn' : '');
+  // A full route is the goal, not a problem - only going past base
+  // capacity (possible via manual override) is flagged.
+  const state = !capacity ? '' : count > capacity ? ' capacity-bar__fill--over' : count === capacity ? ' capacity-bar__fill--full' : '';
   return (
     <div className="capacity-bar" role="progressbar" aria-valuenow={count} aria-valuemin={0} aria-valuemax={capacity}>
       <span className={`capacity-bar__fill${state}`} style={{ width: `${pct}%` }} />
@@ -559,12 +561,16 @@ function RowMenu({ route, onDownload, onDeleteRoute, isDeletingRoute, drivers, o
         type="button"
         ref={triggerRef}
         className="btn btn--ghost row-menu__trigger"
+        aria-label={`More actions for ${route.route_name}`}
+        title="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => {
           if (!open) updatePosition();
           setOpen((v) => !v);
         }}
       >
-        More
+        <MoreHorizontal width={16} height={16} />
       </button>
       {open && panelPos && createPortal(
         <div className="row-menu__panel" ref={panelRef} style={{ top: panelPos.top, right: panelPos.right }}>
@@ -665,9 +671,6 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
         <StatusBadge status={status} />
       </div>
       <div className="route-row__cell route-row__cell--actions">
-        <button type="button" className="btn btn--outline route-row__view" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-          View
-        </button>
         <RowMenu route={route} onDownload={onDownload} onDeleteRoute={onDeleteRoute} isDeletingRoute={isDeletingRoute} drivers={drivers} onAssignDriver={onAssignDriver} />
       </div>
     </div>
@@ -1235,11 +1238,11 @@ function RoutesTable({
         <div className="route-row__cell route-row__cell--route">Route</div>
         <div className="route-row__cell route-row__cell--vehicle">Vehicle</div>
         <div className="route-row__cell route-row__cell--stops">Stops</div>
-        <div className="route-row__cell route-row__cell--progress">Progress</div>
+        <div className="route-row__cell route-row__cell--progress">Load</div>
         <div className="route-row__cell route-row__cell--distance">Distance</div>
         <div className="route-row__cell route-row__cell--eta">Finish ETA</div>
         <div className="route-row__cell route-row__cell--status">Status</div>
-        <div className="route-row__cell route-row__cell--actions">Actions</div>
+        <div className="route-row__cell route-row__cell--actions" aria-label="Actions" />
       </div>
       <div className="routes-table__body">
         {routes.map((route, idx) => (
@@ -2857,24 +2860,13 @@ export default function RouteWorkspace({
   onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra, onAdjustLocation,
   requestedTab, requestedView, requestedLiveTracking, navCommandSeq,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
-  onViewChange,
+  onViewChange, onTabChange,
 }) {
   const [tab, setTab] = useState('routes');
-  // requestedTab is a one-way "command" from the sidebar nav (clicking
-  // "Unassigned Orders" should actually switch this tab, not just scroll
-  // near it) - a change in this prop jumps the tab; the tab buttons below
-  // still update `tab` directly for an immediate click response.
-  //
-  // Deliberately keyed on navCommandSeq, not requestedTab itself: this
-  // component and the Unassigned Orders board share one DOM anchor, so
-  // App.jsx's scroll-position tracking sets activeNav (and so
-  // requestedTab) to 'unassigned' just from that section scrolling into
-  // view - no click involved. Reacting to every requestedTab *value*
-  // change used to mean the Routes list would silently get replaced by
-  // the Unassigned tab while merely scrolling past this part of the page.
-  // navCommandSeq only advances inside App.jsx's handleNavClick, so this
-  // only fires for a genuine sidebar click - reading requestedTab's
-  // current value when it does, same effect, right trigger.
+  const switchTab = (next) => { setTab(next); onTabChange?.(next); };
+  // requestedTab is a one-way command from the sidebar. Keyed on
+  // navCommandSeq (bumped only on explicit navigation) so it never fights
+  // a tab the user picked here - switchTab reports those back up instead.
   useEffect(() => {
     if (requestedTab === 'routes' || requestedTab === 'unassigned') setTab(requestedTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2912,12 +2904,13 @@ export default function RouteWorkspace({
   const [viewMode, setViewMode] = useState('list');
   const [mapSelectedRouteName, setMapSelectedRouteName] = useState(null);
   // Same one-way command shape as requestedTab above - "Live Tracking" in
-  // the sidebar jumps the Routes tab into Map view. requestedLiveTracking
-  // (passed straight through to FleetMap below) additionally flips its
-  // live layer on.
+  // the sidebar jumps the Routes tab into Map view, "Routes" back to the
+  // list. requestedLiveTracking (passed straight through to FleetMap
+  // below) additionally flips its live layer on.
   useEffect(() => {
-    if (requestedView === 'map') setViewMode('map');
-  }, [requestedView]);
+    if (requestedView === 'map' || requestedView === 'list') setViewMode(requestedView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navCommandSeq]);
 
   const allLocations = useMemo(() => {
     const seen = new Set();
@@ -3018,16 +3011,15 @@ export default function RouteWorkspace({
   return (
     <div className={`board board--workspace${tab === 'unassigned' ? ' board--workspace-unassigned' : ' board--workspace-routes'}`} id="route-workspace">
       <div className="workspace-tabs">
-        <button type="button" className={`workspace-tab${tab === 'routes' ? ' workspace-tab--active' : ''}`} onClick={() => setTab('routes')}>
+        <button type="button" className={`workspace-tab${tab === 'routes' ? ' workspace-tab--active' : ''}`} onClick={() => switchTab('routes')}>
           <LIconRoute width={14} height={14} />
           Routes
           <span className="workspace-tab__count mono-num">{routes.length}</span>
         </button>
         <button
           type="button"
-          id="unassigned-board"
           className={`workspace-tab${tab === 'unassigned' ? ' workspace-tab--active' : ''}`}
-          onClick={() => setTab('unassigned')}
+          onClick={() => switchTab('unassigned')}
         >
           <PackageSearch width={14} height={14} />
           Unassigned Orders

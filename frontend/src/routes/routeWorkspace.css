@@ -42,6 +42,15 @@
   color: #ffffff;
 }
 
+.unassigned-panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.unassigned-panel__toolbar .search-field { flex: 1 1 auto; min-width: 0; }
+.unassigned-panel__toolbar .add-route-select { flex: none; }
+
 select.add-route-select {
   appearance: none;
   font-family: var(--font-body);
@@ -286,10 +295,10 @@ select.add-route-select:hover:not(:disabled) {
   background: linear-gradient(90deg, #38bdf8 0%, #0d9488 100%);
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.capacity-bar__fill--warn {
-  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
-}
 .capacity-bar__fill--full {
+  background: #0d9488;
+}
+.capacity-bar__fill--over {
   background: linear-gradient(90deg, #f43f5e 0%, #e11d48 100%);
 }
 
@@ -306,7 +315,10 @@ select.add-route-select:hover:not(:disabled) {
 }
 .route-status-badge--empty { background: var(--surface-2); color: var(--ink-faint); }
 .route-status-badge--open { background: var(--good-soft); color: var(--good); }
-.route-status-badge--full { background: var(--critical-soft); color: var(--critical); }
+.route-status-badge--full { background: var(--accent-soft); color: var(--accent-strong); }
+.route-status-badge { white-space: nowrap; }
+.route-row__cell--distance,
+.route-row__cell--eta { white-space: nowrap; }
 .route-status-badge--delayed { background: var(--signal-soft); color: var(--signal); }
 
 /* Routes List View & Table */
@@ -452,7 +464,8 @@ select.add-route-select:hover:not(:disabled) {
   transform: translate(-50%, -50%);
   cursor: default;
 }
-.fleet-map__toolbar { position: absolute; top: 0.75rem; right: 0.75rem; z-index: 2; display: flex; flex-direction: column; gap: 0.5rem; }
+/* Below Google's Map/Hybrid switcher, which also sits top-right. */
+.fleet-map__toolbar { position: absolute; top: 3.6rem; right: 0.75rem; z-index: 2; display: flex; flex-direction: column; gap: 0.5rem; }
 .fleet-map__toolbar-btn {
   width: 34px;
   height: 34px;
@@ -600,7 +613,7 @@ select.add-route-select:hover:not(:disabled) {
 }
 .routes-table__head {
   display: grid;
-  grid-template-columns: 28px 2fr 0.9fr 0.8fr 1.3fr 0.9fr 1.1fr 1fr 1.4fr;
+  grid-template-columns: 28px minmax(0, 2fr) 0.9fr 0.8fr 1.3fr 1fr 0.9fr 1fr 40px;
   gap: 1.25rem;
   padding: 0.6rem 1.35rem;
   background: var(--op-routes-soft);
@@ -631,7 +644,7 @@ select.add-route-select:hover:not(:disabled) {
 .route-row {
   position: relative;
   display: grid;
-  grid-template-columns: 28px 2fr 0.9fr 0.8fr 1.3fr 0.9fr 1.1fr 1fr 1.4fr;
+  grid-template-columns: 28px minmax(0, 2fr) 0.9fr 0.8fr 1.3fr 1fr 0.9fr 1fr 40px;
   gap: 1.25rem;
   align-items: center;
   padding: 1rem 1.35rem;
@@ -1332,17 +1345,9 @@ select.add-route-select:hover:not(:disabled) {
 }
 .route-row__name, .route-row__subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Always visible - hover-only actions hid the row menu (Assign driver,
+   Download, Delete) from anyone who didn't think to hover a row. */
 .route-row__cell--actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
-/* Quick actions fade in on row hover - mouse-capable devices only
-   (`hover: hover`), so touch/keyboard users (no reliable hover) always
-   see them, same as they always could before this. An open row menu
-   also keeps them visible even after the pointer leaves the row. */
-@media (hover: hover) {
-  .route-row__cell--actions { opacity: 0; transition: opacity 0.12s ease; }
-  .route-row:hover .route-row__cell--actions,
-  .route-row:focus-within .route-row__cell--actions,
-  .route-row__cell--actions:has(.row-menu__panel) { opacity: 1; }
-}
 
 @media (max-width: 720px) {
   .workspace-tabs { padding-inline: 0.85rem; overflow-x: auto; }
@@ -1352,6 +1357,35 @@ select.add-route-select:hover:not(:disabled) {
   .routes-page__title, .route-detail__title { font-size: 1.35rem; }
   .routes-filter-bar { align-items: stretch; flex-direction: column; gap: 0.55rem; }
   .routes-filter-bar__search, .routes-filter-bar .select-compact, .routes-filter-bar__clear { width: 100%; min-width: 0; }
+  /* flex: 1 1 260px from the desktop rule becomes a 260px HEIGHT once the
+     bar is a column - the search box ballooned into a tall empty block. */
+  .routes-filter-bar__search { flex: none; }
+  /* Unassigned order cards: identity on its own full-width line, then the
+     tag and actions wrap underneath instead of crushing the address into
+     a one-word-wide column and pushing "Assign to…" off-screen. */
+  .unassigned-row { flex-wrap: wrap; align-items: flex-start; gap: 0.6rem 0.75rem; padding: 0.9rem 1rem; }
+  .unassigned-row > input[type="checkbox"] { margin-top: 0.2rem; }
+  .unassigned-row > .delivery-identity { flex: 1 1 calc(100% - 3rem); min-width: 0; }
+  /* Routes table as cards: checkbox, name and menu on the first line,
+     vehicle/stops/distance/ETA/status wrapping underneath, load bar last.
+     Nine fixed columns in ~350px overlapped every value into the next. */
+  .routes-table__head { display: none; }
+  .route-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.75rem; padding: 0.85rem 3rem 0.85rem 1rem; }
+  .route-row__cell--select { order: 0; }
+  .route-row__cell--route { order: 1; flex: 1 1 calc(100% - 3rem); min-width: 0; }
+  .route-row__cell--actions { position: absolute; top: 0.6rem; right: 0.5rem; }
+  .route-row__cell--vehicle { order: 3; margin-left: calc(16px + 0.75rem); }
+  .route-row__cell--stops { order: 4; }
+  .route-row__cell--distance { order: 5; }
+  .route-row__cell--eta { order: 6; }
+  .route-row__cell--eta::before { content: 'ETA '; color: var(--ink-faint); font-family: var(--font-body); font-size: 0.8em; }
+  .route-row__cell--status { order: 7; }
+  .route-row__cell--progress { order: 8; flex-basis: 100%; padding-left: calc(16px + 0.75rem); }
+  .unassigned-row__meta { max-width: none; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .unassigned-row > .stop-move { flex: 1 1 140px; }
+  .unassigned-panel__toolbar { flex-wrap: wrap; }
+  .unassigned-panel__toolbar .search-field { flex-basis: 100%; }
+  .unassigned-panel__toolbar .add-route-select { flex: 1 1 auto; }
   .routes-table { margin-inline: -0.85rem; border-inline: 0; border-radius: 0; }
   .route-detail__header, .route-overview, .route-stop-list { padding-inline: 1rem; }
   .route-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
