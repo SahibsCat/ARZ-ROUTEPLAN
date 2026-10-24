@@ -1366,6 +1366,22 @@ def test_extract_street_keyword_ignores_a_purely_positional_street_name():
     assert _extract_street_keyword("12, 1st Cross Street, Bhavani Road, Adyar") == "bhavani"
 
 
+def test_extract_street_keyword_ignores_link_and_spelled_out_ordinals():
+    # Real, currently-failing production cases: "Yeshwanth Nagar Link
+    # Street" and "T-146 Voc Nagar 19th Link Street" were both flagged
+    # for a missing "link" - a connecting-road descriptor, same shape as
+    # "cross"/"main", not a proper name to match. "No.5 First Main Road,
+    # Nungambakkam" was flagged for a missing "first" - the digit form
+    # ("1st Main Road") was already safe (the extractor only captures
+    # letter words), but Chennai addresses write this ordinal both ways.
+    from app.geocoding.google_geocoder import _extract_street_keyword
+
+    assert _extract_street_keyword("T-146 Voc Nagar 19th Link Street 600081 Chennai TN") is None
+    assert _extract_street_keyword("No.5 first main road lake area nungambakkam Chennai 600034") is None
+    # A real named street after "Link" is still found.
+    assert _extract_street_keyword("12, Bhavani Link Street, Adyar") == "bhavani"
+
+
 def test_score_component_match_recognizes_a_local_road_alias():
     # "Mount Road" and "Anna Salai" are two names locals use for the same
     # road - they share no letters, so no fuzzy matcher bridges them

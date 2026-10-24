@@ -662,7 +662,20 @@ def _transliteration_match(token: str, candidates: Iterable[str]) -> bool:
 # Cross St" or drops the ordinal entirely). Real cases: "1st Cross
 # Street, MAC Nagar, Kattupakkam" and "16th cross Street, Hindu colony,
 # Nanganallur" were both flagged for a missing "cross".
-_UNNAMED_STREET_WORDS = {"cross", "main", "new", "old", "north", "south", "east", "west"}
+#
+# "link" and the spelled-out ordinals joined later: real, currently-
+# failing production cases - "Yeshwanth Nagar Link Street" and "T-146
+# Voc Nagar 19th Link Street" both flagged for a missing "link" (a
+# connecting-road descriptor, not a name, same shape as "cross"/"main");
+# "No.5 First Main Road, Nungambakkam" flagged for a missing "first" -
+# the digit form ("1st Main Road") was already safe since the extractor
+# only captures letter words, but Chennai addresses write this ordinal
+# both ways, and the spelled-out form slipped through as if it were a
+# real street name.
+_UNNAMED_STREET_WORDS = {
+    "cross", "main", "new", "old", "north", "south", "east", "west", "link",
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+}
 
 
 # Chennai neighborhoods with a well-known colloquial name that shares no
