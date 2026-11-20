@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app import crud, crud_driver
+from app import crud, crud_driver, push_service
 from app.database import init_db
 from app.dependencies import get_db
 from app.driver_auth import get_current_driver
@@ -38,6 +38,7 @@ from app.schemas import (
     AddOrdersRequest,
     AssignDriverRequest,
     AssignOrdersRequest,
+    PushTokenRequest,
     ChangeVehicleTypeRequest,
     CreateDriverRequest,
     CreateRouteRequest,
@@ -1042,7 +1043,22 @@ def assign_driver_endpoint(route_id: int, payload: AssignDriverRequest = Body(..
             "previous_route": {"id": previous_route.id, "route_name": previous_route.route_name},
         }
 
-    return {"conflict": False, "route": crud.route_summary(result["route"]), "driver": crud_driver.driver_summary(result["driver"])}
+    assigned_route, assigned_driver = result["route"], result["driver"]
+    # Ring the delivery partner's phone (sound + banner, even if the app
+    # is closed). Best-effort: a push failure never fails the assignment.
+    notified_devices = 0
+    try:
+        notified_devices = push_service.notify_route_assigned(
+            db, assigned_driver.id, assigned_route.route_name, len(assigned_route.stops or []), assigned_route.id,
+        )
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+    return {
+        "conflict": False,
+        "route": crud.route_summary(assigned_route),
+        "driver": crud_driver.driver_summary(assigned_driver),
+        "notified_devices": notified_devices,
+    }
 
 
 @app.delete("/api/routes/{route_id}/driver")
@@ -1135,6 +1151,24 @@ def driver_signup_endpoint(payload: DriverSignupRequest = Body(...), db: Session
 @app.get("/api/driver/me")
 def driver_me_endpoint(driver=Depends(get_current_driver)):
     return {"driver": crud_driver.driver_summary(driver)}
+
+
+@app.post("/api/driver/me/push-token")
+def driver_register_push_token(payload: PushTokenRequest = Body(...), driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    """Called by the driver app after login / on every app open, so the
+    backend can notify this phone when a route is assigned."""
+    token = (payload.token or "").strip()
+    if not push_service.is_expo_token(token):
+        raise HTTPException(status_code=400, detail="Not a valid Expo push token")
+    push_service.save_push_token(db, driver.id, token, payload.platform)
+    return {"ok": True}
+
+
+@app.delete("/api/driver/me/push-token")
+def driver_remove_push_token(payload: PushTokenRequest = Body(...), driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    """Called on logout so a phone stops getting this driver's routes."""
+    push_service.delete_push_token(db, (payload.token or "").strip())
+    return {"ok": True}
 
 
 @app.get("/api/driver/me/route")

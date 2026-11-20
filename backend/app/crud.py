@@ -240,7 +240,7 @@ def save_upload_batch(
             geocode_confidence=order.get("confidence"),
             suggested_lat=order.get("suggested_lat"),
             suggested_lng=order.get("suggested_lng"),
-            location_source="geocoded" if has_coords else None,
+            location_source=(order.get("location_source") or "geocoded") if has_coords else None,
             status="pending" if has_coords else "failed",
             extra_fields=order.get("extra_fields") or {},
         ))

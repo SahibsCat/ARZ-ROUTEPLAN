@@ -76,9 +76,10 @@ def test_geocode_orders_marks_unresolved_address_as_failed(monkeypatch):
 
     result, provider_error = geocode_orders(orders)
 
-    assert result[0]["lat"] is None
-    assert result[0]["lng"] is None
-    assert "geocode_error" in result[0]
+    # Never left out of the routes: parked at the depot and flagged.
+    assert result[0]["lat"] is not None
+    assert result[0]["location_source"] == "unlocated"
+    assert "LOCATION UNKNOWN" in result[0]["geocode_error"]
 
 
 def test_geocode_orders_keeps_a_flagged_matchs_coordinates_as_a_suggestion(monkeypatch):
@@ -97,10 +98,13 @@ def test_geocode_orders_keeps_a_flagged_matchs_coordinates_as_a_suggestion(monke
     orders = [{"order_id": "1", "customer_name": "A", "address": "12 Main Street"}]
     result, _ = geocode_orders(orders)
 
-    assert result[0]["lat"] is None
-    assert result[0]["lng"] is None
+    # Rescue pass: the flagged coordinates are now used as an APPROXIMATE,
+    # routable location (never dropped to Failed Addresses), with the
+    # suggestion and a verify warning kept.
+    assert result[0]["lat"] == 13.02
+    assert result[0]["lng"] == 80.21
     assert result[0]["suggested_lat"] == 13.02
-    assert result[0]["suggested_lng"] == 80.21
+    assert result[0]["location_source"] == "approximate"
     assert result[0]["confidence"] == 0.3
 
 
@@ -192,8 +196,10 @@ def test_geocode_orders_flags_low_confidence_result_as_needs_manual_verification
 
     result, provider_error = geocode_orders(orders)
 
-    assert result[0]["lat"] is None
-    assert result[0]["lng"] is None
+    # Rescued as approximate (routable) but still flagged for review.
+    assert result[0]["lat"] == 12.9
+    assert result[0]["location_source"] == "approximate"
+    assert "APPROXIMATE" in result[0]["geocode_error"]
     assert "Needs Manual Verification" in result[0]["geocode_error"]
     assert "0.30" in result[0]["geocode_error"]
 
@@ -244,8 +250,9 @@ def test_geocode_orders_stops_immediately_on_provider_error(monkeypatch):
     assert "billing not enabled" in provider_error
     assert len(result) == 3
     for order in result:
-        assert order["lat"] is None
-        assert order["geocode_error"] == provider_error
+        assert order["lat"] is not None  # placed at depot, still routed
+        assert order["location_source"] == "unlocated"
+        assert provider_error in order["geocode_error"]
     # Uncached addresses are now fetched concurrently (see GEOCODE_CONCURRENCY
     # in geocode_service.py - the fix for a real upload's geocoding step
     # timing out server-side), so a broken provider is no longer guaranteed

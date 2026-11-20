@@ -204,6 +204,11 @@ class ResetDriverPasswordRequest(BaseModel):
     new_password: str
 
 
+class PushTokenRequest(BaseModel):
+    token: str
+    platform: Optional[str] = None
+
+
 class AssignDriverRequest(BaseModel):
     driver_id: int
     force: bool = False

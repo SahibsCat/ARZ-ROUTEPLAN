@@ -338,6 +338,7 @@ class Driver(Base):
     routes = relationship("Route", back_populates="driver_ref")
     sessions = relationship("DriverSession", back_populates="driver", cascade="all, delete-orphan")
     location_pings = relationship("DriverLocationPing", back_populates="driver", cascade="all, delete-orphan")
+    push_tokens = relationship("DriverPushToken", back_populates="driver", cascade="all, delete-orphan")
 
 
 class DriverSession(Base):
@@ -355,6 +356,23 @@ class DriverSession(Base):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     driver = relationship("Driver", back_populates="sessions")
+
+
+class DriverPushToken(Base):
+    """Expo push token for one of a driver's phones - used to send the
+    "new route assigned" notification (with sound) even when the app is
+    closed. Its own table (not a column on drivers) so existing databases
+    pick it up via create_all at startup with no manual migration, and so
+    a driver logged in on two phones gets notified on both."""
+    __tablename__ = "driver_push_tokens"
+
+    id = Column(Integer, primary_key=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    platform = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    driver = relationship("Driver", back_populates="push_tokens")
 
 
 class DriverLocationPing(Base):

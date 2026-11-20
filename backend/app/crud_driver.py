@@ -235,8 +235,37 @@ def list_drivers_with_assignment(db: Session) -> List[Dict[str, object]]:
 # Driver login
 # --------------------------------------------------------------------------
 
+def _digits(value: Optional[str]) -> str:
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+def find_driver_for_login(db: Session, identifier: str) -> Optional[Driver]:
+    """The login screen accepts "Mobile / Username", so match either:
+    exact username first, then username ignoring case/spaces ("Kumar " ->
+    "kumar"), then mobile number by its last 10 digits ("+91 98000 00001"
+    == "9800000001"). A mobile shared by more than one driver is ambiguous
+    and never matched - they must use their username."""
+    identifier = (identifier or "").strip()
+    if not identifier:
+        return None
+    driver = db.query(Driver).filter(Driver.username == identifier).first()
+    if driver is not None:
+        return driver
+    lowered = identifier.lower()
+    by_name = [d for d in db.query(Driver).all() if (d.username or "").strip().lower() == lowered]
+    if len(by_name) == 1:
+        return by_name[0]
+    digits = _digits(identifier)
+    if len(digits) >= 10:
+        key = digits[-10:]
+        by_mobile = [d for d in db.query(Driver).filter(Driver.mobile.isnot(None)).all() if _digits(d.mobile)[-10:] == key]
+        if len(by_mobile) == 1:
+            return by_mobile[0]
+    return None
+
+
 def authenticate_driver(db: Session, username: str, password: str) -> Tuple[Driver, DriverSession]:
-    driver = db.query(Driver).filter(Driver.username == username).first()
+    driver = find_driver_for_login(db, username)
     if driver is None or not verify_password(password, driver.password_hash, driver.password_salt):
         raise InvalidCredentialsError("Invalid username or password.")
     if driver.status == "pending":

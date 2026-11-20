@@ -346,7 +346,173 @@ def _fetch_concurrently(
                 if provider_error_message is None:
                     provider_error_message = str(exc)
                     print(f"   🛑 Provider error - {provider_error_message}")
+            except Exception as exc:  # noqa: BLE001 - one bad address must never abort the batch
+                # Left unresolved; the rescue pass retries it sequentially.
+                print(f"   geocode error for cache_key={cache_key!r}: {exc}")
     return provider_error_message
+
+
+LOCATION_SOURCE_APPROXIMATE = "approximate"
+
+# Approximate (rescued) pins are routable but deliberately low-confidence:
+# the admin sees them flagged, and Adjust Location can still refine them.
+APPROXIMATE_CONFIDENCE_CAP = 0.45
+AREA_FALLBACK_CONFIDENCE = 0.3
+
+
+def _area_fallback_queries(address: str) -> List[str]:
+    """Progressively coarser queries for an address the provider could not
+    resolve at all, most specific first: street+area+PIN, area+PIN, area,
+    PIN alone. Each only uses components actually present in the
+    customer's text (or a known Chennai locality found in it), so a
+    fallback pin always lands in the area the customer named - never
+    somewhere invented."""
+    normalized = address_parser.normalize(address)
+    parsed = address_parser.parse(normalized)
+    lowered = normalized.lower()
+
+    pin = parsed.pincode
+    if not pin:
+        match = re.search(r"\b(\d{6})\b", normalized)
+        pin = match.group(1) if match else None
+
+    area = parsed.area
+    if not area:
+        # Longest known locality named anywhere in the text.
+        from app.geocoding.chennai_localities import LOCALITY_PINCODES
+        hits = [name for name in LOCALITY_PINCODES if re.search(rf"\b{re.escape(name)}\b", lowered)]
+        if hits:
+            area = max(hits, key=len).title()
+            pin = pin or LOCALITY_PINCODES.get(area.lower())
+
+    queries: List[str] = []
+
+    def add(*parts: Optional[str]) -> None:
+        text = ", ".join(p.strip() for p in parts if p and p.strip())
+        if text and text not in queries:
+            queries.append(text)
+
+    add(parsed.street, area, "Chennai", pin, "India")
+    add(area, "Chennai", pin, "India")
+    add(area, "Chennai", "India")
+    if pin:
+        add(pin, "Chennai", "India")
+        add(pin, "Tamil Nadu", "India")
+    return queries
+
+
+def _rescue_unresolved(
+    geocoder: GeocodingProvider,
+    geocoded_orders: List[Dict[str, object]],
+) -> int:
+    """Last line of defence so a big batch (Diwali volume) never leaves
+    deliverable orders stranded in Failed Addresses. For every order that
+    still has no coordinates, in order:
+
+    1. Re-run the full geocode once, sequentially. Under 8-way concurrency
+       a transient network/rate-limit blip makes the provider return None
+       for an address that is perfectly findable on its own.
+    2. A flagged match already carried real coordinates (suggested_lat/lng)
+       - usually the right street/area, just without a confirmed door
+       number. Use them.
+    3. Nothing found at all: geocode progressively coarser area-level
+       queries (street+area+PIN -> area -> PIN).
+
+    Rescued orders are routable but marked location_source="approximate"
+    with a clear geocode_error note and a capped confidence, so the admin
+    can still see and refine them - they are no longer silently dropped.
+    Genuinely empty/unparseable addresses stay failed. Returns the number
+    of orders rescued."""
+    rescued = 0
+    for order in geocoded_orders:
+        if order.get("lat") is not None and order.get("lng") is not None:
+            continue
+        address = str(order.get("address", ""))
+        cleaned = clean_address(address)
+        if not cleaned:
+            continue
+
+        lat = lng = None
+        note = None
+        confidence = AREA_FALLBACK_CONFIDENCE
+
+        # 1. one clean sequential retry (skip if we already hold a flagged match)
+        if order.get("suggested_lat") is None:
+            try:
+                retry = geocoder.geocode(cleaned)
+            except GeocodingProviderError:
+                break  # provider itself is down - no point continuing
+            except Exception as exc:  # noqa: BLE001 - never let one address abort the batch
+                print(f"   rescue retry error for '{address}': {exc}")
+                retry = None
+            if retry is not None:
+                if retry.status == STATUS_OK:
+                    order.update(_interpret_result(retry, address))
+                    order.pop("geocode_error", None)
+                    rescued += 1
+                    continue
+                order["suggested_lat"], order["suggested_lng"] = retry.lat, retry.lng
+                order["confidence"] = retry.confidence
+                order["geocode_error"] = _verification_message(retry, address)
+
+        # 2. accept the flagged match's coordinates
+        if order.get("suggested_lat") is not None and order.get("suggested_lng") is not None:
+            lat, lng = order["suggested_lat"], order["suggested_lng"]
+            prior = order.get("confidence")
+            confidence = min(prior if prior is not None else APPROXIMATE_CONFIDENCE_CAP, APPROXIMATE_CONFIDENCE_CAP)
+            note = order.get("geocode_error") or "Approximate location"
+        else:
+            # 3. area-level fallback
+            for query in _area_fallback_queries(address):
+                try:
+                    hit = geocoder.geocode(query)
+                except GeocodingProviderError:
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    print(f"   area fallback error for '{query}': {exc}")
+                    continue
+                if hit is not None:
+                    lat, lng = hit.lat, hit.lng
+                    note = f"Area-level match only ('{query}') - exact door not found"
+                    break
+
+        if lat is None or lng is None:
+            continue
+
+        order["lat"], order["lng"] = lat, lng
+        order["confidence"] = confidence
+        order["location_source"] = LOCATION_SOURCE_APPROXIMATE
+        order["geocode_error"] = f"APPROXIMATE - verify before dispatch. {note}"
+        order["needs_review"] = True
+        order.setdefault("geocoded_address", cleaned)
+        rescued += 1
+        print(f"   🛟 Rescued '{address}' as approximate location")
+    return rescued
+
+
+LOCATION_SOURCE_UNLOCATED = "unlocated"
+
+
+def _place_remaining_at_depot(geocoded_orders: List[Dict[str, object]]) -> int:
+    """Absolute last resort so NO order is ever left out of the route plan:
+    anything still without coordinates (blank/unreadable address, provider
+    outage) is parked at the depot - zero extra distance, so it cannot
+    distort the other stops - and flagged loudly. The driver/admin must
+    confirm the real location (Adjust Location) before delivery."""
+    from app.route_service import VELOCHERY_DEPOT
+
+    count = 0
+    for order in geocoded_orders:
+        if order.get("lat") is not None and order.get("lng") is not None:
+            continue
+        previous = order.get("geocode_error") or "Address could not be located"
+        order["lat"], order["lng"] = VELOCHERY_DEPOT["lat"], VELOCHERY_DEPOT["lng"]
+        order["confidence"] = 0.0
+        order["location_source"] = LOCATION_SOURCE_UNLOCATED
+        order["needs_review"] = True
+        order["geocode_error"] = f"LOCATION UNKNOWN - placeholder at depot, set the real location. ({previous})"
+        count += 1
+    return count
 
 
 def geocode_orders(
@@ -447,6 +613,19 @@ def geocode_orders(
                 )
             print(f"   ✅ Success" if merged.get("lat") is not None else f"   ❌ {merged.get('geocode_error')}")
         geocoded_orders.append(merged)
+
+    if provider_error_message is None and any(o.get("lat") is None for o in geocoded_orders):
+        try:
+            with _build_geocoder() as rescue_geocoder:
+                rescued = _rescue_unresolved(rescue_geocoder, geocoded_orders)
+            print(f"Rescue pass recovered {rescued} order(s) as approximate/retry matches")
+        except Exception:  # noqa: BLE001 - rescue is best-effort, never fatal
+            import traceback
+            traceback.print_exc()
+
+    placeholders = _place_remaining_at_depot(geocoded_orders)
+    if placeholders:
+        print(f"{placeholders} order(s) had no locatable address - placed at depot, flagged for review")
 
     success = len([order for order in geocoded_orders if order.get("lat") is not None])
     failed = len(geocoded_orders) - success

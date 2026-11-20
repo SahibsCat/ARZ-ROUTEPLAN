@@ -1,4 +1,5 @@
 import re
+import math
 from itertools import permutations
 from math import asin, cos, radians, sin, sqrt
 from statistics import median
@@ -33,7 +34,18 @@ BIKE_MAX_CAPACITY = BIKE_CAPACITY + MANUAL_OVERRIDE_EXTRA
 
 SERVICE_TIME_MINUTES = 3.0
 LATE_GRACE_MINUTES = 0.0
-SWAP_MIN_SAVINGS_MINUTES = 8.0
+SWAP_MIN_SAVINGS_MINUTES = 2.0
+# Delivery slots this close together count as the same window for stop
+# ORDER (deadlines are still enforced per stop) - see _slot_order_preserved.
+SLOT_PRECEDENCE_TOLERANCE_MINUTES = 60.0
+# Direction-aware assignment (see _direction_penalty_km): extra "cost" in
+# km for giving a vehicle a stop that lies in a different direction from
+# the depot than the stops it already has. Scaled by how far out the stop
+# is, since a wrong-direction stop 10 km out is a far bigger detour than
+# one 1 km out.
+DIRECTION_PENALTY_WEIGHT = 1.0
+# Differences in bearing below this are "same direction" - no penalty.
+DIRECTION_FREE_ANGLE_DEGREES = 30.0
 DEFAULT_ROUTE_START_MINUTES = 480.0
 ROUTE_START_LEAD_MINUTES = 60.0
 # 2-opt (_improve_route) can uncross one crossing per sweep and then
@@ -182,14 +194,22 @@ def _slot_order_preserved(route_orders: List[Dict[str, object]]) -> bool:
     sit anywhere. Two stops that share the same slot can be reordered
     freely relative to each other (that's the whole point of letting 2-opt
     resequence within a time window for distance)."""
+    # Slots within SLOT_PRECEDENCE_TOLERANCE_MINUTES of each other are
+    # treated as one window and may be reordered freely for direction
+    # (every stop must still make its own deadline - _simulate_route checks
+    # that). Without this, slots like 10:00 / 10:15 / 10:30 forced
+    # A -> B -> C even when B was in the opposite direction from A and C,
+    # sending the rider back and forth across the city.
     finite_slots_in_order = [
         slot for slot in (parse_delivery_slot_minutes(order) for order in route_orders)
         if slot != float("inf")
     ]
-    return all(
-        finite_slots_in_order[i] <= finite_slots_in_order[i + 1]
-        for i in range(len(finite_slots_in_order) - 1)
-    )
+    running_max = float("-inf")
+    for slot in finite_slots_in_order:
+        if running_max - slot > SLOT_PRECEDENCE_TOLERANCE_MINUTES:
+            return False
+        running_max = max(running_max, slot)
+    return True
 
 
 def format_minutes_as_clock(minutes: Optional[float]) -> Optional[str]:
@@ -846,6 +866,52 @@ def _extract_geographic_outliers(
     return spawn_count
 
 
+def _bearing_degrees(origin: Dict[str, float], point: Dict[str, float]) -> float:
+    """Compass bearing (0-360) from origin to point."""
+    lat1, lat2 = math.radians(origin["lat"]), math.radians(point["lat"])
+    dlng = math.radians(point["lng"] - origin["lng"])
+    x = math.sin(dlng) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlng)
+    return (math.degrees(math.atan2(x, y)) + 360.0) % 360.0
+
+
+def _vehicle_heading(vehicle: Dict[str, object], depot: Dict[str, float]) -> Optional[float]:
+    """Circular mean bearing (from the depot) of the stops a vehicle already
+    has - i.e. which direction of the city this route is serving."""
+    points = [o for o in vehicle["orders"] if has_coordinates(o)]
+    if not points:
+        return None
+    sx = sy = 0.0
+    for o in points:
+        b = math.radians(_bearing_degrees(depot, o))
+        sx += math.sin(b)
+        sy += math.cos(b)
+    if abs(sx) < 1e-9 and abs(sy) < 1e-9:
+        return None
+    return (math.degrees(math.atan2(sx, sy)) + 360.0) % 360.0
+
+
+def _direction_penalty_km(vehicle: Dict[str, object], order: Dict[str, object], depot: Dict[str, float]) -> float:
+    """The fix for "A and C are on the same line but the route goes A -> B
+    (opposite side) -> C": the greedy builder used to pick purely the
+    nearest stop to the vehicle's LAST position, so a stop just across the
+    depot could look cheap and pull the route into the wrong direction.
+    This adds a cost proportional to how far the stop is off the route's
+    existing heading (0 within DIRECTION_FREE_ANGLE_DEGREES, up to ~2x the
+    stop's distance from the depot when it's directly opposite)."""
+    if not has_coordinates(order):
+        return 0.0
+    heading = _vehicle_heading(vehicle, depot)
+    if heading is None:
+        return 0.0
+    diff = abs(_bearing_degrees(depot, order) - heading) % 360.0
+    diff = min(diff, 360.0 - diff)
+    if diff <= DIRECTION_FREE_ANGLE_DEGREES:
+        return 0.0
+    radius_km = _haversine_km(depot, order)
+    return DIRECTION_PENALTY_WEIGHT * radius_km * (1.0 - math.cos(math.radians(diff)))
+
+
 def build_routes(
     orders: List[Dict[str, object]],
     available_cars: int,
@@ -923,6 +989,8 @@ def build_routes(
                     cost = distance if distance is not None else float(len(vehicle["orders"]))
                     if distance is not None and len(vehicle["orders"]) == 0:
                         cost += VEHICLE_ACTIVATION_PENALTY_KM
+                    if distance is not None:
+                        cost += _direction_penalty_km(vehicle, order, depot)
 
                     is_better = (
                         best_vehicle is None
