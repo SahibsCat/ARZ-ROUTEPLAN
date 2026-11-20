@@ -9,6 +9,7 @@
 @keyframes kit-pop { 0% { opacity: 0; transform: scale(0.94) translateY(10px); } 100% { opacity: 1; transform: none; } }
 @keyframes kit-slide-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes kit-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes kit-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes kit-pulse-ring { 0% { box-shadow: 0 0 0 0 currentColor; } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 @keyframes kit-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes kit-shine { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(260%) skewX(-20deg); } }
@@ -109,7 +110,7 @@
 }
 .route-row:hover {
   background: var(--surface) !important;
-  transform: translateX(4px);
+  /* no transform: it would trap the row's position:fixed "..." menu */
   box-shadow: 0 10px 24px -14px rgba(20, 24, 51, 0.35);
   z-index: 1;
 }
@@ -123,9 +124,7 @@
 }
 .capacity-bar__fill--full { background: linear-gradient(90deg, #10b981, #34d399, #10b981) !important; background-size: 200% 100% !important; }
 .capacity-bar__fill--over { background: linear-gradient(90deg, #f43f5e, #fb923c, #f43f5e) !important; background-size: 200% 100% !important; }
-@media (prefers-reduced-motion: no-preference) {
-  .capacity-bar__fill { animation: kit-shimmer 3.5s linear infinite; }
-}
+/* PERF: no infinite shimmer on every row's bar (repainted every frame). */
 .vehicle-pill { border-radius: 999px !important; padding: 0.25rem 0.65rem !important; font-weight: 800 !important; }
 .vehicle-pill--car { background: linear-gradient(135deg, #e0f2fe, #dbeafe) !important; color: #1d4ed8 !important; }
 .vehicle-pill--bike { background: linear-gradient(135deg, #dcfce7, #d1fae5) !important; color: #047857 !important; }
@@ -135,7 +134,7 @@
 }
 .route-status-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .route-status-badge--open { background: var(--good-soft) !important; color: var(--good) !important; }
-.route-status-badge--open::before { animation: kit-pulse-ring 2s infinite; }
+
 .route-status-badge--full { background: var(--primary-soft) !important; color: var(--primary) !important; }
 .route-status-badge--delayed { background: var(--critical-soft) !important; color: var(--critical) !important; }
 
@@ -226,7 +225,7 @@
 .tracking-status-pill--live { background: var(--good-soft) !important; color: var(--good) !important; }
 .tracking-status-pill--live::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor;
-  animation: kit-pulse-ring 1.6s infinite;
+  animation: kit-blink 1.6s ease-in-out infinite; /* opacity only: GPU-cheap */
 }
 
 /* ---------- Map ---------- */
@@ -261,7 +260,7 @@
 }
 .driver-status-pill { border-radius: 999px !important; padding: 0.3rem 0.75rem !important; }
 .driver-status-pill--active { background: var(--good-soft) !important; color: var(--good) !important; }
-.driver-status-pill__dot { color: var(--good); animation: kit-pulse-ring 2.2s infinite; }
+.driver-status-pill__dot { color: var(--good); }
 .driver-status-pill--pending { background: var(--signal-soft) !important; color: var(--signal) !important; }
 
 /* ---------- History / Driver Data overlays ---------- */

@@ -641,8 +641,13 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
         />
       </div>
       <div className="route-row__cell route-row__cell--route">
-        <span className="route-row__name">{route.route_name}</span>
-        <span className="route-row__subtitle">{subtitle}</span>
+        <span className="route-row__badge" aria-hidden="true">
+          {String(route.route_name || '').replace(/\D+/g, '') || routeIdx + 1}
+        </span>
+        <span className="route-row__titles">
+          <span className="route-row__name">{route.route_name}</span>
+          <span className="route-row__subtitle">{subtitle}</span>
+        </span>
       </div>
       <div className="route-row__cell route-row__cell--vehicle">
         <span className={`vehicle-pill vehicle-pill--${route.vehicle_type === 'car' ? 'car' : 'bike'}`}>

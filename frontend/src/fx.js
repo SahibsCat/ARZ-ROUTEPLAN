@@ -5,13 +5,14 @@
 //   installFx()  - call once on mount; returns a cleanup function.
 //     * spotlight: cards glow under the pointer (sets --mx/--my on the card)
 //     * hero tilt: the hero route-map art tilts in 3D toward the pointer
-//     * scroll progress: sets --scroll (0..1) on <html> for the top bar
+//     * scroll progress: sets --scroll (0..1) on the top bar only (setting
+//       an inherited custom property on <html> restyled the whole page on
+//       every scroll frame)
 //   celebrate(x, y) - a short confetti burst (e.g. after "Fix all").
 
-const SPOTLIGHT_SELECTOR = [
-  '.kpi-tile', '.board', '.toolbar', '.route-overview__item', '.driver-card',
-  '.flow-progress__step', '.failed-row', '.issues-panel', '.route-stop',
-].join(',');
+// Small cards only: repainting a glow across a whole board on every
+// pointer move was a real source of lag.
+const SPOTLIGHT_SELECTOR = '.kpi-tile, .route-overview__item, .driver-card';
 
 const reducedMotion = () =>
   typeof window !== 'undefined'
@@ -42,7 +43,7 @@ export function installFx() {
       if (reducedMotion()) return;
       const hero = e.target.closest('.flow-hero');
       const art = document.querySelector('.hero-art');
-      if (art) {
+      if (art && (hero || art.style.transform)) {
         if (hero) {
           const r = hero.getBoundingClientRect();
           const px = (e.clientX - r.left) / r.width - 0.5;
@@ -55,19 +56,46 @@ export function installFx() {
     });
   };
 
+  let scrollFrame = 0;
   const onScroll = () => {
-    const max = Math.max(1, root.scrollHeight - window.innerHeight);
-    root.style.setProperty('--scroll', String(Math.min(1, window.scrollY / max)));
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0;
+      const bar = document.querySelector('.topbar');
+      if (!bar) return;
+      const max = Math.max(1, root.scrollHeight - window.innerHeight);
+      bar.style.setProperty('--scroll', (Math.min(1, window.scrollY / max)).toFixed(3));
+    });
   };
 
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
+  // Pause every hero animation (CSS and the SVG's SMIL vehicles) while the
+  // hero is scrolled out of view - no point repainting what nobody sees.
+  let heroObserver = null;
+  const heroTimer = setTimeout(() => {
+    const hero = document.querySelector('.flow-hero');
+    if (!hero || typeof IntersectionObserver === 'undefined') return;
+    heroObserver = new IntersectionObserver(([entry]) => {
+      const visible = entry.isIntersecting;
+      hero.classList.toggle('flow-hero--paused', !visible);
+      const svg = hero.querySelector('svg.hero-art');
+      if (svg && svg.pauseAnimations) {
+        if (visible) svg.unpauseAnimations(); else svg.pauseAnimations();
+      }
+    });
+    heroObserver.observe(hero);
+  }, 500);
+
   return () => {
+    clearTimeout(heroTimer);
+    if (heroObserver) heroObserver.disconnect();
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('scroll', onScroll);
     if (frame) cancelAnimationFrame(frame);
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
   };
 }
 

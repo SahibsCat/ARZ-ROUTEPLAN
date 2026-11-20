@@ -17,19 +17,19 @@
   max-width: 900px;
   max-height: 900px;
   border-radius: 50%;
-  filter: blur(90px);
   opacity: 0.22;
   pointer-events: none;
+  /* PERF: no filter:blur and no animation - a full-screen blurred layer
+     that moves forces a huge repaint every frame. The radial gradient is
+     already soft on its own. */
 }
 .shell-main::before {
   top: -20vw; right: -15vw;
-  background: radial-gradient(circle, #8b5cf6, transparent 65%);
-  animation: aurora-a 26s ease-in-out infinite alternate;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.9), transparent 65%);
 }
 .shell-main::after {
   bottom: -25vw; left: 10vw;
-  background: radial-gradient(circle, #22d3ee, transparent 65%);
-  animation: aurora-b 32s ease-in-out infinite alternate;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.9), transparent 65%);
   opacity: 0.16;
 }
 @keyframes aurora-a { to { transform: translate(-18vw, 22vh) scale(1.2); } }
@@ -52,10 +52,10 @@
 }
 
 /* ---------- Pointer spotlight on cards ---------- */
-:is(.kpi-tile, .board, .toolbar, .route-overview__item, .driver-card, .failed-row, .issues-panel) {
+:is(.kpi-tile, .route-overview__item, .driver-card) {
   position: relative;
 }
-:is(.kpi-tile, .board, .toolbar, .route-overview__item, .driver-card, .failed-row, .issues-panel)::after {
+:is(.kpi-tile, .route-overview__item, .driver-card)::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -66,7 +66,7 @@
   background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(129, 140, 248, 0.13), transparent 45%);
   z-index: 0;
 }
-:is(.kpi-tile, .board, .toolbar, .route-overview__item, .driver-card, .failed-row, .issues-panel):hover::after { opacity: 1; }
+:is(.kpi-tile, .route-overview__item, .driver-card):hover::after { opacity: 1; }
 /* Glowing border that follows the pointer (mask trick) */
 :is(.kpi-tile, .driver-card)::before {
   content: "";
@@ -112,7 +112,6 @@
   background-size: 300% 100% !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
-  animation: title-flow 8s ease-in-out infinite;
 }
 @keyframes title-flow { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 
@@ -142,8 +141,6 @@
   background: conic-gradient(from var(--ring-angle, 0deg), #6366f1, #a855f7, #f59e0b, #ec4899, #22d3ee, #6366f1);
   z-index: -1;
   opacity: 0.85;
-  filter: blur(0.5px);
-  animation: ring-spin 6s linear infinite;
 }
 .flow-step--done .flow-step__num::before { background: conic-gradient(from var(--ring-angle, 0deg), #10b981, #34d399, #a7f3d0, #10b981); }
 @property --ring-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
@@ -214,3 +211,10 @@
   .sidebar__brand::after, .btn--fix-all { animation: none !important; }
   .hero-art { transition: none; }
 }
+
+/* Hero scrolled out of view: freeze its animations (see fx.js). */
+.flow-hero--paused,
+.flow-hero--paused *,
+.flow-hero--paused::before,
+.flow-hero--paused *::before,
+.flow-hero--paused *::after { animation-play-state: paused !important; }

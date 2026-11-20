@@ -1,0 +1,156 @@
+/* =======================================================================
+   OptiRoute v6 — Route list: bigger, card-style rows
+   Scoped to the routes list (.routes-table) only.
+   NOTE: rows must never get a CSS transform (not even on hover) - the
+   row's "..." menu panel is position:fixed and a transformed ancestor
+   would trap it inside the row.
+======================================================================= */
+
+/* ---------- Page header: bigger ---------- */
+.routes-page__title { font-size: 2.1rem !important; }
+.routes-page__title svg { width: 46px !important; height: 46px !important; padding: 9px !important; border-radius: 14px !important; }
+.routes-page__subtitle { font-size: 1rem !important; }
+.routes-filter-bar input,
+.routes-filter-bar select { min-height: 48px; font-size: 0.98rem !important; }
+.view-toggle__btn { padding: 0.6rem 1rem !important; font-size: 0.95rem !important; }
+
+/* ---------- Table becomes a stack of floating cards ---------- */
+.routes-table {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+.routes-table__head {
+  border-radius: 16px !important;
+  padding: 0.85rem 1.6rem !important;
+  font-size: 0.78rem !important;
+  margin-bottom: 0.8rem;
+  border: 1px solid var(--rule) !important;
+}
+.routes-table__head,
+.routes-table .route-row {
+  grid-template-columns: 30px minmax(0, 2.7fr) 0.85fr 0.75fr 1.3fr 0.95fr 0.85fr 0.95fr 44px !important;
+  column-gap: 1.1rem !important;
+}
+.routes-table__body { display: flex; flex-direction: column; gap: 0.85rem; }
+
+.routes-table .route-row {
+  --rc: var(--route-color, #6366f1);
+  min-height: 96px;
+  padding: 1.25rem 1.6rem !important;
+  border: 1px solid var(--rule) !important;
+  border-radius: 20px !important;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--rc) 9%, var(--surface)) 0%, var(--surface) 38%) !important;
+  box-shadow: 0 1px 2px rgba(20, 24, 51, 0.04), 0 10px 26px -20px rgba(20, 24, 51, 0.35);
+  transform: none !important;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease !important;
+  overflow: hidden;
+}
+.routes-table .route-row::before {
+  top: 18%; bottom: 18%; width: 5px;
+  background: var(--rc);
+  box-shadow: 0 0 16px var(--rc);
+}
+.routes-table .route-row:hover {
+  transform: none !important;
+  border-color: color-mix(in srgb, var(--rc) 45%, var(--rule)) !important;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--rc) 16%, var(--surface)) 0%, var(--surface) 55%) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--rc) 12%, transparent), 0 22px 40px -22px color-mix(in srgb, var(--rc) 70%, transparent);
+}
+.routes-table .route-row--selected {
+  border-color: var(--rc) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rc) 25%, transparent) !important;
+}
+
+/* Diagonal light sweep across a row on hover */
+@media (prefers-reduced-motion: no-preference) {
+  .routes-table .route-row > .route-row__cell--route::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; left: -30%;
+    width: 25%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .routes-table .route-row:hover > .route-row__cell--route::after { animation: row-sweep 0.9s ease; }
+}
+@keyframes row-sweep { 0% { left: -30%; opacity: 1; } 100% { left: 110%; opacity: 0; } }
+
+/* ---------- Route cell: big numbered badge + titles ---------- */
+.routes-table .route-row__cell--route {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 1rem !important;
+}
+.route-row__badge {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #fff;
+  font-family: var(--font-display);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.45), transparent 55%),
+    linear-gradient(135deg, var(--rc, #6366f1), color-mix(in srgb, var(--rc, #6366f1) 55%, #1e1b4b));
+  box-shadow: 0 10px 20px -10px var(--rc, #6366f1), inset 0 -3px 0 rgba(0, 0, 0, 0.12);
+  transition: box-shadow 0.25s ease;
+}
+.routes-table .route-row:hover .route-row__badge {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--rc) 20%, transparent), 0 12px 24px -8px var(--rc);
+}
+.route-row__titles { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.routes-table .route-row__name { font-size: 1.22rem !important; font-weight: 800 !important; letter-spacing: -0.02em; }
+.routes-table .route-row__subtitle {
+  font-size: 0.9rem !important;
+  color: var(--ink-soft) !important;
+  white-space: normal !important;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+/* ---------- Bigger cells ---------- */
+.routes-table .route-row .route-row__cell { font-size: 1.02rem; }
+.routes-table__head .route-row__cell,
+.routes-table__head .mono-num {
+  font-family: var(--font-body) !important;
+  font-size: 0.76rem !important;
+  color: var(--primary) !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.1em !important;
+  white-space: nowrap;
+}
+.routes-table .route-row__cell--stops .mono-num { font-size: 1.35rem; font-weight: 800; }
+.routes-table .route-row .route-row__cell--distance,
+.routes-table .route-row .route-row__cell--eta { font-size: 1.15rem !important; font-weight: 700; color: var(--ink); }
+.routes-table .route-row__progress-text { font-size: 0.88rem !important; font-weight: 700; margin-bottom: 6px; display: block; }
+.routes-table .capacity-bar { height: 11px !important; }
+.routes-table .capacity-bar__fill { box-shadow: 0 0 10px rgba(99, 102, 241, 0.45); }
+.routes-table .capacity-bar__fill--full { box-shadow: 0 0 10px rgba(16, 185, 129, 0.45); }
+
+.routes-table .vehicle-pill { font-size: 0.86rem !important; padding: 0.42rem 0.85rem !important; gap: 0.35rem; }
+.routes-table .vehicle-pill svg { width: 15px !important; height: 15px !important; }
+.routes-table .route-status-badge { font-size: 0.86rem !important; padding: 0.4rem 0.9rem !important; }
+.routes-table .route-status-badge::before { width: 8px; height: 8px; }
+
+.routes-table .route-row__cell--select input[type="checkbox"],
+.routes-table__head input[type="checkbox"] { width: 19px !important; height: 19px !important; accent-color: var(--primary); }
+.routes-table .route-row__cell--actions button { border-radius: 12px; }
+.routes-table .route-row__cell--actions button:hover { background: color-mix(in srgb, var(--rc) 14%, transparent); }
+
+/* ---------- Small screens: let the cards breathe ---------- */
+@media (max-width: 1200px) {
+  .routes-table .route-row { min-height: 84px; padding: 1rem 1.1rem !important; }
+  .route-row__badge { width: 46px; height: 46px; font-size: 1.15rem; border-radius: 14px; }
+}

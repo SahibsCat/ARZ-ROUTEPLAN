@@ -4,6 +4,7 @@ import './App.css';
 import './theme-v2.css';
 import './theme-v4-inner.css';
 import './theme-v5-fx.css';
+import './theme-v6-routelist.css';
 import { installFx, celebrate } from './fx';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
 // modal) for the Drivers panel's create/edit/reset-password forms below,
