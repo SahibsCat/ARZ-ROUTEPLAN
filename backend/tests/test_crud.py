@@ -205,7 +205,7 @@ def test_add_manual_address_creates_new_route_when_nothing_matches(db_session):
     """No existing route at all - the fallback vehicle type is used."""
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
 
-    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=_fake_geocode()):
         result = crud.add_manual_address(
             db_session, batch.id,
             address="42 Fake St, Adyar, Chennai", customer_name="Walk-in Customer",
@@ -226,7 +226,7 @@ def test_add_manual_address_puts_the_order_on_a_route_not_in_unassigned(db_sessi
     call was incomplete)."""
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
 
-    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=_fake_geocode()):
         result = crud.add_manual_address(
             db_session, batch.id,
             address="42 Fake St, Adyar, Chennai", customer_name="Walk-in Customer",
@@ -250,7 +250,7 @@ def test_add_manual_address_increments_the_batch_order_count(db_session):
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
     assert batch.total_orders == 0
 
-    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=_fake_geocode()):
         crud.add_manual_address(
             db_session, batch.id,
             address="42 Fake St, Adyar, Chennai", customer_name=None,
@@ -270,7 +270,7 @@ def test_add_manual_address_joins_existing_route_in_the_same_area_with_room(db_s
     route_plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
     existing_route = crud.create_route(db_session, route_plan.id, "car", order_ids=["1"])  # capacity 6, 1 used
 
-    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=_fake_geocode()):
         result = crud.add_manual_address(
             db_session, batch.id,
             address="42 Fake St, Adyar, Chennai", customer_name=None,
@@ -293,7 +293,7 @@ def test_add_manual_address_skips_a_full_same_area_route(db_session):
     route_plan = crud.get_or_create_draft_route_plan(db_session, batch.id)
     full_route = crud.create_route(db_session, route_plan.id, "bike", order_ids=["1", "2", "3"])  # bike capacity 3, now full
 
-    with mock.patch("app.geocode_service.geocode_address", return_value=_fake_geocode()):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=_fake_geocode()):
         result = crud.add_manual_address(
             db_session, batch.id,
             address="42 Fake St, Adyar, Chennai", customer_name=None,
@@ -308,7 +308,7 @@ def test_add_manual_address_skips_a_full_same_area_route(db_session):
 def test_add_manual_address_raises_on_failed_geocode(db_session):
     batch = crud.save_upload_batch(db_session, "orders.xlsx", 0, True, [], [])
 
-    with mock.patch("app.geocode_service.geocode_address", return_value=None):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=None):
         with pytest.raises(crud.GeocodeFailedError):
             crud.add_manual_address(
                 db_session, batch.id,

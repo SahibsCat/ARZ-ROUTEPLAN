@@ -569,7 +569,7 @@ def test_manual_address_endpoint_works_with_no_active_session():
         "address": "1 Manual St, Chennai", "lat": 13.05, "lng": 80.24,
         "display_name": "1 Manual St, Chennai, Tamil Nadu, India", "confidence": 0.9,
     }
-    with mock.patch("app.geocode_service.geocode_address", return_value=fake_geocode):
+    with mock.patch("app.geocode_service.geocode_with_rescue", return_value=fake_geocode):
         response = client.post("/api/routes/manual-address", json={
             "address": "1 Manual St, Chennai", "customer_name": "Walk-in", "vehicle_type": "bike",
         })

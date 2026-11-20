@@ -923,7 +923,7 @@ def add_manual_address(
     resubmits, the same experience as retrying a Failed Order."""
     # Local import - geocode_service imports crud at module level, so a
     # top-of-file import here would be circular.
-    from app.geocode_service import geocode_address, invalidate_cached_geocode
+    from app.geocode_service import geocode_with_rescue, invalidate_cached_geocode
 
     if fallback_vehicle_type not in ("car", "bike"):
         raise RootplanError("vehicle_type must be 'car' or 'bike'")
@@ -938,12 +938,11 @@ def add_manual_address(
     # accuracy fix would otherwise keep winning here too, silently placing
     # the same wrong pin again even after the underlying logic improved.
     invalidate_cached_geocode(cleaned_address, db)
-    geocoded = geocode_address(cleaned_address, db=db)
+    geocoded = geocode_with_rescue(cleaned_address, db=db)
     if geocoded is None:
         raise GeocodeFailedError(
-            "Could not geocode this address precisely enough to place it on the map. "
-            "Check for a missing house/flat number or a landmark-only description, "
-            "then try again."
+            "Could not find this address or its area on the map. "
+            "Add the area name or 6-digit PIN code and try again."
         )
 
     order_id = _generate_manual_order_id(db, batch_id)
@@ -957,7 +956,8 @@ def add_manual_address(
         lng=geocoded["lng"],
         delivery_slot=(delivery_time or "").strip() or None,
         geocode_confidence=geocoded.get("confidence"),
-        location_source="geocoded",
+        geocode_error=geocoded.get("geocode_error") if geocoded.get("location_source") == "approximate" else None,
+        location_source=geocoded.get("location_source") or "geocoded",
         status="pending",
         extra_fields={},
     )

@@ -518,6 +518,7 @@ def _place_remaining_at_depot(geocoded_orders: List[Dict[str, object]]) -> int:
 def geocode_orders(
     orders: List[Dict[str, object]],
     db: Optional[Session] = None,
+    place_unlocated_at_depot: bool = True,
 ) -> Tuple[List[Dict[str, object]], Optional[str]]:
     """Returns (geocoded_orders, provider_error_message). provider_error_message
     is set when the geocoding PROVIDER itself is broken - billing not
@@ -623,7 +624,7 @@ def geocode_orders(
             import traceback
             traceback.print_exc()
 
-    placeholders = _place_remaining_at_depot(geocoded_orders)
+    placeholders = _place_remaining_at_depot(geocoded_orders) if place_unlocated_at_depot else 0
     if placeholders:
         print(f"{placeholders} order(s) had no locatable address - placed at depot, flagged for review")
 
@@ -647,3 +648,27 @@ def geocode_single_address(address: str, db: Optional[Session] = None) -> Option
     surfaces suggested_lat/suggested_lng for Adjust Location instead of
     collapsing to a bare failure. See geocode_address_detailed's docstring."""
     return geocode_address_detailed(address, db=db)
+
+
+def geocode_with_rescue(address: str, db: Optional[Session] = None) -> Optional[Dict[str, object]]:
+    """Single-address version of the bulk upload pipeline, INCLUDING the
+    rescue pass (approximate street/area/PIN-level matches) - used by the
+    Retry and Add Address flows so they no longer reject addresses an
+    upload would have routed. Returns None only when nothing at all could
+    be located (no depot placeholder for a hand-typed/retried address -
+    the admin is right there and can fix the text)."""
+    cleaned = clean_address(address)
+    if not cleaned:
+        return None
+    [order], _ = geocode_orders([{"order_id": "_single", "address": address}], db=db, place_unlocated_at_depot=False)
+    if order.get("lat") is None or order.get("lng") is None:
+        return None
+    return {
+        "address": cleaned,
+        "lat": order["lat"],
+        "lng": order["lng"],
+        "display_name": order.get("geocoded_address") or cleaned,
+        "confidence": order.get("confidence"),
+        "location_source": order.get("location_source") or "geocoded",
+        "geocode_error": order.get("geocode_error"),
+    }

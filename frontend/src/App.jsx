@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import RouteWorkspace, { AdjustLocationModal, EmbeddedPinAdjuster } from './routes/RouteWorkspace';
 import './App.css';
+import './theme-v2.css';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
 // modal) for the Drivers panel's create/edit/reset-password forms below,
 // rather than duplicating that CSS - importing a stylesheet twice is a
@@ -424,7 +425,26 @@ function KpiTile({ variant, icon: Icon, value, label, suffix, title, onClick }) 
 // dispatcher has to notice on their own. Deliberately doesn't invent a
 // "missing data" bucket (no phone/delivery-window field exists on Order
 // yet) - only surfaces what the app actually knows about.
-function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, onRetry, onJump, describeErrorDetail }) {
+// Turns the backend's long technical geocoding message into one short,
+// plain sentence for lists ("Street not found on Google" instead of
+// "Needs Manual Verification - Street name mismatch: 'x' not found in
+// Google's match (confidence: 0.40) — We read: ..."). The full text is
+// still shown on hover / in the detail panel.
+function friendlyGeocodeReason(text) {
+  if (!text) return 'Address not found';
+  const t = String(text);
+  if (/LOCATION UNKNOWN/i.test(t)) return 'Location unknown – placed at depot, set the pin';
+  if (/APPROXIMATE/i.test(t)) return 'Approximate location – check the pin';
+  if (/PIN( code)? mismatch/i.test(t)) return 'PIN code does not match the area';
+  if (/street name mismatch/i.test(t)) return 'Street name not found on the map';
+  if (/house\/door number|house number/i.test(t)) return 'Door number not found on this street';
+  if (/building .* could not be confirmed|building name/i.test(t)) return 'Building name not found';
+  if (/locality|area mismatch/i.test(t)) return 'Area name does not match';
+  if (/not working|billing|api key/i.test(t)) return 'Map service problem – check Google API key';
+  return t.replace(/^Needs Manual Verification\s*-\s*/i, '').split(' — ')[0].replace(/\s*\(confidence[^)]*\)/i, '');
+}
+
+function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, onRetry, onJump, describeErrorDetail, onFixAll, isFixingAll }) {
   const total = failedOrders.length + warnings.length + pendingOrders.length;
   if (total === 0) return null;
   const parts = [];
@@ -450,12 +470,19 @@ function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, 
         <div className="issues-panel__body">
           {failedOrders.length > 0 && (
             <div className="issue-group">
-              <div className="issue-group__label">Failed addresses</div>
+              <div className="issue-group__label issue-group__label--row">
+                <span>Failed addresses</span>
+                {onFixAll && (
+                  <button type="button" className="btn btn--fix-all btn--compact" onClick={onFixAll} disabled={isFixingAll}>
+                    {isFixingAll ? <><span className="spinner" /> Fixing…</> : <>✨ Fix all &amp; route</>}
+                  </button>
+                )}
+              </div>
               {failedOrders.slice(0, 5).map((o) => (
                 <div className="issue-row" key={`issue-fa-${o.order_id}`}>
                   <span className="issue-row__dot" />
                   <span className="issue-row__text">
-                    Order #{o.order_id} — {describeErrorDetail(o.geocode_error, 'address could not be geocoded')}
+                    <strong>#{o.order_id} {o.customer_name || ''}</strong> — {friendlyGeocodeReason(describeErrorDetail(o.geocode_error, ''))}
                   </span>
                   <div className="issue-row__actions">
                     <button type="button" className="btn btn--outline btn--compact" onClick={() => onRetry(o.order_id)}>Retry</button>
@@ -1427,10 +1454,18 @@ function App() {
   // (the backend refuses an in_progress one - see RouteStillActiveError) -
   // an active, currently-tracked run belongs to Live Tracking, not this log.
   const handleDeleteDriverRun = async (run) => {
-    if (!window.confirm(`Delete this run record for ${run.driver_name} (${run.route_name})? This cannot be undone.`)) return;
+    const inProgress = run.route_run_status === 'in_progress';
+    const question = inProgress
+      ? `${run.driver_name}'s ${run.route_name} is still IN PROGRESS.
+
+Deleting it stops this run and removes its live tracking and stops. Use this for runs that got stuck (driver never pressed End Route).
+
+Delete it anyway? This cannot be undone.`
+      : `Delete this run record for ${run.driver_name} (${run.route_name})? This cannot be undone.`;
+    if (!window.confirm(question)) return;
     setDeletingRunId(run.route_id);
     try {
-      const response = await apiFetch(`/api/drivers/history/${run.route_id}`, { method: 'DELETE' });
+      const response = await apiFetch(`/api/drivers/history/${run.route_id}${inProgress ? '?force=true' : ''}`, { method: 'DELETE' });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.detail || `Failed to delete (${response.status})`);
@@ -1878,6 +1913,47 @@ function App() {
       ...prev,
       [orderId]: newAddress,
     }));
+  };
+
+  // "Fix all" - every failed address goes back through the full upload
+  // pipeline (approximate street/area/PIN match, or a flagged depot
+  // placeholder) in ONE request, and routes are rebuilt once.
+  const [isFixingAll, setIsFixingAll] = useState(false);
+  const handleFixAllFailed = async () => {
+    if (!hasVehicles) {
+      setWarnings(['No vehicles configured - set at least one car or bike first.']);
+      return;
+    }
+    if (!failedOrders.length || isFixingAll) return;
+    setIsFixingAll(true);
+    try {
+      const response = await apiFetch('/api/geocode/retry-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders, available_cars: cars, available_bikes: bikes, batch_id: batchId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+      if (data.orders) {
+        setOrders(data.orders);
+        setSuccessfulOrders(data.orders.filter((o) => o.lat != null && o.lng != null));
+      }
+      setFailedOrders(data.failed_orders || []);
+      if (data.routes) setRoutes(data.routes);
+      if (data.pending_orders) setPendingOrders(data.pending_orders);
+      setWarnings(data.warnings || []);
+      setStatus(data.message || 'Fixed failed addresses');
+      setEditedRoutes([]);
+      setPlanId(data.plan_id ?? null);
+      setIsPlanSaved(data.is_saved ?? false);
+      refreshUnassignedOrders();
+      showToast(data.message || 'Failed addresses fixed and routed.');
+    } catch (err) {
+      console.error('Fix all failed:', err);
+      showToast(err.message || 'Could not fix the failed addresses.');
+    } finally {
+      setIsFixingAll(false);
+    }
   };
 
   const handleRetrySingleOrder = async (orderId) => {
@@ -3072,7 +3148,12 @@ function App() {
               to its real siblings (Vehicles under Fleet with Drivers, Live
               Tracking under Dispatch with Routes) instead of being exiled
               to one catch-all section at the bottom. */}
-          {NAV_GROUPS.map((group) => (
+          {/* "Soon" placeholders are hidden - they did nothing but add
+              clutter. Live counts on Failed / Unassigned make problems
+              visible from any page. */}
+          {NAV_GROUPS.map((group) => ({ ...group, items: group.items.filter((item) => !item.soon) }))
+            .filter((group) => group.items.length > 0)
+            .map((group) => (
             <Fragment key={group.label}>
               <div className="sidebar__section-label">{group.label}</div>
               {group.items.map((item) => (
@@ -3096,6 +3177,12 @@ function App() {
                   >
                     <item.icon width={17} height={17} />
                     <span>{item.label}</span>
+                    {item.key === 'failed' && failedOrders.length > 0 && (
+                      <span className="nav-item__count nav-item__count--danger">{failedOrders.length}</span>
+                    )}
+                    {item.key === 'unassigned' && pendingOrders.length > 0 && (
+                      <span className="nav-item__count nav-item__count--warn">{pendingOrders.length}</span>
+                    )}
                   </button>
                 )
               ))}
@@ -3291,6 +3378,8 @@ function App() {
             isOpen={issuesOpen}
             onToggle={() => setIssuesOpen((v) => !v)}
             onRetry={handleRetrySingleOrder}
+            onFixAll={handleFixAllFailed}
+            isFixingAll={isFixingAll}
             onJump={handleIssueJump}
             describeErrorDetail={describeErrorDetail}
           />
@@ -3615,6 +3704,17 @@ function App() {
                   which one you looked at. Matched to the nav label. */}
               <h2 className="board__title"><MapPinOff width={18} height={18} /> Failed Addresses</h2>
               <span className="board__count mono-num">{failedOrders.length}</span>
+              {failedOrders.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn--fix-all"
+                  onClick={handleFixAllFailed}
+                  disabled={isFixingAll}
+                  title="Find the best location for every failed address and add them all to routes"
+                >
+                  {isFixingAll ? <><span className="spinner" /> Fixing…</> : <>✨ Fix all &amp; route ({failedOrders.length})</>}
+                </button>
+              )}
             </div>
             <div className="board__body">
               {isProcessing && failedOrders.length === 0 ? (
@@ -3649,7 +3749,7 @@ function App() {
                             <span className="failed-row__name">{order.customer_name}</span>
                           </span>
                           <span className="failed-row__reason" title={order.geocode_error || 'Geocoding failed'}>
-                            {order.geocode_error || 'Geocoding failed'}
+                            {friendlyGeocodeReason(order.geocode_error)}
                           </span>
                           {feedback?.status === 'error' && <span className="failed-row__flag" title="Last retry didn't match either" />}
                         </button>
@@ -3681,7 +3781,12 @@ function App() {
                             what pushed the text out past its container). */}
                         <div className="failed-detail__reason">
                           <IconAlert width={13} height={13} />
-                          <span>{selectedFailedOrder.geocode_error || 'Geocoding failed'}</span>
+                          <span>
+                            <strong className="failed-detail__headline">{friendlyGeocodeReason(selectedFailedOrder.geocode_error)}</strong>
+                            {selectedFailedOrder.geocode_error && (
+                              <small className="failed-detail__more">{selectedFailedOrder.geocode_error.replace(/^Needs Manual Verification\s*-\s*/i, '')}</small>
+                            )}
+                          </span>
                         </div>
 
                         {/* Embedded Interactive Draggable Pin Map */}
@@ -3928,9 +4033,8 @@ function App() {
               </button>
             </div>
             <p className="history-panel__sub">
-              Every driver's past work runs - start time, end time, and distance travelled (from their own GPS
-              trail, same figure the driver app and Live Tracking show). Only a finished run can be deleted here;
-              an in-progress one belongs to Live Tracking until it's ended.
+              Every driver's work runs - start, end and distance travelled from their GPS trail. Any run can be
+              deleted, including one stuck "In progress".
             </p>
             <div className="history-panel__body">
               {isLoadingDriverData ? (
@@ -3981,8 +4085,8 @@ function App() {
                             <button
                               type="button"
                               className="btn btn--danger-ghost btn--compact"
-                              disabled={run.route_run_status === 'in_progress' || deletingRunId === run.route_id}
-                              title={run.route_run_status === 'in_progress' ? 'End this route before deleting its record' : 'Delete this run record'}
+                              disabled={deletingRunId === run.route_id}
+                              title={run.route_run_status === 'in_progress' ? 'Delete this stuck/in-progress run (asks to confirm)' : 'Delete this run record'}
                               onClick={() => handleDeleteDriverRun(run)}
                             >
                               {deletingRunId === run.route_id ? <span className="spinner" /> : 'Delete'}

@@ -825,7 +825,7 @@ def list_driver_history(
     return rows, total
 
 
-def delete_driver_history_record(db: Session, route_id: int) -> None:
+def delete_driver_history_record(db: Session, route_id: int, force: bool = False) -> None:
     """Deletes one run's row from the Driver Data log. Deliberately not
     crud.delete_route: that one frees the route's orders back to
     Unassigned, which is correct for pulling a *live* route out of
@@ -837,9 +837,12 @@ def delete_driver_history_record(db: Session, route_id: int) -> None:
     route = db.query(Route).filter(Route.id == route_id).first()
     if route is None:
         raise RouteNotFoundError("Route not found")
-    if route.route_run_status == "in_progress":
+    if route.route_run_status == "in_progress" and not force:
         raise RouteStillActiveError(
             "This route is still in progress - end it before deleting its history record."
         )
+    # force=True: the admin explicitly chose to delete a run stuck "in
+    # progress" (driver never pressed End Route). Its live GPS trail and
+    # stops go with it, same as a finished run.
     db.delete(route)
     db.commit()

@@ -313,6 +313,76 @@ async def api_generate_route_plan(
     return _process_route_generation(orders, available_cars, available_bikes, batch_id, db)
 
 
+@app.post("/api/geocode/retry-all")
+async def retry_all_failed_geocodes(payload: Dict[str, object] = Body(...), db: Session = Depends(get_db)):
+    """One click "Fix all": re-runs every still-failed order through the
+    full upload pipeline (retry, approximate street/area/PIN match, and as
+    a last resort a depot placeholder flagged LOCATION UNKNOWN), then
+    regenerates routes ONCE - instead of one retry + full route rebuild per
+    order. Same response shape as /api/geocode/retry."""
+    orders_input = payload.get("orders", [])
+    if not isinstance(orders_input, list):
+        orders_input = []
+    available_cars = int(payload.get("available_cars", 1))
+    available_bikes = int(payload.get("available_bikes", 2))
+    raw_batch_id = payload.get("batch_id")
+    batch_id = int(raw_batch_id) if raw_batch_id is not None else None
+
+    from app.geocode_service import invalidate_cached_geocode
+
+    items = [dict(o) for o in orders_input]
+    failed_items = [
+        o for o in items
+        if (o.get("lat") is None or o.get("lng") is None) and o.get("location_source") != "manual"
+    ]
+    for o in failed_items:
+        o.pop("suggested_lat", None)
+        o.pop("suggested_lng", None)
+        invalidate_cached_geocode(str(o.get("address", "")), db)
+
+    fixed, _ = geocode_orders(failed_items, db=db) if failed_items else ([], None)
+    fixed_by_id = {str(o.get("order_id")): o for o in fixed}
+
+    updated_orders = []
+    for item in items:
+        replacement = fixed_by_id.get(str(item.get("order_id")))
+        if replacement is not None:
+            item = replacement
+            succeeded = item.get("lat") is not None and item.get("lng") is not None
+            try:
+                crud.record_retry_attempt(
+                    db, batch_id, str(item.get("order_id")), None,
+                    success=succeeded, failure_reason=item.get("geocode_error"),
+                    confidence=item.get("confidence"),
+                )
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                db.rollback()
+        updated_orders.append(item)
+
+    successful_orders = [o for o in updated_orders if o.get("lat") is not None and o.get("lng") is not None]
+    failed_orders = [o for o in updated_orders if o.get("lat") is None or o.get("lng") is None]
+    plan = generate_routes(successful_orders, available_cars=available_cars, available_bikes=available_bikes)
+    plan_id = _safe_save_route_plan(db, batch_id, plan, available_cars, available_bikes)
+    _safe_update_fleet_settings(db, available_cars, available_bikes)
+    persisted = _persisted_plan_response(db, plan_id, plan)
+    fixed_count = len(failed_items) - len([o for o in fixed if o.get("lat") is None])
+    return {
+        "message": f"Fixed {fixed_count} of {len(failed_items)} failed address(es) - check the ones marked APPROXIMATE / LOCATION UNKNOWN",
+        "fixed_count": fixed_count,
+        "total_orders": len(updated_orders),
+        "is_valid": True,
+        "orders": updated_orders,
+        "successful_orders": successful_orders,
+        "failed_orders": failed_orders,
+        "routes": [route.model_dump() for route in persisted.routes],
+        "pending_orders": persisted.pending_orders,
+        "warnings": persisted.warnings,
+        "plan_id": plan_id,
+        "is_saved": False,
+    }
+
+
 @app.post("/api/geocode/retry")
 async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Session = Depends(get_db)):
     order_id = str(payload.get("order_id", ""))
@@ -326,7 +396,7 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
     batch_id = int(raw_batch_id) if raw_batch_id is not None else None
 
     try:
-        from app.geocode_service import geocode_single_address, invalidate_cached_geocode
+        from app.geocode_service import geocode_single_address, geocode_with_rescue, invalidate_cached_geocode
 
         updated_orders = []
 
@@ -353,14 +423,22 @@ async def retry_single_geocode(payload: Dict[str, object] = Body(...), db: Sessi
                 # invalidated, edited address or not - even a same-address
                 # retry should count as a fresh attempt.
                 invalidate_cached_geocode(target_address, db)
-                res = geocode_single_address(target_address, db=db)
+                # Same pipeline as an upload, rescue pass included - a
+                # retry now routes anything an upload would have routed
+                # (approximate street/area matches flagged for review).
+                rescued = geocode_with_rescue(target_address, db=db)
+                res = rescued if rescued is not None else geocode_single_address(target_address, db=db)
                 succeeded = res is not None and res.get("lat") is not None
                 if succeeded:
                     item["lat"] = res["lat"]
                     item["lng"] = res["lng"]
                     item["geocoded_address"] = res["display_name"]
                     item["confidence"] = res.get("confidence")
-                    item.pop("geocode_error", None)
+                    item["location_source"] = res.get("location_source") or "geocoded"
+                    if res.get("location_source") == "approximate":
+                        item["geocode_error"] = res.get("geocode_error")
+                    else:
+                        item.pop("geocode_error", None)
                     item.pop("suggested_lat", None)
                     item.pop("suggested_lng", None)
                 else:
@@ -962,9 +1040,9 @@ def get_driver_history_endpoint(
 
 
 @app.delete("/api/drivers/history/{route_id}")
-def delete_driver_history_endpoint(route_id: int, db: Session = Depends(get_db)):
+def delete_driver_history_endpoint(route_id: int, force: bool = Query(False), db: Session = Depends(get_db)):
     try:
-        crud_driver.delete_driver_history_record(db, route_id)
+        crud_driver.delete_driver_history_record(db, route_id, force=force)
     except crud.RootplanError as e:
         _raise_for_driver_error(e)
     return {"deleted": True, "route_id": route_id}

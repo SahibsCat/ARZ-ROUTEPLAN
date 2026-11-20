@@ -71,3 +71,42 @@ def test_login_accepts_mobile_number_and_any_case(db_session):
     assert crud_driver.find_driver_for_login(db_session, "9800000002") is None
     driver, _ = crud_driver.authenticate_driver(db_session, "9800000001", "pass123")
     assert driver.username == "kumar"
+
+
+def test_force_delete_in_progress_run(db_session):
+    import pytest
+    driver = crud_driver.create_driver(db_session, "Stuck", "stuck", "pass123")
+    route = _route(db_session)
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    route.route_run_status = "in_progress"
+    db_session.commit()
+    with pytest.raises(crud.RootplanError):
+        crud_driver.delete_driver_history_record(db_session, route.id)
+    crud_driver.delete_driver_history_record(db_session, route.id, force=True)
+    from app.models import Route
+    assert db_session.query(Route).filter(Route.id == route.id).first() is None
+
+
+def test_retry_all_routes_every_failed_order(monkeypatch):
+    from app.geocoding.base import GeocodeResult, STATUS_NEEDS_MANUAL_VERIFICATION
+
+    class Fake:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def geocode(self, q):
+            return GeocodeResult(13.0, 80.2, "x", STATUS_NEEDS_MANUAL_VERIFICATION, "google", 0.3, "Street name mismatch")
+
+    monkeypatch.setattr("app.geocode_service._build_geocoder", lambda: Fake())
+    monkeypatch.setattr("app.main.generate_routes", lambda orders, available_cars, available_bikes: {"route_count": 0, "routes": [], "pending_orders": [], "warnings": []})
+    client = TestClient(app)
+    orders = [
+        {"order_id": "1", "address": "12 Bad St, Velachery", "lat": None, "lng": None, "geocode_error": "x"},
+        {"order_id": "2", "address": "", "lat": None, "lng": None},
+        {"order_id": "3", "address": "ok", "lat": 13.0, "lng": 80.0},
+    ]
+    data = client.post("/api/geocode/retry-all", json={"orders": orders, "available_cars": 1, "available_bikes": 1}).json()
+    assert data["failed_orders"] == []
+    by_id = {o["order_id"]: o for o in data["orders"]}
+    assert by_id["1"]["location_source"] == "approximate"
+    assert by_id["2"]["location_source"] == "unlocated"
+    assert data["fixed_count"] == 2
