@@ -604,15 +604,25 @@ textarea:focus {
 /* ---- Scroll reveal (progressive: only where supported) ---- */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .console--flow .flow-step,
-    .console--flow .board,
+    /* Only the step headings move. Boards fade (opacity only): a
+       transform on a board would trap the position:fixed route drawer,
+       modals and backdrops inside it. */
+    /* Boards are NOT animated at all: even an opacity animation makes a
+       board a stacking context, which pushed the route drawer and modals
+       underneath the sticky top bar. */
     .console--flow .toolbar {
+      animation: flow-fade linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+    .console--flow .flow-step {
       animation: flow-reveal linear both;
       animation-timeline: view();
       animation-range: entry 0% entry 35%;
     }
   }
 }
+@keyframes flow-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes flow-reveal {
   from { opacity: 0; transform: translateY(28px) scale(0.985); }
   to { opacity: 1; transform: none; }

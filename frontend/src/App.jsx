@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import RouteWorkspace, { AdjustLocationModal, EmbeddedPinAdjuster } from './routes/RouteWorkspace';
 import './App.css';
 import './theme-v2.css';
+import './theme-v4-inner.css';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
 // modal) for the Drivers panel's create/edit/reset-password forms below,
 // rather than duplicating that CSS - importing a stylesheet twice is a

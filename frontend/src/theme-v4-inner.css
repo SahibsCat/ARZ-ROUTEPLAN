@@ -1,0 +1,329 @@
+/* =======================================================================
+   OptiRoute v4 — Inner pages: routes, route detail, stops, drivers,
+   failed addresses, overlays, modals + a shared animation kit.
+   Loaded after theme-v2.css (see App.jsx). Restyle only.
+======================================================================= */
+
+/* ---------- Animation kit ---------- */
+@keyframes kit-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes kit-pop { 0% { opacity: 0; transform: scale(0.94) translateY(10px); } 100% { opacity: 1; transform: none; } }
+@keyframes kit-slide-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes kit-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes kit-pulse-ring { 0% { box-shadow: 0 0 0 0 currentColor; } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes kit-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes kit-shine { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(260%) skewX(-20deg); } }
+@keyframes kit-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Staggered entrance for every list row */
+  .route-row, .split-route-row, .unassigned-row, .failed-row,
+  .drivers-table tbody tr, .driver-runs-table tbody tr, .history-row, .route-stop {
+    animation: kit-rise 0.45s cubic-bezier(.2, .8, .2, 1) backwards;
+  }
+  :is(.route-row, .split-route-row, .unassigned-row, .failed-row, .history-row, .route-stop):nth-child(2),
+  :is(.drivers-table, .driver-runs-table) tbody tr:nth-child(2) { animation-delay: 0.05s; }
+  :is(.route-row, .split-route-row, .unassigned-row, .failed-row, .history-row, .route-stop):nth-child(3),
+  :is(.drivers-table, .driver-runs-table) tbody tr:nth-child(3) { animation-delay: 0.1s; }
+  :is(.route-row, .split-route-row, .unassigned-row, .failed-row, .history-row, .route-stop):nth-child(4),
+  :is(.drivers-table, .driver-runs-table) tbody tr:nth-child(4) { animation-delay: 0.15s; }
+  :is(.route-row, .split-route-row, .unassigned-row, .failed-row, .history-row, .route-stop):nth-child(5),
+  :is(.drivers-table, .driver-runs-table) tbody tr:nth-child(5) { animation-delay: 0.2s; }
+  :is(.route-row, .split-route-row, .unassigned-row, .failed-row, .history-row, .route-stop):nth-child(n+6),
+  :is(.drivers-table, .driver-runs-table) tbody tr:nth-child(n+6) { animation-delay: 0.25s; }
+
+  /* Shine sweep across primary buttons on hover */
+  .btn--primary, .toolbar-btn--primary, .btn--fix-all { position: relative; overflow: hidden; }
+  .btn--primary::after, .toolbar-btn--primary::after, .btn--fix-all::after {
+    content: "";
+    position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    transform: translateX(-120%) skewX(-20deg);
+    pointer-events: none;
+  }
+  .btn--primary:hover::after, .toolbar-btn--primary:hover::after, .btn--fix-all:hover::after { animation: kit-shine 0.8s ease; }
+
+  /* Overlays & modals zoom in; the route drawer slides */
+  .modal, .history-panel, .command-palette { animation: kit-pop 0.32s cubic-bezier(.2, .9, .3, 1.2) backwards; }
+  .route-drawer { animation: kit-slide-in 0.38s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .toast { animation: kit-pop 0.35s cubic-bezier(.2, .9, .3, 1.3) backwards; }
+  .empty-state svg { animation: kit-float 3s ease-in-out infinite; }
+  .route-progress__bar, .progress-bar__fill { transform-origin: left; animation: kit-grow 0.9s cubic-bezier(.2, .8, .2, 1) both; }
+}
+
+/* ---------- Workspace tabs & page header ---------- */
+.workspace-tabs {
+  border-bottom: none !important;
+  gap: 0.4rem;
+  padding: 0.35rem;
+  background: var(--surface-2);
+  border-radius: 16px;
+  width: fit-content;
+}
+.workspace-tab {
+  border-bottom: none !important;
+  border-radius: 12px;
+  padding: 0.6rem 1.1rem !important;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.workspace-tab--active {
+  background: var(--surface) !important;
+  color: var(--primary) !important;
+  box-shadow: 0 6px 16px -8px rgba(79, 70, 229, 0.45), 0 1px 2px rgba(20, 24, 51, 0.06);
+}
+.workspace-tab__count { background: var(--primary-soft) !important; color: var(--primary) !important; }
+.workspace-tab__count--warn { background: var(--signal-soft) !important; color: var(--signal) !important; }
+.routes-page__title { font-size: 1.75rem !important; letter-spacing: -0.03em; }
+.routes-page__title svg {
+  color: #fff; background: var(--primary-gradient); border-radius: 12px; padding: 7px;
+  width: 38px !important; height: 38px !important;
+  box-shadow: 0 8px 18px -8px rgba(79, 70, 229, 0.8);
+}
+.view-toggle { border-radius: 14px !important; padding: 4px !important; background: var(--surface-2) !important; border: none !important; }
+.view-toggle__btn { border-radius: 10px !important; transition: all 0.2s; }
+.view-toggle__btn--active {
+  background: var(--primary-gradient) !important; color: #fff !important;
+  box-shadow: 0 6px 14px -6px rgba(79, 70, 229, 0.7);
+}
+.routes-filter-bar input, .routes-filter-bar select, .select-compact, .search-field { border-radius: 12px !important; }
+
+/* ---------- Routes table ---------- */
+.routes-table-wrap, .routes-table {
+  border-radius: 20px !important; overflow: hidden; border-color: var(--rule) !important;
+  box-shadow: var(--shadow-md);
+}
+.routes-table__head {
+  background: linear-gradient(90deg, var(--primary-soft), var(--surface-2)) !important;
+  border-bottom: 1px solid var(--rule) !important;
+  color: var(--primary) !important;
+  letter-spacing: 0.1em !important;
+}
+.route-row {
+  border-left: none !important;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s !important;
+}
+.route-row::before {
+  content: "";
+  position: absolute; left: 0; top: 14%; bottom: 14%; width: 4px; border-radius: 0 4px 4px 0;
+  background: var(--route-color, var(--primary));
+  box-shadow: 0 0 12px var(--route-color, var(--primary));
+}
+.route-row:hover {
+  background: var(--surface) !important;
+  transform: translateX(4px);
+  box-shadow: 0 10px 24px -14px rgba(20, 24, 51, 0.35);
+  z-index: 1;
+}
+.route-row--selected { background: var(--primary-soft) !important; }
+.route-row__name { font-weight: 800 !important; font-size: 1rem; }
+.capacity-bar { height: 8px !important; border-radius: 99px !important; }
+.capacity-bar__fill {
+  border-radius: 99px !important;
+  background: linear-gradient(90deg, #6366f1, #22d3ee, #6366f1) !important;
+  background-size: 200% 100% !important;
+}
+.capacity-bar__fill--full { background: linear-gradient(90deg, #10b981, #34d399, #10b981) !important; background-size: 200% 100% !important; }
+.capacity-bar__fill--over { background: linear-gradient(90deg, #f43f5e, #fb923c, #f43f5e) !important; background-size: 200% 100% !important; }
+@media (prefers-reduced-motion: no-preference) {
+  .capacity-bar__fill { animation: kit-shimmer 3.5s linear infinite; }
+}
+.vehicle-pill { border-radius: 999px !important; padding: 0.25rem 0.65rem !important; font-weight: 800 !important; }
+.vehicle-pill--car { background: linear-gradient(135deg, #e0f2fe, #dbeafe) !important; color: #1d4ed8 !important; }
+.vehicle-pill--bike { background: linear-gradient(135deg, #dcfce7, #d1fae5) !important; color: #047857 !important; }
+.route-status-badge {
+  border-radius: 999px !important; padding: 0.25rem 0.7rem !important; font-weight: 800 !important;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.route-status-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.route-status-badge--open { background: var(--good-soft) !important; color: var(--good) !important; }
+.route-status-badge--open::before { animation: kit-pulse-ring 2s infinite; }
+.route-status-badge--full { background: var(--primary-soft) !important; color: var(--primary) !important; }
+.route-status-badge--delayed { background: var(--critical-soft) !important; color: var(--critical) !important; }
+
+/* ---------- Route detail drawer ---------- */
+.route-drawer { border-left: none !important; box-shadow: -30px 0 80px -20px rgba(20, 24, 51, 0.45) !important; }
+.route-drawer-backdrop { background: rgba(14, 16, 40, 0.5) !important; backdrop-filter: blur(5px); }
+.route-detail__header {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(500px 200px at 100% 0%, rgba(251, 191, 36, 0.28), transparent 60%),
+    linear-gradient(120deg, #312e81 0%, #4f46e5 55%, #7c3aed 100%) !important;
+  border-bottom: none !important;
+  padding: 1.75rem 2rem 1.5rem !important;
+}
+.route-detail__title { color: #fff !important; font-size: 2rem !important; letter-spacing: -0.03em; }
+.route-detail__subtitle { color: rgba(255, 255, 255, 0.85) !important; }
+.route-detail__back {
+  background: rgba(255, 255, 255, 0.14) !important; color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important; backdrop-filter: blur(6px);
+}
+.route-detail__back:hover { background: rgba(255, 255, 255, 0.24) !important; }
+.route-detail__actions .btn { background: rgba(255, 255, 255, 0.95); border-color: transparent; color: #141833; }
+.route-detail__actions .btn--danger-ghost { background: rgba(255, 241, 242, 0.95) !important; color: #e11d48 !important; }
+.route-detail__actions select { background-color: rgba(255, 255, 255, 0.95) !important; border-color: transparent !important; color: #141833 !important; }
+.route-detail__header .route-status-badge { background: rgba(255, 255, 255, 0.2) !important; color: #fff !important; }
+
+.route-overview {
+  background: transparent !important;
+  border-bottom: none !important;
+  padding: 1.5rem 2rem !important;
+  gap: 0.85rem !important;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+}
+.route-overview__item {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.route-overview__item::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: var(--primary-gradient);
+}
+.route-overview__item:nth-child(3n+2)::before { background: linear-gradient(90deg, #10b981, #22d3ee); }
+.route-overview__item:nth-child(3n)::before { background: linear-gradient(90deg, #f59e0b, #ec4899); }
+.route-overview__item:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.route-overview__value { font-size: 1.35rem !important; font-weight: 800 !important; color: var(--ink) !important; }
+
+/* ---------- Stop timeline ---------- */
+.route-stop {
+  border-radius: 16px !important;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.route-stop:hover { background: var(--surface-2); }
+.route-stop--selected { background: var(--primary-soft) !important; box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.route-stop__seq {
+  background: var(--primary-gradient) !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 4px var(--primary-soft), 0 8px 16px -8px rgba(79, 70, 229, 0.8) !important;
+  width: 36px !important; height: 36px !important;
+}
+.route-stop__seq--late { background: linear-gradient(135deg, #fb7185, #e11d48) !important; box-shadow: 0 0 0 4px var(--critical-soft) !important; }
+.route-stop--delivered .route-stop__seq { background: linear-gradient(135deg, #34d399, #059669) !important; box-shadow: 0 0 0 4px var(--good-soft) !important; }
+.route-stop__connector { width: 3px !important; border-radius: 3px; background: linear-gradient(180deg, var(--accent-soft), var(--rule)) !important; }
+.route-stop__customer { font-weight: 800 !important; font-size: 1rem; }
+.route-stop-list__terminal-dot { background: var(--saffron-gradient) !important; box-shadow: 0 0 0 4px var(--signal-soft); }
+.stop-status, .pin-badge, .tag { border-radius: 999px !important; font-weight: 800 !important; }
+
+/* ---------- Driver & tracking cards / live pills ---------- */
+.driver-card {
+  border-radius: 20px !important;
+  border: 1px solid var(--rule) !important;
+  background: linear-gradient(160deg, var(--surface) 0%, var(--primary-soft) 140%) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+.driver-card__name { font-weight: 800 !important; font-size: 1.1rem; }
+.tracking-status-pill {
+  border-radius: 999px !important; font-weight: 800 !important;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.tracking-status-pill--live { background: var(--good-soft) !important; color: var(--good) !important; }
+.tracking-status-pill--live::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+  animation: kit-pulse-ring 1.6s infinite;
+}
+
+/* ---------- Map ---------- */
+.fleet-map, .route-map-card, .adjust-location-map, .live-map-modal__map {
+  border-radius: 20px !important; overflow: hidden; box-shadow: var(--shadow-md);
+}
+.fleet-map__toolbar, .fleet-map__legend {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 14px !important;
+}
+.fleet-map__toolbar-btn { border-radius: 10px !important; }
+
+/* ---------- Unassigned / split list ---------- */
+.unassigned-row, .split-route-row {
+  border-radius: 14px !important;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.unassigned-row:hover, .split-route-row:hover { transform: translateX(3px); box-shadow: var(--shadow-md); }
+.split-route-row--selected { background: var(--primary-soft) !important; box-shadow: inset 3px 0 0 var(--primary); }
+.bulk-assign-bar {
+  border-radius: 16px !important; background: var(--primary-gradient) !important; color: #fff !important;
+  box-shadow: 0 14px 30px -14px rgba(79, 70, 229, 0.8);
+}
+
+/* ---------- Drivers & driver-data tables ---------- */
+.drivers-table__name, .driver-runs-table__name { font-weight: 800 !important; }
+.drivers-table__code, .driver-runs-table__code {
+  display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 6px;
+  background: var(--primary-soft); color: var(--primary) !important; font-size: 0.72rem !important;
+}
+.driver-status-pill { border-radius: 999px !important; padding: 0.3rem 0.75rem !important; }
+.driver-status-pill--active { background: var(--good-soft) !important; color: var(--good) !important; }
+.driver-status-pill__dot { color: var(--good); animation: kit-pulse-ring 2.2s infinite; }
+.driver-status-pill--pending { background: var(--signal-soft) !important; color: var(--signal) !important; }
+
+/* ---------- History / Driver Data overlays ---------- */
+.history-panel {
+  border-radius: 24px !important; overflow: hidden; border: none !important;
+  box-shadow: 0 40px 90px -30px rgba(14, 16, 40, 0.6) !important;
+}
+.history-panel > div:first-child {
+  background:
+    radial-gradient(400px 160px at 100% 0%, rgba(251, 191, 36, 0.25), transparent 60%),
+    linear-gradient(120deg, #312e81, #4f46e5 60%, #7c3aed) !important;
+  color: #fff !important;
+  border-bottom: none !important;
+}
+.history-panel > div:first-child h2,
+.history-panel > div:first-child h3,
+.history-panel > div:first-child svg { color: #fff !important; }
+.history-panel > div:first-child button {
+  background: rgba(255, 255, 255, 0.15) !important; border-color: rgba(255, 255, 255, 0.3) !important; color: #fff !important;
+}
+.history-panel__sub { background: var(--primary-soft) !important; color: var(--ink-soft) !important; }
+.history-row { border-radius: 14px !important; transition: background 0.2s, transform 0.2s; }
+.history-row:hover { transform: translateX(3px); }
+.history-row--active { background: var(--primary-soft) !important; box-shadow: inset 3px 0 0 var(--primary); }
+
+/* ---------- Modals ---------- */
+.modal { border: none !important; overflow: hidden; }
+.modal__header { background: linear-gradient(120deg, var(--primary-soft), var(--surface)) !important; }
+.modal__footer { background: var(--surface-2) !important; }
+.modal__input, .modal input, .modal select, .modal textarea { border-radius: 12px !important; }
+
+/* ---------- Failed address detail ---------- */
+.failed-detail__reason {
+  border: none !important;
+  background: linear-gradient(120deg, var(--critical-soft), var(--surface)) !important;
+  box-shadow: inset 4px 0 0 var(--critical);
+}
+.failed-split__detail { border-radius: 22px !important; }
+.pin-adjuster__banner { border-radius: 14px !important; }
+
+/* ---------- Skeleton shimmer ---------- */
+.skeleton-line, .skeleton-card {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%) !important;
+  background-size: 200% 100% !important;
+  animation: kit-shimmer 1.4s ease-in-out infinite !important;
+}
+
+/* ---------- Command palette ---------- */
+.command-palette {
+  border-radius: 22px !important; overflow: hidden; border: none !important;
+  box-shadow: 0 40px 90px -30px rgba(14, 16, 40, 0.6) !important;
+}
+.command-palette__item:hover { background: var(--primary-soft) !important; color: var(--primary) !important; }
+
+/* ---------- Dark mode ---------- */
+:root[data-theme="dark"] .vehicle-pill--car { background: rgba(59, 130, 246, 0.16) !important; color: #93c5fd !important; }
+:root[data-theme="dark"] .vehicle-pill--bike { background: rgba(16, 185, 129, 0.16) !important; color: #6ee7b7 !important; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .vehicle-pill--car { background: rgba(59, 130, 246, 0.16) !important; color: #93c5fd !important; }
+  :root:not([data-theme="light"]) .vehicle-pill--bike { background: rgba(16, 185, 129, 0.16) !important; color: #6ee7b7 !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
