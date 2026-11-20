@@ -104,6 +104,41 @@ const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 const NAV_ITEMS_SOON = NAV_ITEMS.filter((item) => item.soon);
 const findNavItem = (key) => NAV_ITEMS.find((item) => item.key === key);
 const WORKSPACE_PAGES = ['generate', 'unassigned', 'live-tracking'];
+
+// One-page scrolling layout: every section is rendered, stacked in the
+// order a dispatcher actually works (overview -> upload -> fix addresses ->
+// routes -> team), and the sidebar scrolls to a section instead of
+// swapping pages.
+const SCROLL_FLOW = true;
+const SECTION_FOR_NAV = {
+  dashboard: 'flow-overview',
+  generate: 'flow-routes',
+  unassigned: 'flow-routes',
+  'live-tracking': 'flow-routes',
+  failed: 'flow-addresses',
+  drivers: 'flow-team',
+};
+const NAV_FOR_SECTION = {
+  'flow-overview': 'dashboard',
+  'flow-upload': 'dashboard',
+  'flow-addresses': 'failed',
+  'flow-routes': 'generate',
+  'flow-team': 'drivers',
+};
+
+// Big numbered heading that opens each section of the scrolling page.
+function FlowStep({ id, n, title, subtitle, done, tone }) {
+  return (
+    <div className={`flow-step flow-step--${tone || 'indigo'}${done ? ' flow-step--done' : ''}`} id={id}>
+      <div className="flow-step__num">{done ? '✓' : n}</div>
+      <div className="flow-step__text">
+        <div className="flow-step__eyebrow">Step {n}</div>
+        <h2 className="flow-step__title">{title}</h2>
+        {subtitle ? <p className="flow-step__sub">{subtitle}</p> : null}
+      </div>
+    </div>
+  );
+}
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const SOON_BLURBS = {
   vehicles: 'Individual vehicle records - plate number, type, and which driver each one belongs to - not just the car/bike counts on the Routes page. Needs its own backend table.',
@@ -1168,13 +1203,38 @@ function App() {
   const isDark = theme === 'system' ? systemPrefersDark : theme === 'dark';
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
 
+  const scrollToSection = (sectionId) => {
+    requestAnimationFrame(() => {
+      const el = document.getElementById(sectionId);
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY - 150;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    });
+  };
+
   const goToPage = (key) => {
     setPageView(key);
     if (key === 'unassigned' || key === 'generate' || key === 'live-tracking') {
       setNavCommandSeq((n) => n + 1);
     }
-    window.scrollTo({ top: 0 });
+    if (SCROLL_FLOW && SECTION_FOR_NAV[key]) scrollToSection(SECTION_FOR_NAV[key]);
+    else window.scrollTo({ top: 0 });
   };
+
+  // Scroll-spy: highlights the sidebar item for whichever section is on
+  // screen. Kept separate from pageView so scrolling never flips the
+  // routes workspace between its Routes / Unassigned tabs.
+  const [activeSection, setActiveSection] = useState('flow-overview');
+  useEffect(() => {
+    if (!SCROLL_FLOW || typeof IntersectionObserver === 'undefined') return undefined;
+    const ids = ['flow-overview', 'flow-upload', 'flow-addresses', 'flow-routes', 'flow-team'];
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (visible[0]) setActiveSection(visible[0].target.id);
+    }, { rootMargin: '-140px 0px -55% 0px', threshold: 0 });
+    const timer = setTimeout(() => ids.forEach((id) => { const el = document.getElementById(id); if (el) observer.observe(el); }), 300);
+    return () => { clearTimeout(timer); observer.disconnect(); };
+  }, []);
 
   const handleNavClick = (item) => {
     setMobileNavOpen(false);
@@ -2976,7 +3036,11 @@ Delete it anyway? This cannot be undone.`
   const alertCount = errors.length + warnings.length;
 
   // Sidebar highlight: an open overlay wins, otherwise the current page.
-  const activeNav = soonOverlay || (historyOpen ? 'history' : driverDataOpen ? 'driver-data' : pageView);
+  const activeNav = soonOverlay || (historyOpen ? 'history' : driverDataOpen ? 'driver-data'
+    : SCROLL_FLOW ? (pageView === 'live-tracking' && activeSection === 'flow-routes' ? 'live-tracking'
+      : pageView === 'unassigned' && activeSection === 'flow-routes' ? 'unassigned'
+        : NAV_FOR_SECTION[activeSection] || pageView)
+      : pageView);
   const HEADER_CONTENT = {
     dashboard: { title: 'Dashboard', subtitle: 'Delivery route planning & vehicle assignment' },
     generate: { title: 'Routes', subtitle: `${routes.length} route${routes.length === 1 ? '' : 's'} today` },
@@ -3350,9 +3414,46 @@ Delete it anyway? This cannot be undone.`
       {/* One page per sidebar item (pageView). Dashboard = today's numbers,
           issues and the Generate Routes panel; every other page shows only
           its own board. */}
-      <div className="console">
-        {pageView === 'dashboard' && (
+      <div className={`console${SCROLL_FLOW ? ' console--flow' : ''}`}>
+        {SCROLL_FLOW && (
+          <div className="flow-hero">
+            <div className="flow-hero__glow" aria-hidden="true" />
+            <div className="flow-hero__text">
+              <div className="flow-hero__eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+              <h1 className="flow-hero__title">
+                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, Dispatch 👋
+              </h1>
+              <p className="flow-hero__sub">
+                {totalOrders
+                  ? `${totalOrders} orders · ${routes.length} routes · ${failedOrders.length} address${failedOrders.length === 1 ? '' : 'es'} to fix`
+                  : 'Upload today’s Excel sheet to start planning routes.'}
+              </p>
+            </div>
+            <div className="flow-progress" role="list">
+              {[
+                { n: 1, label: 'Upload', id: 'flow-upload', done: totalOrders > 0 },
+                { n: 2, label: 'Fix addresses', id: 'flow-addresses', done: totalOrders > 0 && failedOrders.length === 0 },
+                { n: 3, label: 'Routes', id: 'flow-routes', done: routes.length > 0 },
+                { n: 4, label: 'Assign drivers', id: 'flow-routes', done: routes.length > 0 && routes.every((r) => r.driver_id != null) },
+                { n: 5, label: 'Team', id: 'flow-team', done: drivers.length > 0 },
+              ].map((stepItem) => (
+                <button
+                  key={stepItem.n}
+                  type="button"
+                  role="listitem"
+                  className={`flow-progress__step${stepItem.done ? ' flow-progress__step--done' : ''}`}
+                  onClick={() => scrollToSection(stepItem.id)}
+                >
+                  <span className="flow-progress__dot">{stepItem.done ? '✓' : stepItem.n}</span>
+                  <span className="flow-progress__label">{stepItem.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {(SCROLL_FLOW || pageView === 'dashboard') && (
         <>
+          {SCROLL_FLOW && <div id="flow-overview" className="flow-anchor" />}
           {/* One flat row of compact stat cards */}
           <div className="stat-row">
             <KpiTile variant="orders" icon={IconInbox} value={totalOrders} label="Orders today" onClick={() => handleNavClick(findNavItem('generate'))} />
@@ -3385,7 +3486,10 @@ Delete it anyway? This cannot be undone.`
           />
         </>
         )}
-        {pageView === 'dashboard' && (
+        {SCROLL_FLOW && (
+          <FlowStep id="flow-upload" n={1} title="Upload & plan" subtitle="Drop today’s Excel sheet, set your cars and bikes, then generate routes." done={totalOrders > 0} />
+        )}
+        {(SCROLL_FLOW || pageView === 'dashboard') && (
         <div className="toolbar" id="toolbar-section">
           <div className="toolbar__summary">
             <span className="toolbar__summary-title"><IconRoute width={15} height={15} /> Generate Routes</span>
@@ -3653,49 +3757,12 @@ Delete it anyway? This cannot be undone.`
 
         <div className="board-grid">
 
-          {/* Routes, Unassigned Orders and Live Tracking are three pages
-              over the same workspace. Kept mounted (just hidden) so its
-              filters, selection and map state survive switching pages. */}
-          <div hidden={!WORKSPACE_PAGES.includes(pageView)}>
-          <RouteWorkspace
-            routes={routes}
-            pendingOrders={pendingOrders}
-            isProcessing={isProcessing}
-            capacityFor={capacityFor}
-            maxCapacityFor={maxCapacityFor}
-            isRouteFull={isRouteFull}
-            isCreatingRoute={isCreatingRoute}
-            isAddingManualAddress={isAddingManualAddress}
-            isChangingVehicle={isChangingVehicle}
-            isDeletingRoute={isDeletingRoute}
-            isMovingAddresses={isMovingAddresses}
-            isRemovingManualExtra={isRemovingManualExtra}
-            onCreateRoute={handleCreateRoute}
-            onAddManualAddress={handleAddManualAddress}
-            onToggleVehicle={handleToggleVehicleType}
-            onDeleteRoute={handleDeleteRoute}
-            onReassignOrder={handleReassignOrder}
-            onReorderRoute={persistReorder}
-            onAssignOrders={handleAssignUnassignedOrders}
-            onDownloadRoute={handleDownloadRoute}
-            onMoveOrders={handleMoveOrdersBetweenRoutes}
-            onRemoveManualExtra={handleRemoveManualExtra}
-            onAdjustLocation={setAdjustLocationOrderId}
-            requestedTab={pageView === 'unassigned' ? 'unassigned' : 'routes'}
-            requestedView={pageView === 'live-tracking' ? 'map' : 'list'}
-            requestedLiveTracking={pageView === 'live-tracking'}
-            navCommandSeq={navCommandSeq}
-            onTabChange={(tab) => setPageView(tab === 'unassigned' ? 'unassigned' : 'generate')}
-            drivers={drivers}
-            onAssignDriver={handleAssignDriver}
-            onUnassignDriver={handleUnassignDriver}
-            fetchRouteTracking={fetchRouteTracking}
-            fetchRoutePlannedPath={fetchRoutePlannedPath}
-            onViewChange={setRouteDetailOpen}
-          />
-          </div>
-
-          {pageView === 'failed' && (
+          {SCROLL_FLOW && (
+            <FlowStep id="flow-addresses" n={2} tone="rose" title="Fix addresses"
+              subtitle={failedOrders.length ? `${failedOrders.length} address${failedOrders.length === 1 ? '' : 'es'} need a location - press “Fix all & route” or set the pin.` : 'Every address has a location.'}
+              done={totalOrders > 0 && failedOrders.length === 0} />
+          )}
+          {(SCROLL_FLOW || pageView === 'failed') && (
           <div className="board board--returns" id="returns-board">
             <div className="board__header">
               {/* Was labeled "Returns" here while the sidebar nav item
@@ -3858,7 +3925,58 @@ Delete it anyway? This cannot be undone.`
           </div>
           )}
 
-          {pageView === 'drivers' && (
+          {SCROLL_FLOW && (
+            <FlowStep id="flow-routes" n={3} tone="sky" title="Routes, drivers & live tracking"
+              subtitle="Review each route, assign a driver (their phone rings), and watch deliveries live on the map."
+              done={routes.length > 0 && routes.every((r) => r.driver_id != null)} />
+          )}
+          {/* Routes, Unassigned Orders and Live Tracking are three pages
+              over the same workspace. Kept mounted (just hidden) so its
+              filters, selection and map state survive switching pages. */}
+          <div hidden={!SCROLL_FLOW && !WORKSPACE_PAGES.includes(pageView)}>
+          <RouteWorkspace
+            routes={routes}
+            pendingOrders={pendingOrders}
+            isProcessing={isProcessing}
+            capacityFor={capacityFor}
+            maxCapacityFor={maxCapacityFor}
+            isRouteFull={isRouteFull}
+            isCreatingRoute={isCreatingRoute}
+            isAddingManualAddress={isAddingManualAddress}
+            isChangingVehicle={isChangingVehicle}
+            isDeletingRoute={isDeletingRoute}
+            isMovingAddresses={isMovingAddresses}
+            isRemovingManualExtra={isRemovingManualExtra}
+            onCreateRoute={handleCreateRoute}
+            onAddManualAddress={handleAddManualAddress}
+            onToggleVehicle={handleToggleVehicleType}
+            onDeleteRoute={handleDeleteRoute}
+            onReassignOrder={handleReassignOrder}
+            onReorderRoute={persistReorder}
+            onAssignOrders={handleAssignUnassignedOrders}
+            onDownloadRoute={handleDownloadRoute}
+            onMoveOrders={handleMoveOrdersBetweenRoutes}
+            onRemoveManualExtra={handleRemoveManualExtra}
+            onAdjustLocation={setAdjustLocationOrderId}
+            requestedTab={pageView === 'unassigned' ? 'unassigned' : 'routes'}
+            requestedView={pageView === 'live-tracking' ? 'map' : 'list'}
+            requestedLiveTracking={pageView === 'live-tracking'}
+            navCommandSeq={navCommandSeq}
+            onTabChange={(tab) => setPageView(tab === 'unassigned' ? 'unassigned' : 'generate')}
+            drivers={drivers}
+            onAssignDriver={handleAssignDriver}
+            onUnassignDriver={handleUnassignDriver}
+            fetchRouteTracking={fetchRouteTracking}
+            fetchRoutePlannedPath={fetchRoutePlannedPath}
+            onViewChange={setRouteDetailOpen}
+          />
+          </div>
+
+          {SCROLL_FLOW && (
+            <FlowStep id="flow-team" n={4} tone="teal" title="Delivery team"
+              subtitle="Add delivery partners, reset passwords and approve new sign-ups." done={drivers.length > 0} />
+          )}
+          {(SCROLL_FLOW || pageView === 'drivers') && (
           <div className="board board--drivers" id="drivers-board">
             <div className="board__header">
               <div className="board__header-group">

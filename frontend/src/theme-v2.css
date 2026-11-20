@@ -398,3 +398,100 @@ textarea:focus {
 
 .failed-detail__headline { display: block; font-size: 1.05rem; font-weight: 800; margin-bottom: 0.3rem; }
 .failed-detail__more { display: block; font-weight: 500; font-size: 0.82rem; line-height: 1.5; opacity: 0.8; }
+
+/* =======================================================================
+   One-page scrolling flow: hero, sticky progress, numbered steps
+======================================================================= */
+.console--flow { padding-top: 1.5rem; }
+.console--flow .board-grid { gap: 1.25rem; }
+.flow-anchor { position: relative; top: -150px; height: 0; }
+
+.flow-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  padding: 2rem 2.2rem 1.4rem;
+  margin-bottom: 1.75rem;
+  color: #fff;
+  background:
+    radial-gradient(600px 260px at 92% 0%, rgba(251, 191, 36, 0.35), transparent 60%),
+    radial-gradient(500px 300px at 0% 100%, rgba(236, 72, 153, 0.28), transparent 60%),
+    linear-gradient(120deg, #312e81 0%, #4f46e5 45%, #7c3aed 100%);
+  box-shadow: 0 30px 60px -30px rgba(79, 70, 229, 0.7);
+}
+.flow-hero__glow {
+  position: absolute; inset: auto -10% -60% auto; width: 420px; height: 420px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 65%);
+  animation: flow-float 9s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes flow-float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-40px, -30px); } }
+.flow-hero__eyebrow { text-transform: uppercase; letter-spacing: 0.16em; font-size: 0.72rem; font-weight: 800; opacity: 0.8; }
+.flow-hero__title { margin: 0.35rem 0 0.25rem; font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 800; letter-spacing: -0.03em; }
+.flow-hero__sub { margin: 0; font-size: 1rem; opacity: 0.9; }
+
+.flow-progress {
+  position: relative;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+.flow-progress__step {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  padding: 0.5rem 0.95rem 0.5rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s, border-color 0.2s;
+}
+.flow-progress__step:hover { background: rgba(255, 255, 255, 0.2); }
+.flow-progress__dot {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.2); font-size: 0.8rem; font-weight: 800;
+}
+.flow-progress__step--done { background: rgba(16, 185, 129, 0.28); border-color: rgba(110, 231, 183, 0.6); }
+.flow-progress__step--done .flow-progress__dot { background: #10b981; }
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 2.5rem 0 1rem;
+  scroll-margin-top: 150px;
+}
+.flow-step__num {
+  flex: none;
+  width: 52px; height: 52px; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.35rem; font-weight: 800; color: #fff;
+  background: var(--primary-gradient);
+  box-shadow: 0 12px 24px -12px rgba(79, 70, 229, 0.9);
+}
+.flow-step--rose .flow-step__num { background: linear-gradient(135deg, #fb7185, #e11d48); box-shadow: 0 12px 24px -12px #e11d48; }
+.flow-step--sky .flow-step__num { background: linear-gradient(135deg, #38bdf8, #2563eb); box-shadow: 0 12px 24px -12px #2563eb; }
+.flow-step--teal .flow-step__num { background: linear-gradient(135deg, #2dd4bf, #0d9488); box-shadow: 0 12px 24px -12px #0d9488; }
+.flow-step--done .flow-step__num { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 12px 24px -12px #059669; }
+.flow-step__eyebrow { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint); }
+.flow-step__title { margin: 0.1rem 0 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
+.flow-step__sub { margin: 0.2rem 0 0; color: var(--ink-soft); font-size: 0.95rem; }
+
+/* Section boards in the flow read as one continuous page */
+.console--flow .board--returns,
+.console--flow .board--drivers { border-left-width: 1px !important; }
+.console--flow .toolbar { border-radius: 22px; box-shadow: var(--shadow-md); }
+
+@media (max-width: 720px) {
+  .flow-hero { border-radius: 20px; padding: 1.4rem 1.2rem 1.1rem; }
+  .flow-progress__label { display: none; }
+  .flow-progress__step { padding: 0.35rem; }
+  .flow-step { margin-top: 2rem; }
+  .flow-step__num { width: 44px; height: 44px; font-size: 1.15rem; border-radius: 14px; }
+  .flow-step__title { font-size: 1.2rem; }
+}
