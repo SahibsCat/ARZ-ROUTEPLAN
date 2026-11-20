@@ -3,6 +3,8 @@ import RouteWorkspace, { AdjustLocationModal, EmbeddedPinAdjuster } from './rout
 import './App.css';
 import './theme-v2.css';
 import './theme-v4-inner.css';
+import './theme-v5-fx.css';
+import { installFx, celebrate } from './fx';
 // Reuses RouteWorkspace's .modal / .modal-backdrop styles (Add Address
 // modal) for the Drivers panel's create/edit/reset-password forms below,
 // rather than duplicating that CSS - importing a stylesheet twice is a
@@ -901,6 +903,8 @@ function ResetPasswordModal({ driver, onSave, onClose, isSubmitting }) {
 }
 
 function App() {
+  // Decorative pointer/scroll effects (spotlight, hero tilt, scroll bar).
+  useEffect(() => installFx(), []);
   const [status, setStatus] = useState('Ready to upload Excel');
   const [fileName, setFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -2053,6 +2057,7 @@ Delete it anyway? This cannot be undone.`
       setIsPlanSaved(data.is_saved ?? false);
       refreshUnassignedOrders();
       showToast(data.message || 'Failed addresses fixed and routed.');
+      if ((data.fixed_count || 0) > 0) celebrate();
     } catch (err) {
       console.error('Fix all failed:', err);
       showToast(err.message || 'Could not fix the failed addresses.');
@@ -3081,6 +3086,16 @@ Delete it anyway? This cannot be undone.`
   const alertCount = errors.length + warnings.length;
 
   // Sidebar highlight: an open overlay wins, otherwise the current page.
+  // Confetti the moment the whole day's plan is complete: orders in, no
+  // failed addresses, routes built and every route has a driver.
+  const allStepsDone = totalOrders > 0 && failedOrders.length === 0 && routes.length > 0
+    && routes.every((r) => r.driver_id != null);
+  const allStepsDoneRef = useRef(null);
+  useEffect(() => {
+    if (allStepsDoneRef.current === false && allStepsDone) celebrate();
+    allStepsDoneRef.current = allStepsDone;
+  }, [allStepsDone]);
+
   const activeNav = soonOverlay || (historyOpen ? 'history' : driverDataOpen ? 'driver-data'
     : SCROLL_FLOW ? (pageView === 'live-tracking' && activeSection === 'flow-routes' ? 'live-tracking'
       : pageView === 'unassigned' && activeSection === 'flow-routes' ? 'unassigned'
