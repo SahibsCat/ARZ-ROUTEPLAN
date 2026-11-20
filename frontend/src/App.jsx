@@ -127,6 +127,50 @@ const NAV_FOR_SECTION = {
 };
 
 // Big numbered heading that opens each section of the scrolling page.
+// Decorative hero art: a stylised city grid with three delivery routes
+// leaving the depot, dashes flowing along them and a vehicle dot riding
+// each one. Pure inline SVG/SMIL - no assets, no runtime cost.
+function HeroRouteArt() {
+  const paths = [
+    { d: 'M200 150 C 240 110, 280 120, 310 70 S 370 40, 400 30', color: '#fbbf24', dur: '6s' },
+    { d: 'M200 150 C 160 120, 120 130, 90 80 S 40 50, 20 40', color: '#f472b6', dur: '7.5s' },
+    { d: 'M200 150 C 230 190, 290 200, 330 240 S 380 270, 410 280', color: '#5eead4', dur: '6.8s' },
+  ];
+  return (
+    <svg className="hero-art" viewBox="0 0 420 300" aria-hidden="true">
+      <defs>
+        <radialGradient id="heroArtGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {[40, 90, 140, 190, 240, 290].map((y) => <line key={`h${y}`} x1="0" x2="420" y1={y} y2={y} className="hero-art__grid" />)}
+      {[40, 110, 180, 250, 320, 390].map((x) => <line key={`v${x}`} y1="0" y2="300" x1={x} x2={x} className="hero-art__grid" />)}
+      <circle cx="200" cy="150" r="70" fill="url(#heroArtGlow)" />
+      {paths.map((route, i) => (
+        <g key={i}>
+          <path d={route.d} className="hero-art__route-bg" />
+          <path d={route.d} className="hero-art__route" style={{ stroke: route.color }} />
+          <circle r="6" fill="#fff" stroke={route.color} strokeWidth="3">
+            <animateMotion dur={route.dur} repeatCount="indefinite" path={route.d} rotate="auto" />
+          </circle>
+          <circle r="5" fill={route.color} cx={route.d.split(' ').slice(-2)[0]} cy={route.d.split(' ').slice(-1)[0]}>
+            <animate attributeName="r" values="4;8;4" dur="2s" repeatCount="indefinite" begin={`${i * 0.5}s`} />
+          </circle>
+        </g>
+      ))}
+      <g className="hero-art__depot">
+        <circle cx="200" cy="150" r="16" fill="#fff" />
+        <circle cx="200" cy="150" r="16" fill="none" stroke="#fff" strokeOpacity="0.6">
+          <animate attributeName="r" values="16;34" dur="2.2s" repeatCount="indefinite" />
+          <animate attributeName="stroke-opacity" values="0.6;0" dur="2.2s" repeatCount="indefinite" />
+        </circle>
+        <text x="200" y="156" textAnchor="middle" fontSize="16">🏬</text>
+      </g>
+    </svg>
+  );
+}
+
 function FlowStep({ id, n, title, subtitle, done, tone }) {
   return (
     <div className={`flow-step flow-step--${tone || 'indigo'}${done ? ' flow-step--done' : ''}`} id={id}>
@@ -3054,7 +3098,7 @@ Delete it anyway? This cannot be undone.`
     analytics: { title: 'Analytics', subtitle: 'Coming soon' },
     settings: { title: 'Settings', subtitle: 'Coming soon' },
   };
-  const headerContent = HEADER_CONTENT[pageView] || HEADER_CONTENT.dashboard;
+  const headerContent = HEADER_CONTENT[SCROLL_FLOW ? activeNav : pageView] || HEADER_CONTENT[pageView] || HEADER_CONTENT.dashboard;
 
   // The five stat-row KPIs, computed straight from live state - no
   // simulated history, no placeholder numbers.
@@ -3418,10 +3462,11 @@ Delete it anyway? This cannot be undone.`
         {SCROLL_FLOW && (
           <div className="flow-hero">
             <div className="flow-hero__glow" aria-hidden="true" />
+            <HeroRouteArt />
             <div className="flow-hero__text">
               <div className="flow-hero__eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
               <h1 className="flow-hero__title">
-                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, Dispatch 👋
+                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, Dispatch <span className="flow-hero__wave">👋</span>
               </h1>
               <p className="flow-hero__sub">
                 {totalOrders

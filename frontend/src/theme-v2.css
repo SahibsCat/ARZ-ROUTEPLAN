@@ -495,3 +495,152 @@ textarea:focus {
   .flow-step__num { width: 44px; height: 44px; font-size: 1.15rem; border-radius: 14px; }
   .flow-step__title { font-size: 1.2rem; }
 }
+
+/* =======================================================================
+   Flow v3 — hero art, floating glass KPIs, journey rail, scroll reveals
+======================================================================= */
+
+/* ---- Hero: room for the illustration + overlapping KPI cards ---- */
+.flow-hero {
+  min-height: 300px;
+  padding-bottom: 5.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.flow-hero__text,
+.flow-progress { position: relative; z-index: 2; max-width: 62%; }
+.hero-art {
+  position: absolute;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-58%);
+  width: min(44%, 520px);
+  height: auto;
+  z-index: 1;
+  opacity: 0.95;
+  filter: drop-shadow(0 20px 40px rgba(15, 10, 60, 0.35));
+}
+.hero-art__grid { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
+.hero-art__route-bg { fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 9; stroke-linecap: round; }
+.hero-art__route {
+  fill: none;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-dasharray: 10 12;
+  animation: hero-dash 1.6s linear infinite;
+}
+@keyframes hero-dash { to { stroke-dashoffset: -44; } }
+.flow-hero__title {
+  background: linear-gradient(90deg, #ffffff 0%, #fde68a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- KPI tiles float over the bottom edge of the hero ---- */
+.console--flow .stat-row {
+  position: relative;
+  z-index: 3;
+  margin: -4.4rem 1.5rem 0;
+}
+.console--flow .kpi-tile {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 40px -22px rgba(49, 46, 129, 0.55), 0 2px 6px rgba(20, 24, 51, 0.05);
+}
+:root[data-theme="dark"] .console--flow .kpi-tile { background: rgba(20, 23, 43, 0.82); border-color: rgba(255, 255, 255, 0.08); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .console--flow .kpi-tile { background: rgba(20, 23, 43, 0.82); border-color: rgba(255, 255, 255, 0.08); }
+}
+.console--flow .kpi-tile:hover { transform: translateY(-3px) !important; }
+.console--flow .kpi-tile { transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s; }
+
+/* ---- Journey rail: a glowing road through the step numbers ---- */
+@media (min-width: 1100px) {
+  .console--flow { position: relative; padding-left: calc(1.75rem + 76px); }
+  .console--flow > .flow-hero { margin-left: -76px; }
+  .console--flow .flow-step { margin-left: -76px; }
+  .console--flow::before {
+    content: '';
+    position: absolute;
+    left: calc(1.75rem + 24px);
+    top: 360px;
+    bottom: 5rem;
+    width: 4px;
+    border-radius: 4px;
+    background: linear-gradient(180deg, #6366f1 0%, #e11d48 30%, #2563eb 60%, #0d9488 100%);
+    opacity: 0.35;
+    z-index: 0;
+  }
+  .console--flow::after {
+    content: '';
+    position: absolute;
+    left: calc(1.75rem + 21px);
+    top: 360px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.35), 0 0 18px 4px rgba(99, 102, 241, 0.6);
+    animation: rail-travel 9s ease-in-out infinite;
+    z-index: 0;
+  }
+  @keyframes rail-travel { 0% { transform: translateY(0); } 100% { transform: translateY(calc(100vh * 2.2)); opacity: 0; } }
+  .console--flow .flow-step__num { position: relative; z-index: 1; box-shadow: 0 0 0 7px var(--paper), 0 14px 26px -12px rgba(79, 70, 229, 0.9); }
+  .console--flow .flow-step--rose .flow-step__num { box-shadow: 0 0 0 7px var(--paper), 0 14px 26px -12px #e11d48; }
+  .console--flow .flow-step--sky .flow-step__num { box-shadow: 0 0 0 7px var(--paper), 0 14px 26px -12px #2563eb; }
+  .console--flow .flow-step--teal .flow-step__num { box-shadow: 0 0 0 7px var(--paper), 0 14px 26px -12px #0d9488; }
+  .console--flow .flow-step--done .flow-step__num { box-shadow: 0 0 0 7px var(--paper), 0 14px 26px -12px #059669; }
+}
+
+/* ---- Step headings: bigger, more editorial ---- */
+.flow-step { margin-top: 3.25rem; }
+.flow-step__title { font-size: 1.65rem; }
+.flow-step__num { width: 54px; height: 54px; border-radius: 18px; }
+
+/* ---- Scroll reveal (progressive: only where supported) ---- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .console--flow .flow-step,
+    .console--flow .board,
+    .console--flow .toolbar {
+      animation: flow-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+  }
+}
+@keyframes flow-reveal {
+  from { opacity: 0; transform: translateY(28px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-art__route, .flow-hero__glow, .console--flow::after { animation: none !important; }
+}
+
+/* ---- Mobile / tablet ---- */
+@media (max-width: 1000px) {
+  .hero-art { opacity: 0.28; width: 80%; right: -10%; }
+  .flow-hero__text, .flow-progress { max-width: 100%; }
+}
+@media (max-width: 720px) {
+  .flow-hero { min-height: 0; padding-bottom: 4.5rem; }
+  .console--flow .stat-row { margin: -3.6rem 0.6rem 0; }
+}
+
+/* v3 fixes: KPI row spans the hero width; rail starts below it; emoji keeps its colours */
+@media (min-width: 1100px) {
+  .console--flow .stat-row { margin-left: calc(-76px + 1.5rem); }
+  .console--flow::before, .console--flow::after { top: 480px; }
+}
+.flow-hero__wave {
+  -webkit-text-fill-color: initial;
+  display: inline-block;
+  transform-origin: 70% 70%;
+  animation: hero-wave 2.4s ease-in-out 1s 2;
+}
+@keyframes hero-wave { 0%, 60%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-8deg); } }
+.console--flow .kpi-tile__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
