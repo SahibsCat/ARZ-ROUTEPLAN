@@ -3190,12 +3190,17 @@ export default function RouteWorkspace({
   routes, pendingOrders, isProcessing, capacityFor, maxCapacityFor, isRouteFull,
   isCreatingRoute, isAddingManualAddress, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
   onCreateRoute, onAddManualAddress, onToggleVehicle, onDeleteRoute, onReassignOrder, onReopenDelivered, onReorderRoute,
-  onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra, onAdjustLocation,
+  onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra, onAdjustLocation, onRouteUpdated,
   requestedTab, requestedView, requestedLiveTracking, navCommandSeq,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
   onViewChange, onTabChange,
 }) {
   const [tab, setTab] = useState('routes');
+  // Instant updates pushed by the backend (driver marked a stop delivered
+  // in the app, admin re-assigned one) - patch that route in place.
+  useTrackingSocket(true, (msg) => {
+    if (msg?.type === 'route_updated' && msg.route) onRouteUpdated?.(msg.route);
+  });
   const switchTab = (next) => { setTab(next); onTabChange?.(next); };
   // requestedTab is a one-way command from the sidebar. Keyed on
   // navCommandSeq (bumped only on explicit navigation) so it never fights

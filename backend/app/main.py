@@ -903,7 +903,9 @@ def reopen_delivered_stop_endpoint(route_id: int, order_id: str, db: Session = D
         route = crud.reopen_delivered_stop(db, route_id, order_id)
     except crud.RootplanError as e:
         _raise_for_crud_error(e)
-    return {"route": crud.route_summary(route)}
+    summary = crud.route_summary(route)
+    tracking_manager.broadcast_threadsafe({"type": "route_updated", "route": summary})
+    return {"route": summary}
 
 
 @app.delete("/api/routes/{route_id}/manual-extra")
@@ -1336,4 +1338,8 @@ def set_stop_delivered_endpoint(
         route = crud_driver.get_route_for_driver(db, driver, route_id)
     except crud.RootplanError as e:
         _raise_for_driver_error(e)
-    return {"route": crud.route_summary(route)}
+    summary = crud.route_summary(route)
+    # Push the change to every open admin page so "Delivered" shows up on
+    # the website the moment the driver slides it in the app.
+    tracking_manager.broadcast_threadsafe({"type": "route_updated", "route": summary})
+    return {"route": summary}

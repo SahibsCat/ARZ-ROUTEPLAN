@@ -1780,10 +1780,39 @@ Delete it anyway? This cannot be undone.`
     return response.json();
   };
 
+  // Every tracking poll also carries each stop's delivered flag - copy it
+  // into the route so "Delivered" from the driver app shows up on the
+  // website without a page reload (backup for the WebSocket push).
+  const syncDeliveryFromTracking = (routeId, data) => {
+    const legs = data?.delivery_legs;
+    if (!Array.isArray(legs)) return;
+    const byId = Object.fromEntries(legs.map((l) => [String(l.order_id), l]));
+    setRoutes((prev) => {
+      let any = false;
+      const next = prev.map((r) => {
+        if (r.route_id !== routeId) return r;
+        let changed = false;
+        const orders = (r.orders || []).map((o) => {
+          const leg = byId[String(o.order_id)];
+          if (!leg || !!o.is_delivered === !!leg.delivered) return o;
+          changed = true;
+          return { ...o, is_delivered: !!leg.delivered, delivered_at: leg.delivered_at, delivery_status: leg.delivered ? 'delivered' : 'pending' };
+        });
+        const runStatus = data.route_run_status ?? r.route_run_status;
+        if (!changed && runStatus === r.route_run_status) return r;
+        any = true;
+        return { ...r, orders, route_run_status: runStatus, delivered_count: orders.filter((o) => o.is_delivered).length };
+      });
+      return any ? next : prev;
+    });
+  };
+
   const fetchRouteTracking = async (routeId) => {
     const response = await apiFetch(`/api/routes/${routeId}/tracking`);
     if (!response.ok) throw new Error(`Could not load tracking (${response.status})`);
-    return response.json();
+    const data = await response.json();
+    syncDeliveryFromTracking(routeId, data);
+    return data;
   };
 
   // The planned route's road-following shape (depot -> every stop, in
@@ -4032,6 +4061,7 @@ Delete it anyway? This cannot be undone.`
             onDeleteRoute={handleDeleteRoute}
             onReassignOrder={handleReassignOrder}
             onReopenDelivered={handleReopenDelivered}
+            onRouteUpdated={patchRouteInState}
             onReorderRoute={persistReorder}
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}
