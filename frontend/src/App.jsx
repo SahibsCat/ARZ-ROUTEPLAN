@@ -33,6 +33,7 @@ import {
   Map as LIconMap, Columns2, Download as LIconDownload, MoreHorizontal, UserCheck,
 } from 'lucide-react';
 import ActionMenu from './ActionMenu';
+import DriverDataPanel from './DriverData';
 
 // Backend origin for deployments where frontend and backend aren't
 // same-origin (e.g. Render, where they're two separate services). Empty
@@ -4251,84 +4252,15 @@ Delete it anyway? This cannot be undone.`
       )}
 
       {driverDataOpen && (
-        <div className="history-overlay" role="dialog" aria-modal="true" aria-label="Driver Data">
-          <div className="history-overlay__scrim" onClick={() => setDriverDataOpen(false)} />
-          <div className="history-panel history-panel--xwide">
-            <div className="history-panel__head">
-              <h2><IconClock width={18} height={18} /> Driver Data</h2>
-              <button className="topbar__icon-btn" onClick={() => setDriverDataOpen(false)} aria-label="Close Driver Data">
-                <IconX width={18} height={18} />
-              </button>
-            </div>
-            <p className="history-panel__sub">
-              Every driver's work runs - start, end and distance travelled from their GPS trail. Any run can be
-              deleted, including one stuck "In progress".
-            </p>
-            <div className="history-panel__body">
-              {isLoadingDriverData ? (
-                <div className="history-panel__skeletons">
-                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
-                </div>
-              ) : driverDataError ? (
-                <div className="empty-state">{driverDataError}</div>
-              ) : driverRuns.length === 0 ? (
-                <div className="empty-state">
-                  No driver runs recorded yet. Once a driver taps <strong>Start Route</strong> in the Driver App, that run shows up here.
-                </div>
-              ) : (
-                <div className="driver-runs-table-wrap">
-                  <table className="driver-runs-table">
-                    <thead>
-                      <tr>
-                        <th>Driver</th>
-                        <th>Route</th>
-                        <th>Started</th>
-                        <th>Ended</th>
-                        <th>Duration</th>
-                        <th>Distance</th>
-                        <th>Delivered</th>
-                        <th>Status</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {driverRuns.map((run) => (
-                        <tr key={run.route_id}>
-                          <td>
-                            <div className="driver-runs-table__name">{run.driver_name || 'Unknown driver'}</div>
-                            {run.driver_code && <div className="driver-runs-table__code mono-num">{run.driver_code}</div>}
-                          </td>
-                          <td>{run.route_name}</td>
-                          <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</td>
-                          <td>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</td>
-                          <td className="mono-num">{run.duration_minutes != null ? `${run.duration_minutes} min` : '—'}</td>
-                          <td className="mono-num">{run.distance_travelled_km != null ? `${run.distance_travelled_km} km` : '—'}</td>
-                          <td className="mono-num">{run.delivered_count}/{run.total_stops}</td>
-                          <td>
-                            <span className={`run-status-pill run-status-pill--${run.route_run_status}`}>
-                              {run.route_run_status === 'in_progress' ? '🟢 In progress' : '⚪ Completed'}
-                            </span>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn--danger-ghost btn--compact"
-                              disabled={deletingRunId === run.route_id}
-                              title={run.route_run_status === 'in_progress' ? 'Delete this stuck/in-progress run (asks to confirm)' : 'Delete this run record'}
-                              onClick={() => handleDeleteDriverRun(run)}
-                            >
-                              {deletingRunId === run.route_id ? <span className="spinner" /> : 'Delete'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <DriverDataPanel
+          runs={driverRuns}
+          isLoading={isLoadingDriverData}
+          error={driverDataError}
+          deletingRunId={deletingRunId}
+          onDelete={handleDeleteDriverRun}
+          onRefresh={openDriverData}
+          onClose={() => setDriverDataOpen(false)}
+        />
       )}
 
       {driverFormOpen && (
