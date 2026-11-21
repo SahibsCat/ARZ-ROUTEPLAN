@@ -47,6 +47,9 @@ const GOOGLE_MAPS_LIBRARIES = [];
 // and heading) so that answer is consistent everywhere live tracking
 // shows up, not a different threshold hand-picked per call site.
 const GPS_NOISE_METERS = 8;
+// Two consecutive GPS fixes further apart than this are a jump (stale
+// warehouse fix, GPS switched off and on), not a road the driver drove.
+const TRAIL_JUMP_METERS = 400;
 
 // Was: a custom dark vector style for LiveMapModal (its own map, distinct
 // from FleetMap below). Replaced with satellite - see LiveMapModal's own
@@ -332,11 +335,33 @@ function dotIconUrl(color, { size = 16, opacity = 1, strokeColor = '#fff' } = {}
 // (an emoji glyph rotated sideways/upside-down reads as broken, not
 // "turning") - which way the driver is moving is still visible from the
 // breadcrumb trail/line itself.
-function vehicleIconUrl(vehicleType, color, { size = 28, opacity = 1 } = {}) {
-  const emoji = vehicleType === 'car' ? '\u{1F697}' : '\u{1F3CD}\u{FE0F}'; // car / motorcycle
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
-    + `<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="${color}" fill-opacity="${opacity}" stroke="#fff" stroke-width="2"/>`
-    + `<text x="${size / 2}" y="${size / 2 + 1}" font-size="${size * 0.58}" text-anchor="middle" dominant-baseline="central">${emoji}</text>`
+function vehicleIconUrl(vehicleType, color, { size = 28, opacity = 1, heading = null } = {}) {
+  // A navigation-style vehicle marker: a white disc with the route's
+  // colour ring, a drawn scooter (with delivery box) or car glyph, and a
+  // small arrow on the rim pointing the way the driver is heading (from
+  // the phone's GPS heading; hidden when no heading is known).
+  const c = size / 2;
+  const r = size * 0.36;
+  const g = (r * 1.4) / 24; // glyph scale: 24-unit icon inside the disc
+  const gx = c - 12 * g;
+  const gy = c - 12 * g;
+  const glyph = vehicleType === 'car'
+    ? `<path d="M3.5 15.5v-3.2l2.3-4.6c.3-.6.9-.9 1.5-.9h9.4c.6 0 1.2.3 1.5.9l2.3 4.6v3.2c0 .6-.4 1-1 1h-15c-.6 0-1-.4-1-1z" fill="${color}"/>`
+      + `<path d="M7.6 8.6h8.8l1.6 3.4H6z" fill="#fff" fill-opacity="0.85"/>`
+      + `<circle cx="7.5" cy="16.8" r="2.1" fill="#111827"/><circle cx="16.5" cy="16.8" r="2.1" fill="#111827"/>`
+    : `<rect x="2" y="6.5" width="7.5" height="6.5" rx="1.3" fill="${color}"/>`
+      + `<path d="M5.5 14.2h8.2l3-6.2h2.6" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`
+      + `<path d="M17.4 8l1-2.6h2.4" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+      + `<circle cx="6" cy="17.2" r="2.6" fill="none" stroke="#111827" stroke-width="2.1"/>`
+      + `<circle cx="18" cy="17.2" r="2.6" fill="none" stroke="#111827" stroke-width="2.1"/>`;
+  const arrow = heading != null && !Number.isNaN(heading)
+    ? `<g transform="rotate(${heading} ${c} ${c})"><path d="M${c} ${c - r - size * 0.13} L${c + size * 0.12} ${c - r + size * 0.01} L${c - size * 0.12} ${c - r - size * 0.01} Z" fill="${color}" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></g>`
+    : '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" opacity="${opacity}">`
+    + `<circle cx="${c}" cy="${c + size * 0.03}" r="${r + 2}" fill="#000" fill-opacity="0.3"/>`
+    + arrow
+    + `<circle cx="${c}" cy="${c}" r="${r}" fill="#fff" stroke="${color}" stroke-width="${Math.max(2.5, size * 0.07)}"/>`
+    + `<g transform="translate(${gx} ${gy}) scale(${g})">${glyph}</g>`
     + `</svg>`;
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
@@ -1215,7 +1240,7 @@ function FleetMap({
             const animated = animatedDriverPositions[route.route_id] || driverPos;
             const p = projectPoint(animated.lat, animated.lng);
             if (p) {
-              const vehicle = vehicleIconUrl(route.vehicle_type, color, { size: 34 });
+              const vehicle = vehicleIconUrl(route.vehicle_type, color, { size: 46, heading: driverPos.heading });
               pins.push(
                 <span key={`${route.route_name}-driver-pulse`} className="fleet-map__driver-pulse" style={{ left: p.x, top: p.y, '--pulse': color }} />,
                 <span key={`${route.route_name}-driver-tag`} className="fleet-map__driver-tag" style={{ left: p.x, top: p.y, '--pulse': color }}>
@@ -1224,8 +1249,8 @@ function FleetMap({
                 <img
                   key={`${route.route_name}-driver`}
                   src={vehicle.url}
-                  width={34}
-                  height={34}
+                  width={46}
+                  height={46}
                   alt=""
                   className="fleet-map__pin fleet-map__pin--dot"
                   style={{ left: p.x, top: p.y, zIndex: 6 }}
@@ -2231,7 +2256,15 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
               {(() => {
                 const toPts = (pts) => pts.map((p) => project(p.lat, p.lng)).filter(Boolean).map((p) => `${p.x},${p.y}`).join(' ');
                 const planned = plannedPath.length > 1 ? toPts(plannedPath) : '';
-                const trail = path.length > 1 ? toPts(path) : '';
+                // Break the driven line wherever consecutive fixes are far
+                // apart (a stale fix at the warehouse, GPS off then on) -
+                // otherwise that gap draws as a straight line across the map.
+                const trailSegments = [];
+                path.forEach((pt, i) => {
+                  if (i === 0 || haversineMeters(path[i - 1], pt) > TRAIL_JUMP_METERS) trailSegments.push([pt]);
+                  else trailSegments[trailSegments.length - 1].push(pt);
+                });
+                const trails = trailSegments.filter((seg) => seg.length > 1).map(toPts).filter(Boolean);
                 const me = displayedPosition ? project(displayedPosition.lat, displayedPosition.lng) : null;
                 const accPx = me && accuracy != null && viewport
                   ? ((accuracy / 111320) / (viewport.ne.lat - viewport.sw.lat)) * viewport.h
@@ -2245,13 +2278,13 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                       {planned && (
                         <polyline points={planned} fill="none" stroke="#fbbf24" strokeWidth={3.5} strokeOpacity={0.85} strokeDasharray="2 9" strokeLinecap="round" strokeLinejoin="round" />
                       )}
-                      {trail && (
-                        <>
+                      {trails.map((trail, ti) => (
+                        <g key={ti}>
                           <polyline points={trail} fill="none" stroke={vehicleColor} strokeWidth={14} strokeOpacity={0.45} strokeLinecap="round" strokeLinejoin="round" filter="url(#lmx-glow)" />
                           <polyline points={trail} fill="none" stroke="#05070f" strokeWidth={7} strokeOpacity={0.6} strokeLinecap="round" strokeLinejoin="round" />
                           <polyline points={trail} fill="none" stroke="#60a5fa" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
-                        </>
-                      )}
+                        </g>
+                      ))}
                       {me && accPx > 6 && (
                         <circle cx={me.x} cy={me.y} r={accPx} fill={vehicleColor} fillOpacity={0.12} stroke={vehicleColor} strokeOpacity={0.5} strokeWidth={1} />
                       )}
@@ -2282,9 +2315,9 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                         <>
                           <span className="fleet-map__driver-pulse" style={{ left: me.x, top: me.y, '--pulse': vehicleColor }} />
                           <img
-                            src={vehicleIconUrl(route.vehicle_type, vehicleColor, { size: 40 }).url}
-                            width={40}
-                            height={40}
+                            src={vehicleIconUrl(route.vehicle_type, vehicleColor, { size: 54, heading: last?.heading }).url}
+                            width={54}
+                            height={54}
                             alt=""
                             className="fleet-map__pin fleet-map__pin--dot"
                             style={{ left: me.x, top: me.y, zIndex: 6 }}
