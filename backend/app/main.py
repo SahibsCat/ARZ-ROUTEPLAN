@@ -895,6 +895,17 @@ def move_orders_between_routes_endpoint(
     }
 
 
+@app.post("/api/routes/{route_id}/orders/{order_id}/reopen")
+def reopen_delivered_stop_endpoint(route_id: int, order_id: str, db: Session = Depends(get_db)):
+    """Re-assign a delivered stop: back to pending on the same route so the
+    driver delivers it again."""
+    try:
+        route = crud.reopen_delivered_stop(db, route_id, order_id)
+    except crud.RootplanError as e:
+        _raise_for_crud_error(e)
+    return {"route": crud.route_summary(route)}
+
+
 @app.delete("/api/routes/{route_id}/manual-extra")
 def remove_manual_extra_stop_endpoint(route_id: int, db: Session = Depends(get_db)):
     """Undo for the admin's one-time capacity override - removes the one

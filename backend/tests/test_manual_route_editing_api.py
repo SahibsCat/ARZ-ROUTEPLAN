@@ -106,3 +106,33 @@ def test_search_filters_unassigned_orders_by_customer_name():
 
     assert response.status_code == 200
     assert response.json()["total"] == 1
+
+
+def _mark_delivered_directly(route_id, order_id):
+    from app.dependencies import get_db
+    from app.models import RouteStop
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        stop = db.query(RouteStop).filter(RouteStop.route_id == route_id, RouteStop.order_id == order_id).first()
+        stop.delivery_status = "delivered"
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_reorder_keeps_delivered_status_and_reopen_resets_it():
+    _upload_batch(["r1", "r2"])
+    route_id = client.post("/api/routes", json={"vehicle_type": "bike", "order_ids": ["r1", "r2"]}).json()["route"]["route_id"]
+    _mark_delivered_directly(route_id, "r1")
+
+    reordered = client.patch(f"/api/routes/{route_id}/reorder", json={"order_ids": ["r2", "r1"]}).json()["route"]
+    by_id = {o["order_id"]: o for o in reordered["orders"]}
+    assert by_id["r1"]["is_delivered"] is True
+    assert by_id["r2"]["is_delivered"] is False
+
+    reopened = client.post(f"/api/routes/{route_id}/orders/r1/reopen")
+    assert reopened.status_code == 200
+    assert all(not o["is_delivered"] for o in reopened.json()["route"]["orders"])
+
+    assert client.post(f"/api/routes/{route_id}/orders/nope/reopen").status_code == 404

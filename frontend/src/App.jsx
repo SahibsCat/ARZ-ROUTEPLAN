@@ -2309,6 +2309,22 @@ Delete it anyway? This cannot be undone.`
     }
   };
 
+  // "Re-assign" on a delivered stop, same route: back to pending so the
+  // driver's app shows it again. (Moving it to another route or to
+  // Unassigned goes through handleReassignOrder - it lands as pending.)
+  const handleReopenDelivered = async (route, orderId) => {
+    try {
+      const res = await apiFetch(`/api/routes/${route.route_id}/orders/${encodeURIComponent(String(orderId))}/reopen`, { method: 'POST' });
+      if (!res.ok) throw new Error(await parseErrorDetail(res, 'Unable to re-assign this delivery. Please try again.'));
+      const data = await res.json();
+      patchRouteInState(data.route);
+      setStatus(`Order #${orderId} is pending again on ${route.route_name} - the driver will see it in the app.`);
+    } catch (err) {
+      console.error('Re-assign failed:', err);
+      setWarnings([err.message || 'Unable to re-assign this delivery. Please try again.']);
+    }
+  };
+
   // Persists a reorder (drag-and-drop, or the up/down buttons) via
   // PATCH /api/routes/:id/reorder and reconciles from the confirmed
   // response - sequence letters, ETAs, distance/time and the Excel export
@@ -4014,6 +4030,7 @@ Delete it anyway? This cannot be undone.`
             onToggleVehicle={handleToggleVehicleType}
             onDeleteRoute={handleDeleteRoute}
             onReassignOrder={handleReassignOrder}
+            onReopenDelivered={handleReopenDelivered}
             onReorderRoute={persistReorder}
             onAssignOrders={handleAssignUnassignedOrders}
             onDownloadRoute={handleDownloadRoute}

@@ -728,6 +728,13 @@ def _persist_route_stops(db: Session, route: Route, batch_id: Optional[int], met
         if route.manual_extra_order_id not in incoming_ids:
             route.manual_extra_order_id = None
 
+    # Rebuilding the stop list must not wipe what the driver already did:
+    # a stop that stays on this route keeps its delivered status (a reorder
+    # or a move of some other stop used to silently reset every delivered
+    # stop back to pending). A stop new to this route starts pending.
+    previous_delivery = {
+        str(stop.order_id): (stop.delivery_status, stop.delivered_at) for stop in route.stops
+    }
     for stop in list(route.stops):
         db.delete(stop)
     db.flush()
@@ -744,6 +751,8 @@ def _persist_route_stops(db: Session, route: Route, batch_id: Optional[int], met
             travel_time_minutes=segment.get("time_minutes"),
             eta=order_dict.get("eta"),
             status="late" if order_dict.get("is_late") else "on_time",
+            delivery_status=previous_delivery.get(order_id, ("pending", None))[0] or "pending",
+            delivered_at=previous_delivery.get(order_id, ("pending", None))[1],
             order_snapshot=order_dict,
         ))
         if batch_id is not None:
@@ -1116,6 +1125,25 @@ def remove_order_from_route(db: Session, route_id: int, order_id: str) -> Dict[s
     if order is not None:
         db.refresh(order)
     return {"route": route, "order": order}
+
+
+def reopen_delivered_stop(db: Session, route_id: int, order_id: str) -> Route:
+    """Admin "Re-assign" for a stop the driver marked delivered (wrong tap,
+    failed hand-over, customer not home): puts it back to pending on the
+    same route so it shows up in the driver's app again. Moving it to a
+    different route or to Unassigned goes through the normal move/remove
+    paths, where a stop new to a route always starts pending."""
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if route is None:
+        raise RouteNotFoundError("Route not found")
+    stop = next((s for s in route.stops if str(s.order_id) == str(order_id)), None)
+    if stop is None:
+        raise OrderNotFoundError(f"Order {order_id} is not on this route")
+    stop.delivery_status = "pending"
+    stop.delivered_at = None
+    db.commit()
+    db.refresh(route)
+    return route
 
 
 def change_route_vehicle_type(db: Session, route_id: int, vehicle_type: str) -> Route:

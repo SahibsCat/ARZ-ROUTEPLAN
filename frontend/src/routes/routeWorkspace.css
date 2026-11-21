@@ -225,6 +225,11 @@ select.add-route-select:hover:not(:disabled) {
 }
 .stop-move:hover:not(:disabled) { border-color: var(--accent); }
 .stop-move:disabled { opacity: 0.6; cursor: not-allowed; }
+/* Delivered stops: the same picker becomes "Re-assign" - stand out from
+   the dimmed delivered card so the admin can find it. */
+.stop-move--reassign { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.route-stop--delivered .route-stop__actions { opacity: 1; }
+.route-stop--delivered:hover { opacity: 1; }
 
 /* Unassigned Orders row - checkbox + identity block + status tag(s) +
    assign-to-route select. Had no rule at all (no card, no spacing, no

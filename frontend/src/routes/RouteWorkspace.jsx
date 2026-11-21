@@ -2387,7 +2387,7 @@ function DriverPage({ route, drivers, onAssignDriver, onUnassignDriver, fetchRou
 function RouteDetail({
   route, routeIdx, routes, capacityFor, pendingOrders,
   onBack, onToggleVehicle, isChangingVehicle, onDeleteRoute, isDeletingRoute, onDownload,
-  onReassignOrder, onAssignOrders, onReorderRoute,
+  onReassignOrder, onReopenDelivered, onAssignOrders, onReorderRoute,
   fetchRouteTracking, fetchRoutePlannedPath, onOpenDriverPage,
   selectedOrderId, onSelectOrder,
   maxCapacityFor, onMoveOrders, isMovingAddresses,
@@ -2445,6 +2445,14 @@ function RouteDetail({
   // action - confirm it, and say plainly where the order is going, same
   // language as deleting a whole route.
   const handleMoveTo = (orderId, target) => {
+    if (target === '__reopen') {
+      if (window.confirm(`Re-assign order #${orderId}?
+
+It goes back to pending on ${route.route_name} and shows up in the driver's app again.`)) {
+        onReopenDelivered?.(route, orderId);
+      }
+      return;
+    }
     if (target === 'pending') {
       if (window.confirm('Remove this order from the route?\n\nIt will move to Unassigned Orders and can be assigned to another route later.')) {
         onReassignOrder(orderId, route.route_name, target);
@@ -2645,12 +2653,13 @@ function RouteDetail({
                       </button>
                     </span>
                     <select
-                      className="stop-move"
+                      className={`stop-move${order.is_delivered ? ' stop-move--reassign' : ''}`}
                       value=""
-                      title="Move this stop to another route"
+                      title={order.is_delivered ? 'Re-assign this delivered order - deliver again on this route, or move it' : 'Move this stop to another route'}
                       onChange={(e) => { const target = e.target.value; if (target) handleMoveTo(order.order_id, target); e.target.value = ''; }}
                     >
-                      <option value="">Move to…</option>
+                      <option value="">{order.is_delivered ? '↩ Re-assign…' : 'Move to…'}</option>
+                      {order.is_delivered && <option value="__reopen">Deliver again on {route.route_name} (same driver)</option>}
                       {routes.filter((r) => r.route_name !== route.route_name).map((r) => {
                         const full = r.orders.length >= capacityFor(r.vehicle_type);
                         return (
@@ -2861,7 +2870,7 @@ function UnassignedPanel({ orders, routes, pendingOrders, capacityFor, isRouteFu
 export default function RouteWorkspace({
   routes, pendingOrders, isProcessing, capacityFor, maxCapacityFor, isRouteFull,
   isCreatingRoute, isAddingManualAddress, isChangingVehicle, isDeletingRoute, isMovingAddresses, isRemovingManualExtra,
-  onCreateRoute, onAddManualAddress, onToggleVehicle, onDeleteRoute, onReassignOrder, onReorderRoute,
+  onCreateRoute, onAddManualAddress, onToggleVehicle, onDeleteRoute, onReassignOrder, onReopenDelivered, onReorderRoute,
   onAssignOrders, onDownloadRoute, onMoveOrders, onRemoveManualExtra, onAdjustLocation,
   requestedTab, requestedView, requestedLiveTracking, navCommandSeq,
   drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath,
@@ -3212,6 +3221,7 @@ export default function RouteWorkspace({
                 isDeletingRoute={isDeletingRoute}
                 onDownload={onDownloadRoute}
                 onReassignOrder={onReassignOrder}
+                onReopenDelivered={onReopenDelivered}
                 onAssignOrders={onAssignOrders}
                 onReorderRoute={onReorderRoute}
                 maxCapacityFor={maxCapacityFor}
