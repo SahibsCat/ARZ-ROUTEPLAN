@@ -760,6 +760,10 @@ def get_route_planned_path(db: Session, route_id: int) -> List[Dict[str, float]]
         snapshot = stop.order_snapshot or {}
         if snapshot.get("lat") is not None and snapshot.get("lng") is not None:
             stops.append({"lat": snapshot["lat"], "lng": snapshot["lng"]})
+    # The run ends back at the warehouse (the driver returns after the last
+    # delivery, then ends the route there), so the planned line does too.
+    if stops:
+        stops.append({"lat": VELOCHERY_DEPOT["lat"], "lng": VELOCHERY_DEPOT["lng"]})
     return distance_service.build_route_geometry(VELOCHERY_DEPOT, stops) or []
 
 

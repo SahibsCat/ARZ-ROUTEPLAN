@@ -23,6 +23,7 @@ from app.models import (
     UploadBatch,
     VerifiedLocation,
 )
+from app.route_service import VELOCHERY_DEPOT
 from app.route_service import (
     insert_orders_into_route,
     recompute_route_metrics,
@@ -1683,6 +1684,9 @@ def route_summary(route: Route) -> Dict[str, object]:
     return {
         "route_id": route.id,
         "route_name": route.route_name,
+        # Where every route starts and ends - the driver returns here after
+        # the last delivery, then ends the route.
+        "warehouse": {"name": "Warehouse", "lat": VELOCHERY_DEPOT["lat"], "lng": VELOCHERY_DEPOT["lng"]},
         "vehicle_type": route.vehicle_type,
         "driver": route.driver,
         "driver_id": route.driver_id,

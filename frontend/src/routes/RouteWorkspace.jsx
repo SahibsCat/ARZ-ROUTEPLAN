@@ -340,6 +340,17 @@ function dotIconUrl(color, { size = 16, opacity = 1, strokeColor = '#fff' } = {}
 // (an emoji glyph rotated sideways/upside-down reads as broken, not
 // "turning") - which way the driver is moving is still visible from the
 // breadcrumb trail/line itself.
+// The warehouse marker - every route starts and ends here.
+const WAREHOUSE_FALLBACK = { name: 'Warehouse', lat: 12.989953044885272, lng: 80.21804157624011 };
+function warehouseIconUrl(size = 40) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 40 40">`
+    + `<rect x="3" y="3" width="34" height="34" rx="10" fill="#0f172a" stroke="#fbbf24" stroke-width="3"/>`
+    + `<path d="M11 28V17l9-5 9 5v11z" fill="#fbbf24"/>`
+    + `<rect x="16" y="21" width="8" height="7" rx="1" fill="#0f172a"/>`
+    + `</svg>`;
+  return { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, size };
+}
+
 function vehicleIconUrl(vehicleType, color, { size = 28, opacity = 1, heading = null } = {}) {
   // A navigation-style vehicle marker: a white disc with the route's
   // colour ring, a drawn scooter (with delivery box) or car glyph, and a
@@ -2227,6 +2238,11 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   const status = tracking?.tracking_status || 'not_started';
   const secondsSince = last ? Math.max(0, Math.round((now - new Date(last.recorded_at).getTime()) / 1000)) : null;
   const fresh = secondsSince != null && secondsSince < 60;
+  const warehouse = route.warehouse?.lat != null ? route.warehouse : WAREHOUSE_FALLBACK;
+  const runStatus = tracking?.route_run_status ?? route.route_run_status;
+  // Every stop delivered but the route not ended yet = driving back.
+  const returning = !nextStop && orders.length > 0 && runStatus === 'in_progress';
+  const warehouseKm = returning && position ? haversineMeters(position, warehouse) / 1000 : null;
   const vehicleColor = '#3b82f6';
 
   return createPortal(
@@ -2328,6 +2344,23 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                           />
                         );
                       })}
+                      {(() => {
+                        const wp = project(warehouse.lat, warehouse.lng);
+                        if (!wp) return null;
+                        const wi = warehouseIconUrl(returning ? 46 : 38);
+                        return (
+                          <img
+                            src={wi.url}
+                            width={wi.size}
+                            height={wi.size}
+                            alt=""
+                            className={`fleet-map__pin fleet-map__pin--dot${returning ? ' lmx__warehouse--target' : ''}`}
+                            style={{ left: wp.x, top: wp.y, zIndex: 3 }}
+                            title="Warehouse: every route starts and ends here"
+                            onClick={() => focusStop(warehouse)}
+                          />
+                        );
+                      })()}
                       {me && (
                         <>
                           <span className="fleet-map__driver-pulse" style={{ left: me.x, top: me.y, '--pulse': vehicleColor }} />
@@ -2434,9 +2467,18 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                 {nextStop.is_late && <span className="lmx__late">Late</span>}
               </span>
             </button>
+          ) : returning ? (
+            <button type="button" className="lmx__next lmx__next--return" onClick={() => focusStop(warehouse)}>
+              <span className="lmx__next-label">All {orders.length} delivered · returning</span>
+              <span className="lmx__next-name">Heading back to the warehouse</span>
+              <span className="lmx__next-addr">
+                {warehouseKm != null ? `${warehouseKm < 1 ? `${Math.round(warehouseKm * 1000)} m` : `${warehouseKm.toFixed(1)} km`} away (straight line). ` : ''}
+                The driver ends the route on reaching it. Km keep counting until then.
+              </span>
+            </button>
           ) : orders.length > 0 ? (
             <div className="lmx__next lmx__next--done">
-              <IconCheck width={18} height={18} /> All {orders.length} stops delivered
+              <IconCheck width={18} height={18} /> Route complete · back at the warehouse
             </div>
           ) : null}
 
@@ -2461,6 +2503,17 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                 </li>
               );
             })}
+            {orders.length > 0 && (
+              <li className={`lmx__stop lmx__stop--warehouse${returning ? ' is-next' : ''}${runStatus === 'completed' ? ' is-done' : ''}`}>
+                <button type="button" onClick={() => focusStop(warehouse)}>
+                  <span className="lmx__stop-dot"><IconFlag width={11} height={11} /></span>
+                  <span className="lmx__stop-body">
+                    <span className="lmx__stop-name">Warehouse</span>
+                    <span className="lmx__stop-meta">{runStatus === 'completed' ? 'Route ended here' : returning ? 'Driving back now' : 'Route ends here'}</span>
+                  </span>
+                </button>
+              </li>
+            )}
           </ol>
         </aside>
       </div>
@@ -2590,13 +2643,19 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
             <span className="dtc__progress-pct">{pct}%</span>
           </div>
 
-          {nextStop && (
+          {nextStop ? (
             <div className="dtc__next">
               <span className="dtc__next-label">Next stop · {orders.indexOf(nextStop) + 1}</span>
               <span className="dtc__next-name">{nextStop.customer_name || `Order #${nextStop.order_id}`}</span>
               <span className="dtc__next-addr">{nextStop.address}</span>
             </div>
-          )}
+          ) : orders.length > 0 && (tracking.route_run_status ?? route.route_run_status) === 'in_progress' ? (
+            <div className="dtc__next dtc__next--return">
+              <span className="dtc__next-label">All {orders.length} delivered · returning</span>
+              <span className="dtc__next-name">Heading back to the warehouse</span>
+              <span className="dtc__next-addr">The driver ends the route on reaching the warehouse.</span>
+            </div>
+          ) : null}
 
           <ol className="lmx__timeline dtc__timeline">
             {orders.map((o, idx) => {
