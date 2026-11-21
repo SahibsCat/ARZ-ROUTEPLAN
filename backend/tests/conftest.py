@@ -29,3 +29,14 @@ def _override_get_db():
 
 
 app.dependency_overrides[get_db] = _override_get_db
+
+
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _no_network_road_distance(monkeypatch):
+    """The driver odometer looks up OSRM road distance across GPS gaps -
+    tests must not hit the network; the gap tests stub their own value."""
+    from app import distance_service
+    monkeypatch.setattr(distance_service, "road_distance_km_quick", lambda *a, **k: None)

@@ -86,6 +86,35 @@ def route_distance_time(lat1: float, lng1: float, lat2: float, lng2: float) -> D
     return result
 
 
+_GAP_ROAD_CACHE: Dict[Tuple[float, float, float, float], Optional[float]] = {}
+
+
+def road_distance_km_quick(lat1: float, lng1: float, lat2: float, lng2: float) -> Optional[float]:
+    """Road distance between two GPS fixes for the driver odometer's
+    "GPS went quiet, driver reappeared somewhere else" gaps. Called from
+    the live tracking poll, so it must never stall it: one attempt, short
+    timeout, and failures are cached too (a gap is asked about on every
+    poll - it should cost one request per gap, ever)."""
+    key = (round(lat1, 4), round(lng1, 4), round(lat2, 4), round(lng2, 4))
+    if key in _GAP_ROAD_CACHE:
+        return _GAP_ROAD_CACHE[key]
+    km: Optional[float] = None
+    try:
+        with httpx.Client(timeout=4.0, follow_redirects=True) as client:
+            response = client.get(
+                f"{OSRM_ROUTE_URL}/{lng1},{lat1};{lng2},{lat2}",
+                params={"overview": "false", "alternatives": "false", "steps": "false"},
+            )
+            response.raise_for_status()
+            routes = response.json().get("routes") or []
+            if routes and routes[0].get("distance") is not None:
+                km = float(routes[0]["distance"]) / 1000.0
+    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+        km = None
+    _GAP_ROAD_CACHE[key] = km
+    return km
+
+
 def _decode_google_polyline(encoded: str) -> List[Dict[str, float]]:
     """Google's polyline encoding (precision 5) - the standard reference
     algorithm, verified against Google's own published example

@@ -586,6 +586,19 @@ _MAX_ACCURACY_METERS = 60.0
 # a signal, phone drifts, then a real move) is not.
 _MAX_PLAUSIBLE_SPEED_KMH = 140.0
 
+# A "GPS gap": the phone stopped reporting for a while (app killed in the
+# background, no signal, location briefly off) and the driver reappears
+# somewhere else. A straight line between the two fixes under-counts the
+# real road they drove, so a gap uses OSRM road distance instead.
+_GAP_MIN_SECONDS = 90
+_GAP_MIN_KM = 0.3
+
+# Parked-at-a-stop drift: below this reported speed (m/s) the phone says
+# it isn't moving, so a small hop is GPS wander, not driving.
+_STATIONARY_SPEED_MPS = 0.6
+_STATIONARY_MAX_HOP_KM = 0.06
+_MAX_JITTER_FLOOR_KM = 0.04
+
 
 def _sum_haversine_km(pings: List[DriverLocationPing]) -> float:
     """pings must already be in chronological order (oldest first) -
@@ -612,7 +625,14 @@ def _sum_haversine_km(pings: List[DriverLocationPing]) -> float:
             last_good = ping
             continue
         hop = _haversine_km(last_good.lat, last_good.lng, ping.lat, ping.lng)
-        if hop < _MIN_MOVEMENT_KM:
+        # Jitter floor scales with how precise the two fixes say they are
+        # (a 30m-accuracy fix wanders ~30m standing still), capped at 40m.
+        accuracies = [a for a in (getattr(last_good, "accuracy", None), getattr(ping, "accuracy", None)) if a is not None]
+        floor_km = max(_MIN_MOVEMENT_KM, min(_MAX_JITTER_FLOOR_KM, (sum(accuracies) / len(accuracies)) / 1000.0)) if accuracies else _MIN_MOVEMENT_KM
+        if hop < floor_km:
+            continue
+        speed = getattr(ping, "speed", None)
+        if speed is not None and 0 <= speed < _STATIONARY_SPEED_MPS and hop < _STATIONARY_MAX_HOP_KM:
             continue
         # Speed is only a meaningful signal once there's enough elapsed
         # time to compute one - two fixes a few milliseconds apart (back-
@@ -622,6 +642,12 @@ def _sum_haversine_km(pings: List[DriverLocationPing]) -> float:
         elapsed_seconds = (_as_aware_utc(ping.recorded_at) - _as_aware_utc(last_good.recorded_at)).total_seconds()
         if elapsed_seconds >= 2 and (hop / (elapsed_seconds / 3600.0)) > _MAX_PLAUSIBLE_SPEED_KMH:
             continue  # implausible jump - treat as a glitch, keep last_good as the reference point
+        if elapsed_seconds >= _GAP_MIN_SECONDS and hop >= _GAP_MIN_KM:
+            road_km = distance_service.road_distance_km_quick(last_good.lat, last_good.lng, ping.lat, ping.lng)
+            # Sanity: a road can't be shorter than the straight line, and a
+            # wildly longer one means OSRM snapped somewhere odd.
+            if road_km is not None and hop <= road_km <= hop * 3:
+                hop = road_km
         total += hop
         last_good = ping
     return total

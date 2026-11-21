@@ -879,3 +879,40 @@ def test_delete_driver_history_record_refuses_an_in_progress_route(db_session):
 def test_delete_driver_history_record_rejects_an_unknown_route(db_session):
     with pytest.raises(crud.RouteNotFoundError):
         crud_driver.delete_driver_history_record(db_session, 999999)
+
+
+class _GapPing:
+    def __init__(self, lat, lng, recorded_at, accuracy=None, speed=None):
+        self.lat = lat
+        self.lng = lng
+        self.accuracy = accuracy
+        self.speed = speed
+        self.recorded_at = recorded_at
+
+
+def test_sum_haversine_km_uses_road_distance_across_a_gps_gap(monkeypatch):
+    # Phone went quiet for 10 minutes, driver reappears ~1.11km away: the
+    # road they drove (OSRM) is counted, not the straight line.
+    monkeypatch.setattr(crud_driver.distance_service, "road_distance_km_quick", lambda *a: 1.6)
+    base = datetime.now(timezone.utc)
+    pings = [_GapPing(13.00, 80.20, base), _GapPing(13.01, 80.20, base + timedelta(minutes=10))]
+    assert crud_driver._sum_haversine_km(pings) == pytest.approx(1.6)
+
+
+def test_sum_haversine_km_falls_back_to_straight_line_when_road_lookup_fails(monkeypatch):
+    monkeypatch.setattr(crud_driver.distance_service, "road_distance_km_quick", lambda *a: None)
+    base = datetime.now(timezone.utc)
+    pings = [_GapPing(13.00, 80.20, base), _GapPing(13.01, 80.20, base + timedelta(minutes=10))]
+    assert crud_driver._sum_haversine_km(pings) == pytest.approx(crud_driver._haversine_km(13.00, 80.20, 13.01, 80.20))
+
+
+def test_sum_haversine_km_ignores_drift_while_parked():
+    # Phone says speed ~0 (parked at a delivery) and wanders 30-40m with
+    # 35m-accuracy fixes: none of that is driving.
+    base = datetime.now(timezone.utc)
+    pings = [
+        _GapPing(13.0000, 80.2000, base, accuracy=35, speed=0.0),
+        _GapPing(13.0003, 80.2000, base + timedelta(seconds=15), accuracy=35, speed=0.1),
+        _GapPing(13.0000, 80.2002, base + timedelta(seconds=30), accuracy=35, speed=0.0),
+    ]
+    assert crud_driver._sum_haversine_km(pings) == 0.0
