@@ -11,6 +11,7 @@ import { installFx, celebrate } from './fx';
 // rather than duplicating that CSS - importing a stylesheet twice is a
 // no-op, not a double-apply.
 import './routes/routeWorkspace.css';
+import './routes/mapPro.css';
 import arzLogo from './assets/arz-logo.png';
 import arzLogoDark from './assets/arz-logo-dark.png';
 import {

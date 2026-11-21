@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { GoogleMap, Marker, Polyline, Circle, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 import {
   IconRoute, IconCar, IconBike, IconClock, IconCheck, IconAlert, IconPin, IconPlus, IconInbox,
   IconDownload, IconRefresh, IconArrowUp, IconArrowDown, IconGauge, IconFlag, IconSearch, IconX,
@@ -13,6 +13,7 @@ import {
   Route as LIconRoute, PackageSearch, MapPinPlus, RotateCw, Trash2, UserPlus,
   Map as LIconMap, Columns2, List as LIconList, Download as LIconDownload,
   MoreHorizontal, CarFront as LIconCarFront, Bike as LIconBike,
+  Phone, Maximize2, Minimize2, Moon, Satellite, ExternalLink,
 } from 'lucide-react';
 import './routeWorkspace.css';
 
@@ -690,6 +691,83 @@ function RouteRow({ route, routeIdx, capacityFor, onOpen, onDownload, onDeleteRo
 // same real backend endpoint (GET /api/routes/{id}/route-path) LiveMapModal
 // already uses - no new endpoint, no simulated geometry.
 // --------------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Map look - Night (default, a calm dark ops map), Streets (Google's
+// standard roadmap) or Satellite (hybrid: imagery + labels). Remembered
+// per browser. Styles only apply to raster roadmaps, which is what these
+// maps run as (no mapId).
+// ---------------------------------------------------------------------
+const NIGHT_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#111827' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8b95a7' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0b1020' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#2a3346' }] },
+  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#c3cad8' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: '#13261f' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1f2937' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#151c28' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#7d8799' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#263142' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#33415a' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1b2433' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#b4bdcc' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1a2f' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3d5a80' }] },
+];
+const MAP_LOOK_KEY = 'rootplan_map_look';
+
+function useMapLook() {
+  const [look, setLookState] = useState(() => {
+    try { return localStorage.getItem(MAP_LOOK_KEY) || 'night'; } catch { return 'night'; }
+  });
+  const setLook = (value) => {
+    setLookState(value);
+    try { localStorage.setItem(MAP_LOOK_KEY, value); } catch { /* private mode - fine */ }
+  };
+  const options = look === 'satellite'
+    ? { mapTypeId: 'hybrid', styles: null }
+    : { mapTypeId: 'roadmap', styles: look === 'night' ? NIGHT_MAP_STYLE : null };
+  return [look, setLook, options];
+}
+
+function MapLookSwitch({ look, onChange, className = '' }) {
+  const items = [['night', Moon, 'Night'], ['streets', LIconMap, 'Streets'], ['satellite', Satellite, 'Satellite']];
+  return (
+    <div className={`map-look ${className}`} role="group" aria-label="Map style">
+      {items.map(([id, Icon, label]) => (
+        <button
+          key={id}
+          type="button"
+          className={`map-look__btn${look === id ? ' map-look__btn--on' : ''}`}
+          onClick={() => onChange(id)}
+          title={label}
+          aria-pressed={look === id}
+        >
+          <Icon size={14} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Re-renders every `ms` so "12s ago" style labels keep ticking.
+function useNow(ms = 1000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
+}
+
+function initials(name) {
+  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || '?') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
 function FleetMap({
   routes, fetchRoutePlannedPath, fetchRouteTracking, requestedLiveTracking, selectedRouteName, onSelectRoute, baseColorIndex = 0,
   // The fleet-wide Map/Split view only polls tracking for routes whose
@@ -711,6 +789,9 @@ function FleetMap({
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
   const mapRef = useRef(null);
+  const containerRef = useRef(null);
+  const [look, setLook, lookOptions] = useMapLook();
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [paths, setPaths] = useState({}); // route_id -> [{lat,lng}, ...]
   const [pathsLoading, setPathsLoading] = useState(false);
   const [pathsRefreshNonce, setPathsRefreshNonce] = useState(0);
@@ -895,6 +976,11 @@ function FleetMap({
     () => routes.flatMap((route) => (route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o) => ({ lat: o.lat, lng: o.lng }))),
     [routes]
   );
+  const fleetStats = useMemo(() => {
+    const total = routes.reduce((n, r) => n + (r.orders || []).length, 0);
+    const done = routes.reduce((n, r) => n + (r.orders || []).filter((o) => o.is_delivered).length, 0);
+    return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
+  }, [routes]);
 
   const fitToRoutes = () => {
     const map = mapRef.current;
@@ -917,12 +1003,33 @@ function FleetMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allStops.length, isLoaded]);
 
+  // Real browser fullscreen (works even inside the transformed slide-in
+  // drawer, where position:fixed wouldn't), re-fitting once the size lands.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !window.google) return undefined;
+    const t = window.setTimeout(() => { window.google.maps.event.trigger(map, 'resize'); fitToRoutes(); }, 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen]);
+  const toggleFullscreen = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else el.requestFullscreen?.().catch(() => {});
+  };
+
   if (loadError) return <div className="empty-state fleet-map__empty">Could not load Google Maps.</div>;
   if (!isLoaded) return <div className="empty-state fleet-map__empty">Loading map…</div>;
   if (allStops.length === 0) return <div className="empty-state fleet-map__empty"><IconPin width={22} height={22} />No geocoded stops to show on the map yet.</div>;
 
   return (
-    <div className="fleet-map">
+    <div className={`fleet-map fleet-map--${look}${isFullscreen ? ' fleet-map--fullscreen' : ''}`} ref={containerRef}>
       <GoogleMap
         mapContainerClassName="fleet-map__canvas"
         center={allStops[0]}
@@ -961,27 +1068,10 @@ function FleetMap({
           }, 350);
         }}
         options={{
-          zoomControl: true, streetViewControl: false,
-          // Defaults to Satellite (imagery is what makes the big numbered
-          // pins and route lines actually mean something - an admin can
-          // see the real driveway/building a pin sits on, not just an
-          // abstract road diagram) but with the native Map/Satellite
-          // toggle enabled so it's never locked - "Satellite" here maps to
-          // 'hybrid', not the bare 'satellite' type, since hybrid is
-          // satellite imagery WITH road/place-name labels drawn over it;
-          // bare 'satellite' has none at all. mapTypeId is a plain option
-          // react-google-maps/api can safely reapply on every re-render
-          // (unlike renderingType above), so there's no risk of it
-          // silently reverting to the wrong one.
-          mapTypeControl: true,
-          mapTypeControlOptions: {
-            mapTypeIds: ['roadmap', 'hybrid'],
-            style: window.google?.maps?.MapTypeControlStyle?.HORIZONTAL_BAR,
-            position: window.google?.maps?.ControlPosition?.TOP_RIGHT,
-          },
-          mapTypeId: 'hybrid',
-          fullscreenControl: false, gestureHandling: 'greedy',
-          backgroundColor: '#0b0f14',
+          ...lookOptions,
+          disableDefaultUI: true, zoomControl: true,
+          zoomControlOptions: { position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM },
+          gestureHandling: 'greedy', backgroundColor: '#0b0f14', clickableIcons: false,
         }}
       >
       </GoogleMap>
@@ -999,6 +1089,11 @@ function FleetMap({
           halo is what actually makes the line visible over open ground,
           water, or a busy rooftop. */}
       <svg className="fleet-map__lines">
+        <defs>
+          <filter id="fm-glow" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur stdDeviation="5" />
+          </filter>
+        </defs>
         {routes.map((route, idx) => {
           const color = routeColor(baseColorIndex + idx);
           const selected = selectedRouteName === route.route_name;
@@ -1013,14 +1108,29 @@ function FleetMap({
           if (pixels.length < 2) return null;
           const pointsAttr = pixels.map((p) => `${p.x},${p.y}`).join(' ');
           const opacity = dimmed ? 0.3 : 0.95;
+          const running = route.route_run_status === 'in_progress';
+          const halo = look === 'night' ? '#05070f' : '#fff';
           return (
             <g key={route.route_name}>
+              {!dimmed && (selected || running || look === 'night') && (
+                <polyline
+                  points={pointsAttr}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={selected ? 18 : 12}
+                  strokeOpacity={selected ? 0.45 : 0.28}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter="url(#fm-glow)"
+                  pointerEvents="none"
+                />
+              )}
               <polyline
                 points={pointsAttr}
                 fill="none"
-                stroke="#fff"
+                stroke={halo}
                 strokeWidth={selected ? 8 : 6.5}
-                strokeOpacity={dimmed ? 0.3 : 0.75}
+                strokeOpacity={dimmed ? 0.3 : look === 'night' ? 0.9 : 0.75}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 pointerEvents="none"
@@ -1036,6 +1146,20 @@ function FleetMap({
                 style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
                 onClick={() => onSelectRoute(route.route_name)}
               />
+              {running && !dimmed && (
+                <polyline
+                  className="fleet-map__flow"
+                  points={pointsAttr}
+                  fill="none"
+                  stroke="#fff"
+                  strokeWidth={2}
+                  strokeOpacity={0.85}
+                  strokeDasharray="2 16"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pointerEvents="none"
+                />
+              )}
               {directionArrows(pixels).map((arrow, arrowIdx) => (
                 <polygon
                   key={arrowIdx}
@@ -1067,7 +1191,7 @@ function FleetMap({
           const pins = stops.map((o, stopIdx) => {
             const pos = projectPoint(o.lat, o.lng);
             if (!pos) return null;
-            const icon = pinIconUrl(color, stopIdx + 1, { size: selected ? 44 : 36, opacity: dimmed ? 0.4 : 1 });
+            const icon = pinIconUrl(color, o.is_delivered ? '✓' : stopIdx + 1, { size: selected ? 44 : 36, opacity: dimmed ? 0.4 : o.is_delivered ? 0.7 : 1 });
             return (
               <img
                 key={o.order_id}
@@ -1078,7 +1202,7 @@ function FleetMap({
                 className="fleet-map__pin"
                 style={{ left: pos.x, top: pos.y, zIndex: selected ? 4 : 2 }}
                 onClick={() => onSelectRoute(route.route_name)}
-                title={`${route.route_name} · stop ${stopIdx + 1}: ${o.customer_name || 'Stop'}`}
+                title={`${route.route_name} · stop ${stopIdx + 1}: ${o.customer_name || 'Stop'}${o.is_delivered ? ' · delivered' : ''}`}
               />
             );
           });
@@ -1091,15 +1215,17 @@ function FleetMap({
             const animated = animatedDriverPositions[route.route_id] || driverPos;
             const p = projectPoint(animated.lat, animated.lng);
             if (p) {
-              const halo = dotIconUrl(color, { size: 40, opacity: 0.18 });
-              const vehicle = vehicleIconUrl(route.vehicle_type, color, { size: 28 });
+              const vehicle = vehicleIconUrl(route.vehicle_type, color, { size: 34 });
               pins.push(
-                <img key={`${route.route_name}-driver-halo`} src={halo.url} width={40} height={40} alt="" className="fleet-map__pin fleet-map__pin--dot" style={{ left: p.x, top: p.y, zIndex: 5, pointerEvents: 'none' }} />,
+                <span key={`${route.route_name}-driver-pulse`} className="fleet-map__driver-pulse" style={{ left: p.x, top: p.y, '--pulse': color }} />,
+                <span key={`${route.route_name}-driver-tag`} className="fleet-map__driver-tag" style={{ left: p.x, top: p.y, '--pulse': color }}>
+                  {route.route_name}
+                </span>,
                 <img
                   key={`${route.route_name}-driver`}
                   src={vehicle.url}
-                  width={28}
-                  height={28}
+                  width={34}
+                  height={34}
                   alt=""
                   className="fleet-map__pin fleet-map__pin--dot"
                   style={{ left: p.x, top: p.y, zIndex: 6 }}
@@ -1112,17 +1238,49 @@ function FleetMap({
         })}
       </div>
 
+      <div className="fleet-map__hud">
+        {routes.length > 1 && (
+          <div className="fleet-map__stats">
+            <div className="fm-ring" style={{ '--pct': fleetStats.pct }} title={`${fleetStats.pct}% delivered`}>
+              <span>{fleetStats.pct}%</span>
+            </div>
+            <div className="fm-stat">
+              <span className="fm-stat__value">{fleetStats.done}<small>/{fleetStats.total}</small></span>
+              <span className="fm-stat__label">Delivered</span>
+            </div>
+            <div className="fm-stat">
+              <span className="fm-stat__value">{routes.length}</span>
+              <span className="fm-stat__label">Routes</span>
+            </div>
+            <div className="fm-stat">
+              <span className="fm-stat__value">{liveTracking ? Object.keys(driverPositions).length : trackableRoutes.length}</span>
+              <span className="fm-stat__label">On road</span>
+            </div>
+          </div>
+        )}
+        <div className="fleet-map__live-toggle">
+          <span className={`fleet-map__live-dot${liveTracking ? ' is-on' : ''}`} />
+          <span>Live tracking</span>
+          <button
+            type="button"
+            className={`switch${liveTracking ? ' switch--on' : ''}`}
+            onClick={() => setLiveTracking((v) => !v)}
+            role="switch"
+            aria-checked={liveTracking}
+          >
+            <span className="switch__knob" />
+          </button>
+        </div>
+      </div>
+
+      <MapLookSwitch look={look} onChange={setLook} className="fleet-map__look" />
+
       <div className="fleet-map__toolbar">
         <button type="button" className="fleet-map__toolbar-btn" onClick={fitToRoutes} title="Fit to routes">
           <IconGauge width={15} height={15} />
         </button>
-        {/* Manual re-fetch of every route's line, for the one thing
-            routeSequenceKey above can't catch on its own (the backend's
-            road-snapped shape shifting without the stop list itself
-            changing) and as a plain "make sure this is current" control
-            after any edit - reordering a stop, adding one, or moving one
-            from another route (see routeSequenceKey's comment for what
-            already updates automatically). */}
+        {/* Manual re-fetch of every route's line, for the backend's
+            road-snapped shape shifting without the stop list changing. */}
         <button
           type="button"
           className="fleet-map__toolbar-btn"
@@ -1132,33 +1290,32 @@ function FleetMap({
         >
           {pathsLoading ? <span className="spinner" /> : <IconRefresh width={15} height={15} />}
         </button>
-      </div>
-
-      <div className="fleet-map__live-toggle">
-        <span>Live tracking</span>
-        <button
-          type="button"
-          className={`switch${liveTracking ? ' switch--on' : ''}`}
-          onClick={() => setLiveTracking((v) => !v)}
-          role="switch"
-          aria-checked={liveTracking}
-        >
-          <span className="switch__knob" />
+        <button type="button" className="fleet-map__toolbar-btn" onClick={toggleFullscreen} title={isFullscreen ? 'Exit full screen' : 'Full screen'}>
+          {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>
       </div>
 
       <div className="fleet-map__legend">
-        {routes.map((route, idx) => (
-          <button
-            type="button"
-            key={route.route_name}
-            className={`fleet-map__legend-item${selectedRouteName === route.route_name ? ' fleet-map__legend-item--active' : ''}`}
-            onClick={() => onSelectRoute(route.route_name)}
-          >
-            <span className="fleet-map__legend-swatch" style={{ background: routeColor(baseColorIndex + idx) }} />
-            {route.route_name}
-          </button>
-        ))}
+        {routes.map((route, idx) => {
+          const n = (route.orders || []).length;
+          const done = (route.orders || []).filter((o) => o.is_delivered).length;
+          const running = route.route_run_status === 'in_progress';
+          return (
+            <button
+              type="button"
+              key={route.route_name}
+              className={`fleet-map__legend-item${selectedRouteName === route.route_name ? ' fleet-map__legend-item--active' : ''}`}
+              onClick={() => onSelectRoute(route.route_name)}
+              style={{ '--swatch': routeColor(baseColorIndex + idx) }}
+            >
+              <span className="fleet-map__legend-swatch" style={{ background: routeColor(baseColorIndex + idx) }} />
+              <span className="fleet-map__legend-name">{route.route_name}</span>
+              {running && <span className="fleet-map__legend-live" title="On the road" />}
+              <span className="fleet-map__legend-count mono-num">{done}/{n}</span>
+              <span className="fleet-map__legend-bar"><span style={{ width: `${n ? (done / n) * 100 : 0}%` }} /></span>
+            </button>
+          );
+        })}
       </div>
 
       {/* alwaysTrackable makes trackableRoutes.length === 0 meaningless
@@ -1787,7 +1944,7 @@ const TRACKING_STATUS_LABEL = {
 
 function TrackingStatusPill({ status }) {
   const info = TRACKING_STATUS_LABEL[status] || TRACKING_STATUS_LABEL.not_started;
-  return <span className={`tracking-status-pill tracking-status-pill--${status}`}>{info.emoji} {info.text}</span>;
+  return <span className={`tracking-status-pill tracking-status-pill--${status}`}>{info.text}</span>;
 }
 
 // Pick a driver for this route - separate from the "conflict" flow the
@@ -1882,33 +2039,37 @@ function haversineMeters(a, b) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-// The actual "watch them move" view - "Track Driver" used to just open a
-// static Google Maps pin frozen at whatever the last location happened to
-// be the moment you clicked it, with no way to see it update. This is a
-// real embedded Google Map (JS API - switched back from the earlier
-// Leaflet/OSM version now that a Maps key is in use) that re-polls
-// tracking on its own faster timer and pans to the driver's marker every
-// time it actually moves, plus the breadcrumb trail already available
-// from the tracking endpoint's `path`.
+// The "watch them move" view, redesigned as a live operations console:
+// a big map on the left (Night / Streets / Satellite), and a side panel
+// with the driver, live speed, distance, progress, the next stop and the
+// full stop timeline. Click any stop in the timeline to fly the map to it.
+// Data plumbing is unchanged: a 3s REST poll plus the WebSocket push, the
+// newer fix always winning; the breadcrumb line mirrors WS fixes
+// immediately so it never lags behind the vehicle.
 function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetchRoutePlannedPath, onClose }) {
   const [tracking, setTracking] = useState(initialTracking);
-  const [showInfo, setShowInfo] = useState(false);
   const [plannedPath, setPlannedPath] = useState([]);
-  // Off the moment an admin drags the map to look at something else - a
-  // map that keeps yanking your view back to the driver every 3s poll
-  // isn't inspectable. The recenter button (bottom-right, same spot/glyph
-  // Google Maps itself uses) turns it back on.
+  // Off the moment an admin drags the map to look at something else; the
+  // recenter button turns it back on.
   const [autoFollow, setAutoFollow] = useState(true);
+  const [look, setLook, lookOptions] = useMapLook();
   const mapRef = useRef(null);
   const lastPannedRef = useRef(null);
-  // Captured once, on the first render that has a real fix - GoogleMap's
-  // own `center` prop is only ever read as the *initial* view; all
-  // repositioning after that goes through the imperative panTo effect
-  // below. Passing the live `position` object as `center` on every render
-  // (the previous version did) fights that effect - react-google-maps
-  // calls the plain, non-animated map.setCenter() on every prop change,
-  // racing the smooth panTo() and reading as a shaky, "unstable" map.
+  // GoogleMap's `center` prop is only the initial view - all repositioning
+  // goes through panTo below, so a live object here would fight it.
   const initialCenterRef = useRef(null);
+  const now = useNow(1000);
+  // Same overlay technique as FleetMap: this Maps release renders as a
+  // vector map where classic Marker/Polyline can paint nothing, so pins,
+  // lines and the vehicle are drawn as plain SVG/<img> over the map,
+  // projected from the visible bounds on every view change.
+  const [viewport, setViewport] = useState(null);
+  const project = (lat, lng) => {
+    if (!viewport) return null;
+    const { ne, sw, w, h } = viewport;
+    if (ne.lng === sw.lng || ne.lat === sw.lat) return null;
+    return { x: ((lng - sw.lng) / (ne.lng - sw.lng)) * w, y: ((ne.lat - lat) / (ne.lat - sw.lat)) * h };
+  };
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES,
@@ -1916,53 +2077,34 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
 
   useEffect(() => {
     let cancelled = false;
-    // 3s - this view is the one you're actually watching move, so it gets
-    // the tightest poll in the app (the card behind it polls slower). Kept
-    // running unchanged alongside the WebSocket push below (see its own
-    // comment) as the resilient fallback for a first load or an
-    // environment that blocks WebSocket upgrades.
     const poll = () => fetchRouteTracking(route.route_id).then((data) => { if (!cancelled) setTracking(data); }).catch(() => {});
     poll();
     const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [route.route_id, fetchRouteTracking]);
 
-  // The fast path - this modal is the one view someone opens specifically
-  // to watch a driver move, so it's always subscribed while open (no
-  // separate on/off toggle to gate it behind, unlike FleetMap's
-  // liveTracking switch). Only the raw fix is kept here; merged against
-  // the REST poll's own last_location below, whichever is newer wins.
-  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at, heading, accuracy}
-  // The breadcrumb line (`path` below) used to come *only* from the REST
-  // poll's tracking.path - a real bug, not just a rough edge: the arrow
-  // moves the instant a WebSocket push lands, but the line connecting to
-  // it only caught up on the next 3s poll, so the line visibly lagged
-  // behind the already-moved arrow instead of the two updating together.
-  // This mirrors every new WS fix into the line immediately; pruned back
-  // down once the REST poll's own path has genuinely caught up to it (see
-  // the effect below), so the REST poll stays the eventual source of
-  // truth and nothing gets double-drawn.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const [wsFix, setWsFix] = useState(null); // {lat, lng, recorded_at, heading, accuracy, speed}
   const [wsPathPoints, setWsPathPoints] = useState([]); // [{lat, lng, recorded_at}]
   useTrackingSocket(true, (msg) => {
     if (msg?.type !== 'location' || msg.route_id !== route.route_id) return;
     setWsFix((prev) => {
       if (prev?.recorded_at && msg.recorded_at && prev.recorded_at >= msg.recorded_at) return prev;
-      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at, heading: msg.heading, accuracy: msg.accuracy };
+      return { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at, heading: msg.heading, accuracy: msg.accuracy, speed: msg.speed };
     });
     setWsPathPoints((prev) => {
       if (prev.length && prev[prev.length - 1].recorded_at >= msg.recorded_at) return prev;
       return [...prev, { lat: msg.lat, lng: msg.lng, recorded_at: msg.recorded_at }].slice(-200);
     });
   });
-  // The actual road route the driver is meant to be following - depot ->
-  // every stop in delivery order -> last stop - so you can see whether
-  // they're on it, not just a bare dot with no path to judge it against.
-  // Fetched once per route open (stop order doesn't change while a route
-  // is in progress) from the backend's own OSRM-backed endpoint, not
-  // Google's client-side DirectionsService - that legacy Directions API
-  // isn't enabled for this project's Maps key (only the JavaScript API
-  // is), while OSRM is the same routing engine already proven reliable
-  // elsewhere in this codebase (route_distance_time).
+
+  // The planned road route (depot -> every stop in order), from the
+  // backend's OSRM-backed endpoint.
   useEffect(() => {
     let cancelled = false;
     fetchRoutePlannedPath(route.route_id)
@@ -1971,26 +2113,16 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
     return () => { cancelled = true; };
   }, [route.route_id, fetchRoutePlannedPath]);
 
-  // Whichever fix is actually newer wins - the REST poll and the
-  // WebSocket push race by design (same reasoning as FleetMap's
-  // applyLocationFix), so a slightly-delayed poll response can never
-  // regress the dot backward after a fresher push already rendered.
   const restLast = tracking?.last_location;
   const last = !restLast ? wsFix : !wsFix || restLast.recorded_at >= wsFix.recorded_at ? restLast : wsFix;
   const position = last ? { lat: last.lat, lng: last.lng } : null;
   const restPath = tracking?.path || [];
-  // The REST path plus any WS-pushed points newer than it - see
-  // wsPathPoints' own comment for why the line needs this to keep pace
-  // with the arrow instead of lagging a poll cycle behind it.
   const restPathLastRecordedAt = restPath.length ? restPath[restPath.length - 1].recorded_at : null;
   const path = [
     ...restPath,
     ...wsPathPoints.filter((p) => !restPathLastRecordedAt || p.recorded_at > restPathLastRecordedAt),
   ].map((p) => ({ lat: p.lat, lng: p.lng }));
 
-  // Once the REST poll's own path has caught up past a WS point, drop it
-  // from wsPathPoints - keeps the array from growing unbounded and keeps
-  // the REST poll as the eventual single source of truth for the line.
   useEffect(() => {
     if (!restPathLastRecordedAt) return;
     setWsPathPoints((prev) => {
@@ -1998,35 +2130,22 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
       return next.length === prev.length ? prev : next;
     });
   }, [restPathLastRecordedAt]);
-  // Real GPS accuracy (meters, from the phone's own location provider) -
-  // rendered as a circle around the arrow below rather than pretending
-  // the dot marks an exact point. A phone's GPS is commonly 5-20m off
-  // (worse near/inside a building, which is exactly what a warehouse
-  // stop looks like) - showing that honestly is the fix for "the arrow
-  // looks slightly off from where I actually am": it isn't a rendering
-  // bug, it's real sensor uncertainty, and a plain dot with no accuracy
-  // indicator hides that instead of explaining it.
+
+  // Real GPS accuracy (meters) - drawn as a true-scale circle so a
+  // slightly-off arrow reads as honest sensor uncertainty, not a bug.
   const accuracy = last?.accuracy != null && !Number.isNaN(last.accuracy) ? last.accuracy : null;
+  // Phones report m/s; null/negative while stationary.
+  const speedKmh = last?.speed != null && !Number.isNaN(last.speed) && last.speed > 0 ? Math.round(last.speed * 3.6) : 0;
 
   if (position && initialCenterRef.current === null) {
     initialCenterRef.current = position;
   }
 
-  // Smoothly-glided version of `position`, for the marker's rendered
-  // position only - panTo/autoFollow below still key off the raw
-  // `position`, unchanged, so camera movement stays driven by real GPS
-  // fixes and the existing "only pan for genuine movement" threshold,
-  // not by every intermediate animation frame.
   const animatedTargets = useMemo(() => (position ? { driver: position } : {}), [position?.lat, position?.lng]);
   const displayedPosition = useAnimatedPositions(animatedTargets).driver || position;
 
-  // panTo on every real position change is what makes this read as *live*
-  // movement - but GPS noise moves the reported point a few meters even
-  // while the driver is standing still, and panning the map for that
-  // reads as a shaky, "unstable" map rather than a calm live one. Only
-  // pans for a move big enough to actually be movement, and only while
-  // the admin hasn't dragged the map away to look at something else (see
-  // autoFollow above).
+  // Only pan for a move big enough to be real movement (GPS noise would
+  // otherwise make the map shake), and only while following.
   useEffect(() => {
     if (!position || !mapRef.current || !autoFollow) return;
     const prev = lastPannedRef.current;
@@ -2040,159 +2159,268 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
     if (position && mapRef.current) {
       lastPannedRef.current = position;
       mapRef.current.panTo(position);
+      if (mapRef.current.getZoom() < 15) mapRef.current.setZoom(16);
     }
   };
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal--wide live-map-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal__header">
-          <h3>Live Location — {driver.name}</h3>
-          <button type="button" className="modal__close" onClick={onClose}><IconX width={16} height={16} /></button>
-        </div>
-        <div className="modal__meta">
-          <span>{route.route_name}</span>
-          <TrackingStatusPill status={tracking?.tracking_status || 'not_started'} />
-          {last && <span>Updated {timeAgo(last.recorded_at)}</span>}
-        </div>
-        {loadError ? (
-          <div className="empty-state live-map-modal__empty">Could not load Google Maps.</div>
-        ) : !isLoaded ? (
-          <div className="empty-state live-map-modal__empty">Loading map…</div>
-        ) : position ? (
-          <div className="live-map-modal__map-wrap">
-            <GoogleMap
-              mapContainerClassName="live-map-modal__map"
-              center={initialCenterRef.current}
-              zoom={16}
-              onLoad={(map) => { mapRef.current = map; }}
-              onDragStart={() => setAutoFollow(false)}
-              options={{
-                // Defaults to Satellite (well, 'hybrid' - satellite
-                // imagery WITH road/place-name labels; bare 'satellite'
-                // draws none at all) for the same reason as FleetMap's own
-                // map: seeing the real ground under a live driver is the
-                // actual point of a live-tracking view. disableDefaultUI
-                // strips every control by default, so mapTypeControl below
-                // is an explicit override, same as zoomControl already is.
-                mapTypeId: 'hybrid',
-                disableDefaultUI: true, zoomControl: true,
-                mapTypeControl: true,
-                mapTypeControlOptions: {
-                  mapTypeIds: ['roadmap', 'hybrid'],
-                  style: window.google?.maps?.MapTypeControlStyle?.HORIZONTAL_BAR,
-                  position: window.google?.maps?.ControlPosition?.TOP_RIGHT,
-                },
-                gestureHandling: 'greedy', backgroundColor: '#0b0f14',
-              }}
-            >
-              {plannedPath.length > 1 && (
-                <Polyline path={plannedPath} options={{ strokeColor: '#f5a623', strokeWeight: 4, strokeOpacity: 0.55, zIndex: 1 }} />
-              )}
-              {path.length > 1 && (
-                <Polyline path={path} options={{ strokeColor: '#6f9bff', strokeWeight: 3, strokeOpacity: 0.9, zIndex: 2 }} />
-              )}
-              {(route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o, idx) => (
-                <Marker
-                  key={o.order_id}
-                  position={{ lat: o.lat, lng: o.lng }}
-                  zIndex={1}
-                  icon={{
-                    path: window.google.maps.SymbolPath.CIRCLE,
-                    scale: 6,
-                    fillColor: o.is_delivered ? '#4fc98a' : '#63636b',
-                    fillOpacity: 1,
-                    // White, not near-black - a satellite basemap has no
-                    // predictable color to read a dark outline against;
-                    // white is what actually keeps this visible over
-                    // rooftops, roads, and open ground alike (same
-                    // reasoning as FleetMap's own pins/lines).
-                    strokeColor: '#fff',
-                    strokeWeight: 1.5,
-                  }}
-                  title={`${idx + 1}. ${o.customer_name || 'Stop'}`}
-                />
-              ))}
-              {/* The translucent halo behind the arrow is Google Maps'
-                  own "your location" glyph - reads as live/GPS at a glance
-                  instead of just another plain pin. Both markers render at
-                  displayedPosition (the smoothly-animated one), not the
-                  raw target - see useAnimatedPositions' comment for why
-                  that's what actually makes this read as continuous
-                  motion rather than a stuck-then-teleport dot. The
-                  foreground marker is a directional arrow (`rotation` -
-                  degrees clockwise from north, exactly what the driver
-                  app's GPS heading already reports), not a plain dot, so
-                  this shows which way the driver is actually moving, not
-                  just where they are - `heading` already falls back to
-                  the last real reading while stationary (see its own
-                  computation above), so the arrow doesn't snap to
-                  "north" every time the driver pauses. */}
-              {/* The real GPS accuracy radius, drawn to true map scale
-                  (unlike the fixed-pixel halo below) - see `accuracy`'s
-                  own comment for why this is the honest answer to "the
-                  arrow looks slightly off from my real position": that's
-                  real sensor uncertainty, not a bug, and this shows
-                  exactly how much. Skipped entirely when the phone hasn't
-                  reported an accuracy figure at all, rather than drawing
-                  a fabricated circle. */}
-              {accuracy != null && (
-                <Circle
-                  center={displayedPosition}
-                  radius={accuracy}
-                  options={{
-                    fillColor: '#2457d6', fillOpacity: 0.12,
-                    strokeColor: '#2457d6', strokeOpacity: 0.4, strokeWeight: 1,
-                    clickable: false, zIndex: 1,
-                  }}
-                />
-              )}
-              <Marker
-                position={displayedPosition}
-                zIndex={2}
-                clickable={false}
-                icon={{
-                  path: window.google.maps.SymbolPath.CIRCLE,
-                  scale: 20,
-                  fillColor: '#2457d6',
-                  fillOpacity: 0.18,
-                  strokeWeight: 0,
+  const focusStop = (o) => {
+    if (!mapRef.current || o.lat == null || o.lng == null) return;
+    setAutoFollow(false);
+    mapRef.current.panTo({ lat: o.lat, lng: o.lng });
+    if (mapRef.current.getZoom() < 16) mapRef.current.setZoom(17);
+  };
+
+  const fitAll = () => {
+    const map = mapRef.current;
+    if (!map || !window.google) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    (route.orders || []).forEach((o) => { if (o.lat != null && o.lng != null) bounds.extend({ lat: o.lat, lng: o.lng }); });
+    if (position) bounds.extend(position);
+    if (bounds.isEmpty()) return;
+    setAutoFollow(false);
+    map.fitBounds(bounds, 60);
+  };
+
+  const orders = route.orders || [];
+  const deliveredCount = orders.filter((o) => o.is_delivered).length;
+  const pct = orders.length ? Math.round((deliveredCount / orders.length) * 100) : 0;
+  const nextStop = orders.find((o) => !o.is_delivered);
+  const legsById = Object.fromEntries((tracking?.delivery_legs || []).map((l) => [String(l.order_id), l]));
+  const status = tracking?.tracking_status || 'not_started';
+  const secondsSince = last ? Math.max(0, Math.round((now - new Date(last.recorded_at).getTime()) / 1000)) : null;
+  const fresh = secondsSince != null && secondsSince < 60;
+  const vehicleColor = '#3b82f6';
+
+  return createPortal(
+    <div className="lmx-backdrop" onClick={onClose}>
+      <div className="lmx" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`Live location of ${driver.name}`}>
+        <div className="lmx__map-area">
+          {loadError ? (
+            <div className="lmx__empty">Could not load Google Maps.</div>
+          ) : !isLoaded ? (
+            <div className="lmx__empty"><span className="spinner" /> Loading map…</div>
+          ) : position ? (
+            <>
+              <GoogleMap
+                mapContainerClassName="lmx__map"
+                center={initialCenterRef.current}
+                zoom={16}
+                onLoad={(map) => {
+                  mapRef.current = map;
+                  const update = () => {
+                    const bounds = map.getBounds();
+                    const div = map.getDiv();
+                    if (!bounds || !div) return;
+                    const ne = bounds.getNorthEast();
+                    const sw = bounds.getSouthWest();
+                    setViewport({ ne: { lat: ne.lat(), lng: ne.lng() }, sw: { lat: sw.lat(), lng: sw.lng() }, w: div.offsetWidth, h: div.offsetHeight });
+                  };
+                  map.addListener('idle', update);
+                  map.addListener('bounds_changed', update);
                 }}
-              />
-              <Marker
-                position={displayedPosition}
-                zIndex={3}
-                onClick={() => setShowInfo((v) => !v)}
-                icon={vehicleIconUrl(route.vehicle_type, '#2457d6', { size: 32 })}
+                onDragStart={() => setAutoFollow(false)}
+                options={{
+                  ...lookOptions,
+                  disableDefaultUI: true, zoomControl: true,
+                  zoomControlOptions: { position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM },
+                  gestureHandling: 'greedy', backgroundColor: '#0b0f14', clickableIcons: false,
+                }}
               >
-                {showInfo && (
-                  <InfoWindow onCloseClick={() => setShowInfo(false)}>
-                    <span>{driver.name} · {timeAgo(last.recorded_at)}</span>
-                  </InfoWindow>
-                )}
-              </Marker>
-            </GoogleMap>
-            {!autoFollow && (
-              <button type="button" className="live-map-modal__recenter" onClick={handleRecenter} title="Recenter on driver">
-                <IconLocate width={18} height={18} />
-              </button>
+              </GoogleMap>
+
+              {(() => {
+                const toPts = (pts) => pts.map((p) => project(p.lat, p.lng)).filter(Boolean).map((p) => `${p.x},${p.y}`).join(' ');
+                const planned = plannedPath.length > 1 ? toPts(plannedPath) : '';
+                const trail = path.length > 1 ? toPts(path) : '';
+                const me = displayedPosition ? project(displayedPosition.lat, displayedPosition.lng) : null;
+                const accPx = me && accuracy != null && viewport
+                  ? ((accuracy / 111320) / (viewport.ne.lat - viewport.sw.lat)) * viewport.h
+                  : 0;
+                return (
+                  <>
+                    <svg className="fleet-map__lines lmx__overlay">
+                      <defs>
+                        <filter id="lmx-glow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="4" /></filter>
+                      </defs>
+                      {planned && (
+                        <polyline points={planned} fill="none" stroke="#fbbf24" strokeWidth={3.5} strokeOpacity={0.85} strokeDasharray="2 9" strokeLinecap="round" strokeLinejoin="round" />
+                      )}
+                      {trail && (
+                        <>
+                          <polyline points={trail} fill="none" stroke={vehicleColor} strokeWidth={14} strokeOpacity={0.45} strokeLinecap="round" strokeLinejoin="round" filter="url(#lmx-glow)" />
+                          <polyline points={trail} fill="none" stroke="#05070f" strokeWidth={7} strokeOpacity={0.6} strokeLinecap="round" strokeLinejoin="round" />
+                          <polyline points={trail} fill="none" stroke="#60a5fa" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+                        </>
+                      )}
+                      {me && accPx > 6 && (
+                        <circle cx={me.x} cy={me.y} r={accPx} fill={vehicleColor} fillOpacity={0.12} stroke={vehicleColor} strokeOpacity={0.5} strokeWidth={1} />
+                      )}
+                    </svg>
+                    <div className="fleet-map__pins">
+                      {orders.filter((o) => o.lat != null && o.lng != null).map((o) => {
+                        const pos = project(o.lat, o.lng);
+                        if (!pos) return null;
+                        const idx = orders.indexOf(o);
+                        const isNext = nextStop && String(nextStop.order_id) === String(o.order_id);
+                        const color = o.is_delivered ? '#10b981' : isNext ? '#f59e0b' : '#64748b';
+                        const icon = pinIconUrl(color, o.is_delivered ? '✓' : idx + 1, { size: isNext ? 42 : 34 });
+                        return (
+                          <img
+                            key={o.order_id}
+                            src={icon.url}
+                            width={icon.scaledSize.width}
+                            height={icon.scaledSize.height}
+                            alt=""
+                            className="fleet-map__pin"
+                            style={{ left: pos.x, top: pos.y, zIndex: isNext ? 4 : 2 }}
+                            title={`${idx + 1}. ${o.customer_name || 'Stop'}${o.is_delivered ? ' · delivered' : ''}`}
+                            onClick={() => focusStop(o)}
+                          />
+                        );
+                      })}
+                      {me && (
+                        <>
+                          <span className="fleet-map__driver-pulse" style={{ left: me.x, top: me.y, '--pulse': vehicleColor }} />
+                          <img
+                            src={vehicleIconUrl(route.vehicle_type, vehicleColor, { size: 40 }).url}
+                            width={40}
+                            height={40}
+                            alt=""
+                            className="fleet-map__pin fleet-map__pin--dot"
+                            style={{ left: me.x, top: me.y, zIndex: 6 }}
+                            title={`${driver.name} · ${route.route_name}`}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div className="lmx__map-top">
+                <span className={`lmx__live-chip${fresh ? ' is-fresh' : ''}`}>
+                  <span className="lmx__live-dot" />
+                  {fresh ? 'LIVE' : 'LAST KNOWN'}
+                  {secondsSince != null && <em>{secondsSince < 60 ? `${secondsSince}s ago` : timeAgo(last.recorded_at)}</em>}
+                </span>
+                <MapLookSwitch look={look} onChange={setLook} />
+              </div>
+
+              <div className="lmx__map-tools">
+                <button type="button" className={`lmx__tool${autoFollow ? ' is-on' : ''}`} onClick={handleRecenter} title="Follow driver">
+                  <IconLocate width={18} height={18} />
+                </button>
+                <button type="button" className="lmx__tool" onClick={fitAll} title="Show whole route">
+                  <IconGauge width={18} height={18} />
+                </button>
+              </div>
+
+              <div className="lmx__map-legend">
+                <span><i className="lmx__key lmx__key--trail" />Driven</span>
+                <span><i className="lmx__key lmx__key--plan" />Planned</span>
+                <span><i className="lmx__key lmx__key--next" />Next stop</span>
+                <span><i className="lmx__key lmx__key--done" />Delivered</span>
+              </div>
+            </>
+          ) : (
+            <div className="lmx__empty">
+              <IconLocate width={26} height={26} />
+              <strong>Waiting for the first GPS ping</strong>
+              <span>The map appears as soon as {driver.name}&apos;s phone reports a location.</span>
+            </div>
+          )}
+        </div>
+
+        <aside className="lmx__panel">
+          <div className="lmx__panel-head">
+            <div className={`lmx__avatar lmx__avatar--${status}`}>
+              {initials(driver.name)}
+              <span className="lmx__avatar-vehicle">{route.vehicle_type === 'car' ? <IconCar width={12} height={12} /> : <IconBike width={12} height={12} />}</span>
+            </div>
+            <div className="lmx__who">
+              <span className="lmx__name">{driver.name}</span>
+              <span className="lmx__sub">{route.route_name}{driver.vehicle_number ? ` · ${driver.vehicle_number}` : ''}</span>
+            </div>
+            <button type="button" className="lmx__close" onClick={onClose} aria-label="Close"><IconX width={16} height={16} /></button>
+          </div>
+
+          <div className="lmx__status-row">
+            <TrackingStatusPill status={status} />
+            {driver.mobile && (
+              <a className="lmx__call" href={`tel:${driver.mobile}`}><Phone size={14} /> Call</a>
+            )}
+            {last?.maps_url && (
+              <a className="lmx__call lmx__call--ghost" href={last.maps_url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Maps</a>
             )}
           </div>
-        ) : (
-          <div className="empty-state live-map-modal__empty">No location reported yet - the map appears as soon as the first ping lands.</div>
-        )}
-        <div className="modal__footer">
-          <button type="button" className="btn btn--ghost" onClick={onClose}>Close</button>
-        </div>
+
+          <div className="lmx__kpis">
+            <div className="lmx__kpi">
+              <span className="lmx__kpi-value">{speedKmh}<small>km/h</small></span>
+              <span className="lmx__kpi-label">Speed</span>
+            </div>
+            <div className="lmx__kpi">
+              <span className="lmx__kpi-value">{tracking?.distance_travelled_km ?? 0}<small>km</small></span>
+              <span className="lmx__kpi-label">Driven</span>
+            </div>
+            <div className="lmx__kpi">
+              <span className="lmx__kpi-value">{deliveredCount}<small>/{orders.length}</small></span>
+              <span className="lmx__kpi-label">Delivered</span>
+            </div>
+          </div>
+
+          <div className="lmx__progress" aria-label={`${pct}% delivered`}>
+            <span style={{ width: `${pct}%` }} />
+          </div>
+
+          {nextStop ? (
+            <button type="button" className="lmx__next" onClick={() => focusStop(nextStop)}>
+              <span className="lmx__next-label">Heading to · stop {orders.indexOf(nextStop) + 1}</span>
+              <span className="lmx__next-name">{nextStop.customer_name || `Order #${nextStop.order_id}`}</span>
+              <span className="lmx__next-addr">{nextStop.address}</span>
+              <span className="lmx__next-meta">
+                {nextStop.delivery_time && <span><IconClock width={12} height={12} /> Slot {nextStop.delivery_time}</span>}
+                {nextStop.eta && <span>ETA {nextStop.eta}</span>}
+                {nextStop.is_late && <span className="lmx__late">Late</span>}
+              </span>
+            </button>
+          ) : orders.length > 0 ? (
+            <div className="lmx__next lmx__next--done">
+              <IconCheck width={18} height={18} /> All {orders.length} stops delivered
+            </div>
+          ) : null}
+
+          <div className="lmx__timeline-head">Stops</div>
+          <ol className="lmx__timeline">
+            {orders.map((o, idx) => {
+              const isNext = nextStop && String(nextStop.order_id) === String(o.order_id);
+              const leg = legsById[String(o.order_id)];
+              return (
+                <li key={o.order_id} className={`lmx__stop${o.is_delivered ? ' is-done' : ''}${isNext ? ' is-next' : ''}`}>
+                  <button type="button" onClick={() => focusStop(o)}>
+                    <span className="lmx__stop-dot">{o.is_delivered ? <IconCheck width={11} height={11} /> : idx + 1}</span>
+                    <span className="lmx__stop-body">
+                      <span className="lmx__stop-name">{o.customer_name || `Order #${o.order_id}`}</span>
+                      <span className="lmx__stop-meta">
+                        {o.is_delivered
+                          ? `Delivered${o.delivered_at ? ` ${new Date(o.delivered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}${leg?.time_minutes != null ? ` · ${leg.time_minutes} min` : ''}${leg?.distance_km != null ? ` · ${leg.distance_km} km` : ''}`
+                          : [o.area, o.delivery_time && `Slot ${o.delivery_time}`, o.eta && `ETA ${o.eta}`].filter(Boolean).join(' · ')}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </aside>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
-// Live status + assignment for the route currently open in detail view.
-// Polls GET /api/routes/{id}/tracking on its own timer while this card is
-// mounted (i.e. only while an admin actually has this route's detail view
-// open) rather than pushing tracking state up into the whole workspace.
+// Live status + assignment for the route currently open. Polls
+// GET /api/routes/{id}/tracking every 5s while mounted.
 function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, fetchRouteTracking, fetchRoutePlannedPath }) {
   const [tracking, setTracking] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -2200,6 +2428,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showLiveMap, setShowLiveMap] = useState(false);
   const [isUnassigning, setIsUnassigning] = useState(false);
+  const now = useNow(1000);
 
   const load = async () => {
     try {
@@ -2216,7 +2445,7 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
   useEffect(() => {
     setIsLoading(true);
     load();
-    const interval = setInterval(load, 5000); // tightened again - was 15s, then 8s
+    const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.route_id]);
@@ -2232,8 +2461,18 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
     }
   };
 
+  const orders = route.orders || [];
+  const delivered = orders.filter((o) => o.is_delivered).length;
+  const pct = orders.length ? Math.round((delivered / orders.length) * 100) : 0;
+  const nextStop = orders.find((o) => !o.is_delivered);
+  const last = tracking?.last_location;
+  const secondsSince = last ? Math.max(0, Math.round((now - new Date(last.recorded_at).getTime()) / 1000)) : null;
+  const speedKmh = last?.speed != null && last.speed > 0 ? Math.round(last.speed * 3.6) : 0;
+  const legsById = Object.fromEntries((tracking?.delivery_legs || []).map((l) => [String(l.order_id), l]));
+  const status = tracking?.tracking_status || 'not_started';
+
   return (
-    <div className={`driver-card${tracking?.driver ? ` driver-card--${tracking.tracking_status}` : ''}`}>
+    <div className={`driver-card dtc${tracking?.driver ? ` driver-card--${status}` : ''}`}>
       <div className="driver-card__head">
         <h3><IconUsers width={14} height={14} /> Driver & Live Tracking</h3>
         <button type="button" className="modal__close driver-card__refresh" title="Refresh" onClick={load}>
@@ -2242,75 +2481,105 @@ function DriverTrackingCard({ route, drivers, onAssignDriver, onUnassignDriver, 
       </div>
 
       {isLoading ? (
-        <div className="driver-card__loading">Loading…</div>
+        <div className="driver-card__loading"><span className="spinner" /> Loading…</div>
       ) : error ? (
         <div className="empty-state">{error}</div>
       ) : !tracking.driver ? (
-        <div className="driver-card__empty">
-          <span>No driver assigned to this route yet.</span>
-          <button type="button" className="btn btn--outline" onClick={() => setShowAssignModal(true)}>
+        <div className="dtc__empty">
+          <div className="dtc__empty-icon"><UserPlus size={26} /></div>
+          <strong>No driver on this route yet</strong>
+          <span>Assign a driver and the route appears in their app instantly.</span>
+          <button type="button" className="btn btn--primary" onClick={() => setShowAssignModal(true)}>
             <IconPlus width={14} height={14} /> Assign Driver
           </button>
         </div>
       ) : (
         <>
-          <div className="driver-card__row">
-            <div className="driver-card__identity">
-              <span className="driver-card__name">{tracking.driver.name}</span>
-              <span className="driver-card__meta mono-num">{tracking.driver.driver_code}{tracking.driver.vehicle_number ? ` · ${tracking.driver.vehicle_number}` : ''}{tracking.driver.mobile ? ` · ${tracking.driver.mobile}` : ''}</span>
+          <div className="dtc__hero">
+            <div className={`lmx__avatar lmx__avatar--${status}`}>
+              {initials(tracking.driver.name)}
+              <span className="lmx__avatar-vehicle">{route.vehicle_type === 'car' ? <IconCar width={12} height={12} /> : <IconBike width={12} height={12} />}</span>
             </div>
-            <TrackingStatusPill status={tracking.tracking_status} />
+            <div className="dtc__who">
+              <span className="driver-card__name">{tracking.driver.name}</span>
+              <span className="dtc__meta mono-num">
+                {tracking.driver.driver_code}{tracking.driver.vehicle_number ? ` · ${tracking.driver.vehicle_number}` : ''}
+              </span>
+              <TrackingStatusPill status={status} />
+            </div>
+            {tracking.driver.mobile && (
+              <a className="dtc__call" href={`tel:${tracking.driver.mobile}`} title={`Call ${tracking.driver.mobile}`}>
+                <Phone size={18} />
+              </a>
+            )}
           </div>
-          {tracking.last_location && (
-            <div className="driver-card__meta">
-              Last seen {new Date(tracking.last_location.recorded_at).toLocaleTimeString()}
-              {/* Built from the driver's own recorded GPS trail, not the
-                  planned route distance route_service estimated at
-                  generation time - a real, live odometer, and the actual
-                  answer to "how much km has he travelled" rather than
-                  just "how much was planned". */}
-              {tracking.distance_travelled_km != null && ` · ${tracking.distance_travelled_km} km travelled`}
+
+          <div className="dtc__kpis">
+            <div className="dtc__kpi">
+              <span className="dtc__kpi-value">{delivered}<small>/{orders.length}</small></span>
+              <span className="dtc__kpi-label">Delivered</span>
+            </div>
+            <div className="dtc__kpi">
+              <span className="dtc__kpi-value">{tracking.distance_travelled_km ?? 0}<small>km</small></span>
+              <span className="dtc__kpi-label">Driven</span>
+            </div>
+            <div className="dtc__kpi">
+              <span className="dtc__kpi-value">{speedKmh}<small>km/h</small></span>
+              <span className="dtc__kpi-label">Speed</span>
+            </div>
+            <div className="dtc__kpi">
+              <span className="dtc__kpi-value dtc__kpi-value--sm">
+                {secondsSince == null ? '—' : secondsSince < 60 ? `${secondsSince}s` : timeAgo(last.recorded_at).replace(' ago', '')}
+              </span>
+              <span className="dtc__kpi-label">Last ping</span>
+            </div>
+          </div>
+
+          <div className="dtc__progress">
+            <div className="dtc__progress-bar"><span style={{ width: `${pct}%` }} /></div>
+            <span className="dtc__progress-pct">{pct}%</span>
+          </div>
+
+          {nextStop && (
+            <div className="dtc__next">
+              <span className="dtc__next-label">Next stop · {orders.indexOf(nextStop) + 1}</span>
+              <span className="dtc__next-name">{nextStop.customer_name || `Order #${nextStop.order_id}`}</span>
+              <span className="dtc__next-addr">{nextStop.address}</span>
             </div>
           )}
-          {tracking.delivery_legs?.some((leg) => leg.delivered) && (
-            <div className="driver-card__legs">
-              <span className="driver-card__legs-label">Delivery times</span>
-              {tracking.delivery_legs.filter((leg) => leg.delivered).map((leg) => {
-                const order = route.orders.find((o) => String(o.order_id) === String(leg.order_id));
-                return (
-                  <div key={leg.order_id} className="driver-card__leg-row">
-                    <span className="driver-card__leg-name">{order?.customer_name || `Order #${leg.order_id}`}</span>
-                    <span className="driver-card__leg-stats mono-num">
-                      {leg.time_minutes != null ? `${leg.time_minutes} min` : '—'} · {leg.distance_km != null ? `${leg.distance_km} km` : '—'}
+
+          <ol className="lmx__timeline dtc__timeline">
+            {orders.map((o, idx) => {
+              const isNext = nextStop && String(nextStop.order_id) === String(o.order_id);
+              const leg = legsById[String(o.order_id)];
+              return (
+                <li key={o.order_id} className={`lmx__stop${o.is_delivered ? ' is-done' : ''}${isNext ? ' is-next' : ''}`}>
+                  <div className="lmx__stop-row">
+                    <span className="lmx__stop-dot">{o.is_delivered ? <IconCheck width={11} height={11} /> : idx + 1}</span>
+                    <span className="lmx__stop-body">
+                      <span className="lmx__stop-name">{o.customer_name || `Order #${o.order_id}`}</span>
+                      <span className="lmx__stop-meta">
+                        {o.is_delivered
+                          ? `Delivered${leg?.time_minutes != null ? ` · ${leg.time_minutes} min` : ''}${leg?.distance_km != null ? ` · ${leg.distance_km} km` : ''}`
+                          : [o.delivery_time && `Slot ${o.delivery_time}`, o.eta && `ETA ${o.eta}`].filter(Boolean).join(' · ')}
+                      </span>
                     </span>
                   </div>
-                );
-              })}
-            </div>
-          )}
-          {route.orders.length > 0 && (
-            <div className="driver-card__progress">
-              <div className="driver-card__progress-label">
-                <span>{route.delivered_count || 0} / {route.orders.length} delivered</span>
-              </div>
-              <div className="capacity-bar">
-                <span
-                  className={`capacity-bar__fill${(route.delivered_count || 0) >= route.orders.length ? ' capacity-bar__fill--full' : ''}`}
-                  style={{ width: `${Math.round(((route.delivered_count || 0) / route.orders.length) * 100)}%` }}
-                />
-              </div>
-            </div>
-          )}
-          <div className="driver-card__actions">
-            {tracking.last_location ? (
-              <button type="button" className="btn btn--secondary" onClick={() => setShowLiveMap(true)}>
-                <IconPin width={14} height={14} /> Track Driver
-              </button>
-            ) : (
-              <button type="button" className="btn btn--secondary" disabled title="No location reported yet">
-                <IconPin width={14} height={14} /> Track Driver
-              </button>
-            )}
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className="driver-card__actions dtc__actions">
+            <button
+              type="button"
+              className="dtc__track"
+              onClick={() => setShowLiveMap(true)}
+              disabled={!tracking.last_location}
+              title={tracking.last_location ? 'Open the live map' : 'No location reported yet'}
+            >
+              <span className="lmx__live-dot" /> Track live
+            </button>
             <button type="button" className="btn btn--outline" onClick={() => setShowAssignModal(true)}>Change Driver</button>
             <button type="button" className="btn btn--danger-ghost" disabled={isUnassigning} onClick={handleUnassign}>
               {isUnassigning ? 'Removing…' : 'Unassign'}
