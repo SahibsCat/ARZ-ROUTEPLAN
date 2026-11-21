@@ -152,6 +152,24 @@ def test_reset_password_revokes_existing_sessions(db_session):
     assert driver2.id == driver.id
 
 
+def test_admin_can_view_driver_password(db_session):
+    from app.models import DriverPasswordVault
+    driver = crud_driver.create_driver(db_session, "Kumar", "kumar", "pass123")
+    assert crud_driver.get_driver_password(db_session, driver.id) == "pass123"
+    crud_driver.reset_driver_password(db_session, driver.id, "newpass456")
+    assert crud_driver.get_driver_password(db_session, driver.id) == "newpass456"
+    row = db_session.query(DriverPasswordVault).filter_by(driver_id=driver.id).one()
+    assert "newpass456" not in row.secret  # stored encrypted, not plain
+
+    # A password set before the vault existed fills in on the next login.
+    db_session.delete(row)
+    db_session.commit()
+    assert crud_driver.get_driver_password(db_session, driver.id) is None
+    crud_driver.authenticate_driver(db_session, "kumar", "newpass456")
+    assert crud_driver.get_driver_password(db_session, driver.id) == "newpass456"
+    assert crud_driver.list_drivers_with_assignment(db_session)[0]["password_saved"] is True
+
+
 # --------------------------------------------------------------------------
 # Login
 # --------------------------------------------------------------------------

@@ -1013,6 +1013,34 @@ function FleetMap({
   // those into visually continuous motion).
   const animatedDriverPositions = useAnimatedPositions(driverPositions);
 
+  // Routes whose every stop is delivered but not yet ended: their line is
+  // just the road back to the warehouse (from the driver, or the last stop).
+  const [returnPaths, setReturnPaths] = useState({}); // route_id -> [{lat,lng}]
+  const returnStarts = useMemo(() => {
+    const out = {};
+    for (const route of routes) {
+      const orders = route.orders || [];
+      if (route.route_run_status !== 'in_progress' || !orders.length || orders.some((o) => !o.is_delivered)) continue;
+      const last = [...orders].reverse().find((o) => o.lat != null && o.lng != null);
+      const from = driverPositions[route.route_id] || (last ? { lat: last.lat, lng: last.lng } : null);
+      if (!from) continue;
+      const to = route.warehouse?.lat != null ? route.warehouse : WAREHOUSE_FALLBACK;
+      out[route.route_id] = { from: { lat: from.lat, lng: from.lng }, to, key: returnPathKey(from, to) };
+    }
+    return out;
+  }, [routes, driverPositions]);
+  const returnStartsKey = Object.entries(returnStarts).map(([id, r]) => `${id}:${r.key}`).join('|');
+  useEffect(() => {
+    let cancelled = false;
+    Object.entries(returnStarts).forEach(([id, r]) => {
+      fetchReturnPath(r.from, r.to).then((path) => {
+        if (!cancelled) setReturnPaths((prev) => ({ ...prev, [id]: { key: r.key, path: path || [r.from, r.to] } }));
+      });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnStartsKey]);
+
   const allStops = useMemo(
     () => routes.flatMap((route) => (route.orders || []).filter((o) => o.lat != null && o.lng != null).map((o) => ({ lat: o.lat, lng: o.lng }))),
     [routes]
@@ -1141,7 +1169,12 @@ function FleetMap({
           const dimmed = selectedRouteName != null && !selected;
           const path = paths[route.route_id];
           const stops = (route.orders || []).filter((o) => o.lat != null && o.lng != null);
-          const linePoints = path && path.length > 1
+          const homeStart = returnStarts[route.route_id];
+          const home = homeStart ? (returnPaths[route.route_id]?.path || [homeStart.from, homeStart.to]) : null;
+          const liveFrom = homeStart && animatedDriverPositions[route.route_id];
+          const linePoints = home
+            ? (liveFrom ? [{ lat: liveFrom.lat, lng: liveFrom.lng }, ...home.slice(1)] : home)
+            : path && path.length > 1
             ? path
             : stops.length > 1 ? stops.map((o) => ({ lat: o.lat, lng: o.lng })) : null;
           if (!linePoints) return null;
@@ -1476,27 +1509,44 @@ function RoutesTable({
 function RouteOverviewStrip({ route, capacity, maxCapacity }) {
   const count = route.orders.length;
   const hasFlexRoom = maxCapacity > capacity;
-  const stats = [
-    { label: 'Vehicle type', value: route.vehicle_type === 'car' ? 'Car' : 'Bike' },
+  const lateCount = route.orders.filter((o) => o.is_late).length;
+  const km = route.route_distance_km;
+  const mins = route.route_time_minutes;
+  const hero = [
+    { label: 'Distance', value: km != null ? km : '—', unit: km != null ? 'km' : null, icon: <IconGauge width={16} height={16} />, tone: 'a' },
+    { label: 'Travel time', value: mins != null ? mins : '—', unit: mins != null ? 'min' : null, icon: <IconClock width={16} height={16} />, tone: 'b' },
+    { label: 'Finish ETA', value: route.estimated_finish_time || '—', unit: null, icon: <IconFlag width={16} height={16} />, tone: 'c' },
+  ];
+  const chips = [
+    { label: 'Vehicle', value: route.vehicle_type === 'car' ? 'Car' : 'Bike' },
     { label: 'Addresses', value: `${count} of ${maxCapacity}` },
     ...(hasFlexRoom ? [
       { label: 'Base capacity', value: capacity },
-      { label: 'Additional addresses', value: Math.max(count - capacity, 0) },
+      { label: 'Extra addresses', value: Math.max(count - capacity, 0) },
     ] : []),
     { label: 'Areas', value: route.areas && route.areas.length ? route.areas.length : '—' },
-    { label: 'Distance', value: route.route_distance_km != null ? `${route.route_distance_km} km` : '—' },
-    { label: 'Travel time', value: route.route_time_minutes != null ? `${route.route_time_minutes} min` : '—' },
     { label: 'Avg / stop', value: route.average_stop_time != null ? `${route.average_stop_time} min` : '—' },
-    { label: 'Finish ETA', value: route.estimated_finish_time || '—' },
+    { label: 'Late stops', value: lateCount, warn: lateCount > 0 },
   ];
   return (
-    <div className="route-overview">
-      {stats.map((stat) => (
-        <div key={stat.label} className="route-overview__item">
-          <span className="route-overview__label">{stat.label}</span>
-          <span className="route-overview__value mono-num">{stat.value}</span>
-        </div>
-      ))}
+    <div className="rdx__overview">
+      <div className="rdx__hero-stats">
+        {hero.map((h) => (
+          <div key={h.label} className={`rdx__stat rdx__stat--${h.tone}`}>
+            <span className="rdx__stat-icon">{h.icon}</span>
+            <span className="rdx__stat-label">{h.label}</span>
+            <span className="rdx__stat-value mono-num">{h.value}{h.unit && <small> {h.unit}</small>}</span>
+          </div>
+        ))}
+      </div>
+      <div className="rdx__chips">
+        {chips.map((c) => (
+          <div key={c.label} className={`rdx__chip${c.warn ? ' is-warn' : ''}`}>
+            <span>{c.label}</span>
+            <b className="mono-num">{c.value}</b>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2080,6 +2130,41 @@ function haversineMeters(a, b) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+// Road path from the driver (or the last stop) back to the warehouse, once
+// every order is delivered. Cached per ~100 m start cell so a moving
+// driver re-routes a few times, not on every ping.
+const returnPathCache = new Map();
+function returnPathKey(from, to) {
+  return `${from.lat.toFixed(3)},${from.lng.toFixed(3)}>${to.lat.toFixed(4)},${to.lng.toFixed(4)}`;
+}
+function fetchReturnPath(from, to) {
+  const key = returnPathKey(from, to);
+  if (returnPathCache.has(key)) return returnPathCache.get(key);
+  const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+  const promise = fetch(url)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      const coords = data?.routes?.[0]?.geometry?.coordinates;
+      return coords && coords.length > 1 ? coords.map(([lng, lat]) => ({ lat, lng })) : null;
+    })
+    .catch(() => null);
+  returnPathCache.set(key, promise);
+  return promise;
+}
+function useReturnPath(active, from, to) {
+  const key = active && from && to ? returnPathKey(from, to) : null;
+  const [road, setRoad] = useState({ key: null, path: null });
+  useEffect(() => {
+    if (!key) return undefined;
+    let cancelled = false;
+    fetchReturnPath(from, to).then((path) => { if (!cancelled) setRoad({ key, path }); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  if (!key) return null;
+  return road.key === key && road.path ? road.path : [from, to];
+}
+
 // The "watch them move" view, redesigned as a live operations console:
 // a big map on the left (Night / Streets / Satellite), and a side panel
 // with the driver, live speed, distance, progress, the next stop and the
@@ -2243,6 +2328,9 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
   // Every stop delivered but the route not ended yet = driving back.
   const returning = !nextStop && orders.length > 0 && runStatus === 'in_progress';
   const warehouseKm = returning && position ? haversineMeters(position, warehouse) / 1000 : null;
+  const lastStop = [...orders].reverse().find((o) => o.lat != null && o.lng != null);
+  const returnFrom = position || (lastStop ? { lat: lastStop.lat, lng: lastStop.lng } : null);
+  const returnPath = useReturnPath(returning, returnFrom, warehouse);
   const vehicleColor = '#3b82f6';
 
   return createPortal(
@@ -2284,7 +2372,14 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
 
               {(() => {
                 const toPts = (pts) => pts.map((p) => project(p.lat, p.lng)).filter(Boolean).map((p) => `${p.x},${p.y}`).join(' ');
-                const planned = plannedPath.length > 1 ? toPts(plannedPath) : '';
+                // All delivered: only the way back to the warehouse is drawn.
+                const planned = !returning && plannedPath.length > 1 ? toPts(plannedPath) : '';
+                let homeLine = '';
+                if (returning && returnPath) {
+                  // Start the line at the gliding vehicle, then follow the road.
+                  const pts = displayedPosition ? [displayedPosition, ...returnPath.slice(1)] : returnPath;
+                  homeLine = toPts(pts);
+                }
                 // Break the driven line wherever consecutive fixes are far
                 // apart (a stale fix at the warehouse, GPS off then on) -
                 // otherwise that gap draws as a straight line across the map.
@@ -2297,7 +2392,7 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                   if (i === 0 || haversineMeters(drawn[i - 1], pt) > TRAIL_JUMP_METERS) trailSegments.push([pt]);
                   else trailSegments[trailSegments.length - 1].push(pt);
                 });
-                const trails = trailSegments.filter((seg) => seg.length > 1).map(toPts).filter(Boolean);
+                const trails = returning ? [] : trailSegments.filter((seg) => seg.length > 1).map(toPts).filter(Boolean);
                 const me = displayedPosition ? project(displayedPosition.lat, displayedPosition.lng) : null;
                 const accPx = me && accuracy != null && viewport
                   ? ((accuracy / 111320) / (viewport.ne.lat - viewport.sw.lat)) * viewport.h
@@ -2310,6 +2405,14 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                       </defs>
                       {planned && (
                         <polyline points={planned} fill="none" stroke="#fbbf24" strokeWidth={3.5} strokeOpacity={0.85} strokeDasharray="2 9" strokeLinecap="round" strokeLinejoin="round" />
+                      )}
+                      {homeLine && (
+                        <g>
+                          <polyline points={homeLine} fill="none" stroke="#fbbf24" strokeWidth={14} strokeOpacity={0.35} strokeLinecap="round" strokeLinejoin="round" filter="url(#lmx-glow)" />
+                          <polyline points={homeLine} fill="none" stroke="#05070f" strokeWidth={7} strokeOpacity={0.6} strokeLinecap="round" strokeLinejoin="round" />
+                          <polyline points={homeLine} fill="none" stroke="#fbbf24" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+                          <polyline className="fleet-map__flow" points={homeLine} fill="none" stroke="#fff" strokeWidth={2} strokeOpacity={0.9} strokeDasharray="2 16" strokeLinecap="round" strokeLinejoin="round" />
+                        </g>
                       )}
                       {trails.map((trail, ti) => (
                         <g key={ti}>
@@ -2787,6 +2890,7 @@ function RouteDetail({
   const status = routeStatus(route, capacity);
   const nodeRefs = useRef({});
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+  const deliveredCount = route.orders.filter((o) => o.is_delivered).length;
 
   useEffect(() => {
     if (selectedOrderId && nodeRefs.current[selectedOrderId]) {
@@ -2841,88 +2945,110 @@ It goes back to pending on ${route.route_name} and shows up in the driver's app 
   };
 
   return (
-    <div className={`route-detail route-hue-${routeIdx % 6}`}>
-      <div className="route-detail__header">
-        <button type="button" className="route-detail__back" onClick={onBack}>
-          <IconChevron width={14} height={14} className="route-detail__back-icon" />
-          Routes
-        </button>
-        <div className="route-detail__title-block">
-          <div className="route-detail__title-row">
-            <h2 className="route-detail__title">{route.route_name}</h2>
+    <div className={`route-detail rdx route-hue-${routeIdx % 6}`}>
+      <section className="rdx__hero">
+        <div className="rdx__hero-top">
+          <button type="button" className="rdx__back" onClick={onBack}>
+            <IconChevron width={14} height={14} className="route-detail__back-icon" />
+            All routes
+          </button>
+          <div className="rdx__hero-tags">
             <StatusBadge status={status} />
             {route.is_auto_created && <span className="tag tag--auto"><IconPlus width={11} height={11} />Auto-added</span>}
             {isEdited && <span className="tag tag--edited"><IconAlert width={11} height={11} />Manually edited</span>}
           </div>
-          <span className="route-detail__subtitle">
-            {formatAreaPath(route.areas, 5)}
-          </span>
         </div>
 
-        <div className="route-detail__actions">
-          <button
-            type="button"
-            className="btn btn--secondary"
-            disabled={isChangingVehicle === route.route_name}
-            title="Switch this route's vehicle type"
-            onClick={() => onToggleVehicle(route)}
-          >
-            {route.vehicle_type === 'car' ? <LIconCarFront width={14} height={14} /> : <LIconBike width={14} height={14} />}
-            Switch to {route.vehicle_type === 'car' ? 'Bike' : 'Car'}
-            <IconRefresh width={11} height={11} />
-          </button>
-          <select
-            className="select-compact"
-            value=""
-            disabled={isFull || pendingOrders.length === 0}
-            title={isFull ? 'This route is full' : 'Add an unassigned order to this route'}
-            onChange={(e) => { const orderId = e.target.value; if (orderId) onAssignOrders([orderId], route.route_name); e.target.value = ''; }}
-          >
-            <option value="">
-              {isFull ? 'Route full' : pendingOrders.length === 0 ? 'No unassigned orders' : '+ Add Delivery'}
-            </option>
-            {pendingOrders.map((order) => (
-              <option key={order.order_id} value={order.order_id}>
-                #{order.order_id} — {order.customer_name || 'Unnamed'}
+        <div className="rdx__hero-main">
+          <div className="rdx__identity">
+            <span className="rdx__vehicle-badge" title={route.vehicle_type === 'car' ? 'Car route' : 'Bike route'}>
+              {route.vehicle_type === 'car' ? <LIconCarFront width={26} height={26} /> : <LIconBike width={26} height={26} />}
+            </span>
+            <div className="rdx__identity-text">
+              <h2 className="rdx__title">{route.route_name}</h2>
+              <span className="rdx__subtitle"><IconPin width={13} height={13} /> {formatAreaPath(route.areas, 5) || 'No areas yet'}</span>
+            </div>
+          </div>
+
+          <div className="rdx__meters">
+            <div className="rdx__meter">
+              <div className="rdx__meter-head">
+                <span>Load</span>
+                <b>{count}<small>/{maxCapacity}</small></b>
+              </div>
+              <div className="rdx__meter-track">
+                <span style={{ width: `${Math.min(100, (count / Math.max(1, maxCapacity)) * 100)}%` }} className={isAtMaxCapacity ? 'is-full' : ''} />
+              </div>
+            </div>
+            <div className="rdx__meter">
+              <div className="rdx__meter-head">
+                <span>Delivered</span>
+                <b>{deliveredCount}<small>/{count}</small></b>
+              </div>
+              <div className="rdx__meter-track">
+                <span style={{ width: `${count ? (deliveredCount / count) * 100 : 0}%` }} className="is-good" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rdx__actions">
+          <div className="rdx__actions-main">
+            <button type="button" className="rdx__btn rdx__btn--primary" onClick={() => onOpenDriverPage(route)}>
+              <IconUsers width={15} height={15} />
+              Driver & Tracking
+            </button>
+            <button type="button" className="rdx__btn" onClick={() => onDownload(route)}>
+              <IconDownload width={15} height={15} />
+              Download sheet
+            </button>
+            <span className="rdx__divider" />
+            <select
+              className="rdx__select"
+              value=""
+              disabled={isFull || pendingOrders.length === 0}
+              title={isFull ? 'This route is full' : 'Add an unassigned order to this route'}
+              onChange={(e) => { const orderId = e.target.value; if (orderId) onAssignOrders([orderId], route.route_name); e.target.value = ''; }}
+            >
+              <option value="">
+                {isFull ? 'Route full' : pendingOrders.length === 0 ? 'No unassigned orders' : '+ Add delivery'}
               </option>
-            ))}
-          </select>
-          {/* Available on every route, not just a full one - the one way
-              to pull a SPECIFIC known stop straight from Unassigned
-              Orders or another route by name, rather than scrolling the
-              ordinary "+ Add Delivery" dropdown above (which only lists
-              Unassigned, one at a time). Only actually CONSUMES the
-              one-time past-capacity override (canFlexAddresses) when the
-              route is genuinely full when confirmed - see crud.
-              add_orders_to_route's allow_override, which only engages if
-              capacity is actually exceeded. */}
+              {pendingOrders.map((order) => (
+                <option key={order.order_id} value={order.order_id}>
+                  #{order.order_id} — {order.customer_name || 'Unnamed'}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="rdx__btn"
+              disabled={canFlexAddresses && isAtMaxCapacity}
+              title={
+                canFlexAddresses && isAtMaxCapacity
+                  ? `This route already used its one manual override (normal capacity ${capacity} + 1). Undo it below to free the override up again.`
+                  : isFull
+                  ? `Normal capacity (${capacity}) reached - one manual override is available to add exactly one more.`
+                  : 'Add one specific delivery point from Unassigned Orders or another route.'
+              }
+              onClick={() => setShowAddAddressModal(true)}
+            >
+              <IconPlus width={15} height={15} />
+              {canFlexAddresses && isAtMaxCapacity ? 'Manual override used' : 'Add specific address'}
+            </button>
+            <button
+              type="button"
+              className="rdx__btn"
+              disabled={isChangingVehicle === route.route_name}
+              title="Switch this route's vehicle type"
+              onClick={() => onToggleVehicle(route)}
+            >
+              <IconRefresh width={14} height={14} />
+              Switch to {route.vehicle_type === 'car' ? 'Bike' : 'Car'}
+            </button>
+          </div>
           <button
             type="button"
-            className="btn btn--outline"
-            disabled={canFlexAddresses && isAtMaxCapacity}
-            title={
-              canFlexAddresses && isAtMaxCapacity
-                ? `This route already used its one manual override (normal capacity ${capacity} + 1). Undo it below to free the override up again.`
-                : isFull
-                ? `Normal capacity (${capacity}) reached - one manual override is available to add exactly one more.`
-                : 'Add one specific delivery point from Unassigned Orders or another route.'
-            }
-            onClick={() => setShowAddAddressModal(true)}
-          >
-            <IconPlus width={14} height={14} />
-            {canFlexAddresses && isAtMaxCapacity ? 'Manual override used' : 'Add Specific Address'}
-          </button>
-          <button type="button" className="btn btn--secondary" onClick={() => onDownload(route)}>
-            <IconDownload width={14} height={14} />
-            Download sheet
-          </button>
-          <button type="button" className="btn btn--secondary" onClick={() => onOpenDriverPage(route)}>
-            <IconUsers width={14} height={14} />
-            Driver & Tracking
-          </button>
-          <button
-            type="button"
-            className="btn btn--danger-ghost"
+            className="rdx__btn rdx__btn--danger"
             disabled={isDeletingRoute === route.route_name}
             onClick={() => {
               if (window.confirm(`Delete ${route.route_name}? Its ${count} deliver${count === 1 ? 'y' : 'ies'} will move to Unassigned Orders - nothing is deleted.`)) {
@@ -2930,11 +3056,11 @@ It goes back to pending on ${route.route_name} and shows up in the driver's app 
               }
             }}
           >
-            {isDeletingRoute === route.route_name ? <span className="spinner" /> : <IconX width={14} height={14} />}
-            {isDeletingRoute === route.route_name ? 'Deleting…' : 'Delete Route'}
+            {isDeletingRoute === route.route_name ? <span className="spinner" /> : <Trash2 width={14} height={14} />}
+            {isDeletingRoute === route.route_name ? 'Deleting…' : 'Delete route'}
           </button>
         </div>
-      </div>
+      </section>
 
       <RouteOverviewStrip route={route} capacity={capacity} maxCapacity={maxCapacity} />
 
@@ -2972,9 +3098,9 @@ It goes back to pending on ${route.route_name} and shows up in the driver's app 
                     <span className="route-stop__order-id">Order #{order.order_id}</span>
                     <span className="route-stop__customer">{order.customer_name}</span>
                     <span className={`stop-status${order.is_late ? ' stop-status--late' : ''}`}>
-                      {order.is_late ? '🔴 Late' : '🟢 On time'}
+                      {order.is_late ? 'Late' : 'On time'}
                     </span>
-                    {order.is_delivered && <span className="stop-status stop-status--delivered">✅ Delivered</span>}
+                    {order.is_delivered && <span className="stop-status stop-status--delivered"><IconCheck width={11} height={11} /> Delivered</span>}
                     {manualExtraOrderId === String(order.order_id) && (
                       <span className="stop-status stop-status--manual" title="Added past this route's normal capacity via the admin's one-time override">
                         🟡 Manual Override

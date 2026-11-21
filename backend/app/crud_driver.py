@@ -11,10 +11,10 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session, joinedload
 
-from app import crud, distance_service
+from app import crud, distance_service, password_vault
 from app.crud import RootplanError, RouteNotFoundError
 from app.driver_auth import create_session, generate_driver_code, hash_password, revoke_driver_sessions, verify_password
-from app.models import Driver, DriverLocationPing, DriverSession, Route, RouteStop
+from app.models import Driver, DriverLocationPing, DriverPasswordVault, DriverSession, Route, RouteStop
 from app.route_service import VELOCHERY_DEPOT
 
 # A ping newer than this reads as genuinely live; older than that but
@@ -108,9 +108,30 @@ def create_driver(
         status=status,
     )
     db.add(driver)
+    db.flush()
+    _store_password(db, driver.id, password)
     db.commit()
     db.refresh(driver)
     return driver
+
+
+def _store_password(db: Session, driver_id: int, password: str) -> None:
+    """Keeps the admin-viewable encrypted copy in step with the hash."""
+    row = db.query(DriverPasswordVault).filter(DriverPasswordVault.driver_id == driver_id).first()
+    secret = password_vault.encrypt(password)
+    if row is None:
+        db.add(DriverPasswordVault(driver_id=driver_id, secret=secret))
+    else:
+        row.secret = secret
+
+
+def get_driver_password(db: Session, driver_id: int) -> Optional[str]:
+    """The driver's current password for the admin, or None when it was set
+    before passwords were kept (it fills in on the driver's next login)."""
+    if get_driver(db, driver_id) is None:
+        raise DriverNotFoundError("Driver not found")
+    row = db.query(DriverPasswordVault).filter(DriverPasswordVault.driver_id == driver_id).first()
+    return password_vault.decrypt(row.secret) if row else None
 
 
 def signup_driver(
@@ -198,14 +219,18 @@ def reset_driver_password(db: Session, driver_id: int, new_password: str) -> Dri
     if driver is None:
         raise DriverNotFoundError("Driver not found")
     driver.password_hash, driver.password_salt = hash_password(new_password)
+    _store_password(db, driver.id, new_password)
     revoke_driver_sessions(db, driver.id)
     db.commit()
     db.refresh(driver)
     return driver
 
 
-def driver_summary(driver: Driver, assigned_route: Optional[Route] = None) -> Dict[str, object]:
+def driver_summary(
+    driver: Driver, assigned_route: Optional[Route] = None, password_saved: Optional[bool] = None,
+) -> Dict[str, object]:
     return {
+        "password_saved": password_saved,
         "id": driver.id,
         "driver_code": driver.driver_code,
         "name": driver.name,
@@ -228,7 +253,8 @@ def list_drivers_with_assignment(db: Session) -> List[Dict[str, object]]:
         r.driver_id: r
         for r in db.query(Route).filter(Route.driver_id.isnot(None)).all()
     }
-    return [driver_summary(d, routes_by_driver.get(d.id)) for d in drivers]
+    saved = {row[0] for row in db.query(DriverPasswordVault.driver_id).all()}
+    return [driver_summary(d, routes_by_driver.get(d.id), d.id in saved) for d in drivers]
 
 
 # --------------------------------------------------------------------------
@@ -272,6 +298,12 @@ def authenticate_driver(db: Session, username: str, password: str) -> Tuple[Driv
         raise InactiveDriverError("Your signup is still awaiting admin approval. Please check back shortly.")
     if driver.status != "active":
         raise InactiveDriverError("Your account has been deactivated. Please contact the administrator.")
+    # A password set before the vault existed becomes viewable for the
+    # admin the first time the driver logs in with it.
+    if password_vault.decrypt(getattr(
+        db.query(DriverPasswordVault).filter(DriverPasswordVault.driver_id == driver.id).first(), "secret", None,
+    )) != password:
+        _store_password(db, driver.id, password)
     session = create_session(db, driver)
     db.commit()
     db.refresh(driver)

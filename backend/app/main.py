@@ -1109,6 +1109,17 @@ def reset_driver_password_endpoint(driver_id: int, payload: ResetDriverPasswordR
     return {"driver": crud_driver.driver_summary(driver)}
 
 
+@app.get("/api/drivers/{driver_id}/password")
+def get_driver_password_endpoint(driver_id: int, db: Session = Depends(get_db)):
+    """Admin-only view of a driver's current password (Drivers page eye
+    icon). None when it was set before passwords were kept."""
+    try:
+        password = crud_driver.get_driver_password(db, driver_id)
+    except crud.RootplanError as e:
+        _raise_for_driver_error(e)
+    return {"driver_id": driver_id, "password": password, "saved": password is not None}
+
+
 # --- Assignment (admin) -----------------------------------------------------
 
 @app.post("/api/routes/{route_id}/driver")

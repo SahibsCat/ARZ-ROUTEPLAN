@@ -341,6 +341,18 @@ class Driver(Base):
     push_tokens = relationship("DriverPushToken", back_populates="driver", cascade="all, delete-orphan")
 
 
+class DriverPasswordVault(Base):
+    """Encrypted copy of a driver's current password, so the admin can see
+    it on the Drivers page (see app/password_vault.py). Its own table, not
+    a column on drivers, so create_all adds it on startup with no
+    migration. Login never reads it - only Driver.password_hash."""
+    __tablename__ = "driver_password_vault"
+
+    driver_id = Column(Integer, ForeignKey("drivers.id", ondelete="CASCADE"), primary_key=True)
+    secret = Column(Text, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class DriverSession(Base):
     """An opaque bearer token issued on driver login - not a stateless JWT,
     specifically so deactivating a driver or resetting their password can

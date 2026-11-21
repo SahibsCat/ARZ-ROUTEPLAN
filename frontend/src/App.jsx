@@ -12,6 +12,7 @@ import { installFx, celebrate } from './fx';
 // no-op, not a double-apply.
 import './routes/routeWorkspace.css';
 import './routes/mapPro.css';
+import './routes/routeDetail.css';
 import arzLogo from './assets/arz-logo.png';
 import arzLogoDark from './assets/arz-logo-dark.png';
 import {
@@ -34,6 +35,7 @@ import {
 } from 'lucide-react';
 import ActionMenu from './ActionMenu';
 import DriverDataPanel from './DriverData';
+import DriversTeam from './DriversTeam';
 
 // Backend origin for deployments where frontend and backend aren't
 // same-origin (e.g. Render, where they're two separate services). Empty
@@ -529,7 +531,7 @@ function friendlyGeocodeReason(text) {
   return t.replace(/^Needs Manual Verification\s*-\s*/i, '').split(' — ')[0].replace(/\s*\(confidence[^)]*\)/i, '');
 }
 
-function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, onRetry, onJump, describeErrorDetail, onFixAll, isFixingAll }) {
+function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, onRetry, onJump, describeErrorDetail, onFixAll, isFixingAll, onDownloadFailed, isDownloadingFailed }) {
   const total = failedOrders.length + warnings.length + pendingOrders.length;
   if (total === 0) return null;
   const parts = [];
@@ -557,6 +559,11 @@ function IssuesPanel({ failedOrders, warnings, pendingOrders, isOpen, onToggle, 
             <div className="issue-group">
               <div className="issue-group__label issue-group__label--row">
                 <span>Failed addresses</span>
+                {onDownloadFailed && (
+                  <button type="button" className="btn btn--outline btn--compact" onClick={onDownloadFailed} disabled={isDownloadingFailed} title="Download every failed address as an Excel file">
+                    {isDownloadingFailed ? <span className="spinner" /> : <IconDownload width={13} height={13} />} Excel
+                  </button>
+                )}
                 {onFixAll && (
                   <button type="button" className="btn btn--fix-all btn--compact" onClick={onFixAll} disabled={isFixingAll}>
                     {isFixingAll ? <><span className="spinner" /> Fixing…</> : <>✨ Fix all &amp; route</>}
@@ -3101,6 +3108,92 @@ Delete it anyway? This cannot be undone.`
     triggerBrowserDownload(buffer, `optiroute_all_routes_${dateSlug}.xlsx`);
   };
 
+  // Failed Addresses -> .xlsx. Keeps the upload's own columns first (so the
+  // sheet can be corrected and re-uploaded as-is), then why it failed.
+  const [isDownloadingFailed, setIsDownloadingFailed] = useState(false);
+  const handleDownloadFailedAddresses = async () => {
+    if (!failedOrders.length || isDownloadingFailed) return;
+    setIsDownloadingFailed(true);
+    try {
+      const { default: ExcelJS } = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Failed Addresses', { views: [{ state: 'frozen', ySplit: 2 }] });
+      const byId = new Map(orders.map((o) => [String(o.order_id), o]));
+      const uploadColumns = (columnOrder.length > 0 ? columnOrder : DEFAULT_COLUMN_ORDER);
+      const headers = ['S.No', ...uploadColumns.map((c) => c.label), 'Phone', 'Failure Reason', 'Retries', 'Suggested Pin'];
+      const hasPhoneCol = uploadColumns.some((c) => PHONE_FIELD_NAMES.includes(String(c.label).trim().toLowerCase()));
+      const finalHeaders = hasPhoneCol ? headers.filter((h) => h !== 'Phone') : headers;
+
+      const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      sheet.mergeCells(1, 1, 1, finalHeaders.length);
+      const title = sheet.getCell(1, 1);
+      title.value = `Failed Addresses — ${failedOrders.length} to fix (${today})`;
+      title.font = { name: 'Calibri', size: 14, bold: true, color: { argb: XLSX_WHITE } };
+      title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_CRITICAL } };
+      title.alignment = { vertical: 'middle', horizontal: 'center' };
+      sheet.getRow(1).height = 28;
+
+      const headRow = sheet.getRow(2);
+      finalHeaders.forEach((h, i) => {
+        const cell = headRow.getCell(i + 1);
+        cell.value = h;
+        cell.font = { name: 'Calibri', bold: true, color: { argb: XLSX_WHITE } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_INK } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        cell.border = XLSX_THIN_BORDER;
+      });
+      headRow.height = 22;
+
+      failedOrders.forEach((f, idx) => {
+        const base = byId.get(String(f.order_id)) || {};
+        const order = {
+          ...base,
+          order_id: f.order_id,
+          customer_name: f.customer_name ?? base.customer_name,
+          address: f.edited_address || f.address || f.entered_address || base.address,
+          extra_fields: { ...(base.extra_fields || {}), ...(f.extra_fields || {}) },
+          delivery_time: base.delivery_time ?? f.delivery_time,
+        };
+        const row = { order };
+        const reason = friendlyGeocodeReason(describeErrorDetail(f.geocode_error, 'Address not found')) || 'Address not found';
+        const pin = f.suggested_lat != null && f.suggested_lng != null
+          ? { text: 'Open suggested pin', hyperlink: `https://www.google.com/maps?q=${f.suggested_lat},${f.suggested_lng}` }
+          : '';
+        const values = [
+          idx + 1,
+          ...uploadColumns.map((c) => getCellValue(row, c) ?? ''),
+          ...(hasPhoneCol ? [] : [resolveOrderPhone(order) || f.phone || '']),
+          typeof reason === 'string' ? reason : String(f.geocode_error || 'Address not found'),
+          f.retry_count ?? 0,
+          pin,
+        ];
+        const r = sheet.getRow(idx + 3);
+        values.forEach((v, i) => {
+          const cell = r.getCell(i + 1);
+          cell.value = v;
+          cell.font = { name: 'Arial', size: 10, ...(finalHeaders[i] === 'Failure Reason' ? { color: { argb: XLSX_CRITICAL }, bold: true } : {}), ...(v && v.hyperlink ? { color: { argb: XLSX_VIOLET_DARK }, underline: true } : {}) };
+          cell.alignment = { vertical: 'middle', horizontal: finalHeaders[i].toLowerCase().includes('address') || finalHeaders[i] === 'Failure Reason' ? 'left' : 'center', wrapText: true };
+          cell.border = XLSX_THIN_BORDER;
+          if (idx % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_ZEBRA } };
+        });
+      });
+
+      finalHeaders.forEach((h, i) => {
+        sheet.getColumn(i + 1).width = h === 'S.No' ? 7 : h === 'Failure Reason' ? 40 : h === 'Suggested Pin' ? 20 : h === 'Retries' ? 10 : businessColumnWidth(h);
+      });
+      sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2 + failedOrders.length, column: finalHeaders.length } };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      triggerBrowserDownload(buffer, `failed_addresses_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      showToast(`Downloaded ${failedOrders.length} failed address${failedOrders.length === 1 ? '' : 'es'}.`);
+    } catch (err) {
+      console.error('Failed-address download failed:', err);
+      showToast('Could not build the Excel file - please try again.');
+    } finally {
+      setIsDownloadingFailed(false);
+    }
+  };
+
   const handleDownloadAllClick = async () => {
     setIsDownloadingAll(true);
     try {
@@ -3590,6 +3683,8 @@ Delete it anyway? This cannot be undone.`
             onRetry={handleRetrySingleOrder}
             onFixAll={handleFixAllFailed}
             isFixingAll={isFixingAll}
+            onDownloadFailed={handleDownloadFailedAddresses}
+            isDownloadingFailed={isDownloadingFailed}
             onJump={handleIssueJump}
             describeErrorDetail={describeErrorDetail}
           />
@@ -3883,6 +3978,18 @@ Delete it anyway? This cannot be undone.`
               {failedOrders.length > 0 && (
                 <button
                   type="button"
+                  className="btn btn--outline btn--compact board__download-failed"
+                  onClick={handleDownloadFailedAddresses}
+                  disabled={isDownloadingFailed}
+                  title="Download every failed address as an Excel file - fix them in Excel and upload again"
+                >
+                  {isDownloadingFailed ? <span className="spinner" /> : <IconDownload width={14} height={14} />}
+                  Download Excel
+                </button>
+              )}
+              {failedOrders.length > 0 && (
+                <button
+                  type="button"
                   className="btn btn--fix-all"
                   onClick={handleFixAllFailed}
                   disabled={isFixingAll}
@@ -4088,103 +4195,22 @@ Delete it anyway? This cannot be undone.`
               subtitle="Add delivery partners, reset passwords and approve new sign-ups." done={drivers.length > 0} />
           )}
           {(SCROLL_FLOW || pageView === 'drivers') && (
-          <div className="board board--drivers" id="drivers-board">
-            <div className="board__header">
-              <div className="board__header-group">
-                <h2 className="board__title"><LIconUsers width={18} height={18} /> Drivers</h2>
-                <span className="board__count mono-num">{drivers.length}</span>
-              </div>
-              <button type="button" className="btn btn--primary board__header-action" onClick={() => { setEditingDriver(null); setDriverFormOpen(true); }}>
-                <UserPlus width={14} height={14} /> Add Driver
-              </button>
-            </div>
-            <p className="board__intro">
-              Create driver logins for the Driver App, and assign them to routes from each route's detail view.
-              Deactivating a driver signs them out everywhere immediately.
-            </p>
-            <div className="board__body">
-              {isLoadingDrivers ? (
-                <div className="history-panel__skeletons">
-                  <SkeletonCard /><SkeletonCard /><SkeletonCard />
-                </div>
-              ) : driversError ? (
-                <div className="empty-state">{driversError}</div>
-              ) : drivers.length === 0 ? (
-                <div className="empty-state">
-                  No drivers yet. Click <strong>Add Driver</strong> to create the first login for the Driver App.
-                </div>
-              ) : (
-                <div className="drivers-table-wrap">
-                  <table className="drivers-table">
-                    <thead>
-                      <tr>
-                        <th>Driver</th>
-                        <th>Login</th>
-                        <th>Vehicle</th>
-                        <th>Status</th>
-                        <th>Assigned Route</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {drivers.map((driver) => (
-                        <tr key={driver.id}>
-                          <td>
-                            <div className="drivers-table__name">{driver.name}</div>
-                            <div className="drivers-table__code mono-num">{driver.driver_code}</div>
-                          </td>
-                          <td>
-                            <div>{driver.username}</div>
-                            {driver.mobile && <div className="drivers-table__meta">{driver.mobile}</div>}
-                          </td>
-                          <td className="drivers-table__nowrap">{driver.vehicle_number || '—'}</td>
-                          <td><DriverStatusPill status={driver.status} /></td>
-                          <td>{driver.assigned_route_name || <span className="drivers-table__meta">Unassigned</span>}</td>
-                          <td>
-                            {/* One visible action per row - the decision a
-                                pending signup needs, or Edit - and the rest
-                                in a menu, instead of four equal buttons. */}
-                            <div className="drivers-table__actions">
-                              {isTogglingDriverStatus === driver.id || isDeletingDriver === driver.id ? (
-                                <span className="drivers-table__busy"><span className="spinner" /> Working…</span>
-                              ) : driver.status === 'pending' ? (
-                                <>
-                                  <button type="button" className="btn btn--primary btn--compact" onClick={() => handleToggleDriverStatus(driver)}>
-                                    <UserCheck width={12} height={12} /> Approve
-                                  </button>
-                                  <button type="button" className="btn btn--danger-ghost btn--compact" onClick={() => handleDeleteDriver(driver)}>
-                                    Reject
-                                  </button>
-                                </>
-                              ) : (
-                                <button type="button" className="btn btn--ghost btn--compact" onClick={() => { setEditingDriver(driver); setDriverFormOpen(true); }}>
-                                  <Pencil width={12} height={12} /> Edit
-                                </button>
-                              )}
-                              <ActionMenu
-                                label={`More actions for ${driver.name}`}
-                                items={[
-                                  ...(driver.status === 'pending'
-                                    ? [{ key: 'edit', label: 'Edit details', icon: Pencil, onClick: () => { setEditingDriver(driver); setDriverFormOpen(true); } }]
-                                    : [
-                                      { key: 'reset', label: 'Reset password', icon: KeyRound, onClick: () => setResetPasswordDriver(driver) },
-                                      driver.status === 'active'
-                                        ? { key: 'toggle', label: 'Deactivate', icon: UserX, onClick: () => handleToggleDriverStatus(driver) }
-                                        : { key: 'toggle', label: 'Activate', icon: UserCheck, onClick: () => handleToggleDriverStatus(driver) },
-                                      { key: 'delete', label: 'Delete driver', icon: Trash2, danger: true, onClick: () => handleDeleteDriver(driver) },
-                                    ]),
-                                ]}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
+          <DriversTeam
+            drivers={drivers}
+            isLoading={isLoadingDrivers}
+            error={driversError}
+            busyId={isTogglingDriverStatus ?? isDeletingDriver}
+            fetchPassword={async (id) => {
+              const response = await apiFetch(`/api/drivers/${id}/password`);
+              if (!response.ok) throw new Error(`Failed (${response.status})`);
+              return response.json();
+            }}
+            onAdd={() => { setEditingDriver(null); setDriverFormOpen(true); }}
+            onEdit={(driver) => { setEditingDriver(driver); setDriverFormOpen(true); }}
+            onResetPassword={(driver) => setResetPasswordDriver(driver)}
+            onToggleStatus={handleToggleDriverStatus}
+            onDelete={handleDeleteDriver}
+          />
           )}
 
         </div>
