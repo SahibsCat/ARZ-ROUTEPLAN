@@ -13,7 +13,7 @@ import {
   Route as LIconRoute, PackageSearch, MapPinPlus, RotateCw, Trash2, UserPlus,
   Map as LIconMap, Columns2, List as LIconList, Download as LIconDownload,
   MoreHorizontal, CarFront as LIconCarFront, Bike as LIconBike,
-  Phone, Maximize2, Minimize2, Moon, Satellite, ExternalLink,
+  Phone, Maximize2, Minimize2, Moon, Satellite, ExternalLink, Warehouse, GripVertical,
 } from 'lucide-react';
 import './routeWorkspace.css';
 
@@ -3064,128 +3064,146 @@ It goes back to pending on ${route.route_name} and shows up in the driver's app 
 
       <RouteOverviewStrip route={route} capacity={capacity} maxCapacity={maxCapacity} />
 
-      <div className="route-stop-list">
+      <section className="rsx">
+        <header className="rsx__head">
+          <div>
+            <h3>Delivery sequence</h3>
+            <span>{count} stop{count === 1 ? '' : 's'} · {deliveredCount} delivered{count > 1 ? ' · drag a card to reorder' : ''}</span>
+          </div>
+          {count > 0 && (
+            <div className="rsx__progress" title={`${deliveredCount} of ${count} delivered`}>
+              {route.orders.map((o) => <i key={o.order_id} className={o.is_delivered ? 'is-done' : o.is_late ? 'is-late' : ''} />)}
+            </div>
+          )}
+        </header>
+
         {count === 0 ? (
-          <div className="empty-state">
+          <div className="rsx__empty">
             <IconInbox width={22} height={22} />
-            This route currently has no delivery stops.
+            This route has no delivery stops yet.
           </div>
         ) : (
-          <>
-            <div className="route-stop-list__terminal">
-              <span className="route-stop-list__terminal-dot"><IconInbox width={12} height={12} /></span>
-              Warehouse
-            </div>
-
-            {route.orders.map((order, stopIdx) => (
-              <div
-                key={order.order_id}
-                className={`route-stop${String(order.order_id) === String(selectedOrderId) ? ' route-stop--selected' : ''}${order.is_delivered ? ' route-stop--delivered' : ''}`}
-                ref={(el) => { nodeRefs.current[order.order_id] = el; }}
-                draggable
-                title="Drag to reorder this delivery within the route"
-                onClick={() => onSelectOrder?.(order.order_id)}
-                onDragStart={() => handleDragStart(order.order_id)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => handleDrop(order.order_id)}
-              >
-                <div className="route-stop__rail">
-                  <span className={`route-stop__seq${order.is_late ? ' route-stop__seq--late' : ''}`}>{String(stopIdx + 1).padStart(2, '0')}</span>
-                  {stopIdx < route.orders.length - 1 && <span className="route-stop__connector" />}
-                </div>
-                <div className="route-stop__body">
-                  <div className="route-stop__top">
-                    <span className="route-stop__order-id">Order #{order.order_id}</span>
-                    <span className="route-stop__customer">{order.customer_name}</span>
-                    <span className={`stop-status${order.is_late ? ' stop-status--late' : ''}`}>
-                      {order.is_late ? 'Late' : 'On time'}
-                    </span>
-                    {order.is_delivered && <span className="stop-status stop-status--delivered"><IconCheck width={11} height={11} /> Delivered</span>}
-                    {manualExtraOrderId === String(order.order_id) && (
-                      <span className="stop-status stop-status--manual" title="Added past this route's normal capacity via the admin's one-time override">
-                        🟡 Manual Override
-                      </span>
-                    )}
-                  </div>
-                  {manualExtraOrderId === String(order.order_id) && (
-                    <button
-                      type="button"
-                      className="stop-undo-manual"
-                      disabled={isRemovingManualExtra}
-                      title="Remove this delivery and free the manual override up again for this route"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm('Undo the manual override?\n\nThis delivery moves back to Unassigned Orders, and this route can accept one manual addition again.')) {
-                          onRemoveManualExtra?.(route.route_id);
-                        }
-                      }}
-                    >
-                      {isRemovingManualExtra ? 'Undoing…' : 'Undo manual override'}
-                    </button>
-                  )}
-                  {order.area && <span className="route-stop__area">{order.area}</span>}
-                  <p className="route-stop__address">{order.address || 'No address on file'}</p>
-                  <div className="route-stop__meta">
-                    <span>Slot {order.delivery_time}</span>
-                    {order.eta && <span>ETA {order.eta}</span>}
-                    {order.map_link && (
-                      <a className="pin-badge" href={order.map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                        <IconPin width={12} height={12} />
-                        View pin
-                      </a>
-                    )}
-                  </div>
-                  <div className="route-stop__actions" onClick={(e) => e.stopPropagation()}>
-                    <span className="stop-reorder">
-                      <button
-                        type="button"
-                        className="stop-reorder__btn"
-                        disabled={stopIdx === 0}
-                        title="Move earlier in the delivery sequence"
-                        onClick={() => moveStop(order.order_id, 'up')}
-                      >
-                        <IconArrowUp width={12} height={12} />
-                      </button>
-                      <button
-                        type="button"
-                        className="stop-reorder__btn"
-                        disabled={stopIdx === route.orders.length - 1}
-                        title="Move later in the delivery sequence"
-                        onClick={() => moveStop(order.order_id, 'down')}
-                      >
-                        <IconArrowDown width={12} height={12} />
-                      </button>
-                    </span>
-                    <select
-                      className={`stop-move${order.is_delivered ? ' stop-move--reassign' : ''}`}
-                      value=""
-                      title={order.is_delivered ? 'Re-assign this delivered order - deliver again on this route, or move it' : 'Move this stop to another route'}
-                      onChange={(e) => { const target = e.target.value; if (target) handleMoveTo(order.order_id, target); e.target.value = ''; }}
-                    >
-                      <option value="">{order.is_delivered ? '↩ Re-assign…' : 'Move to…'}</option>
-                      {order.is_delivered && <option value="__reopen">Deliver again on {route.route_name} (same driver)</option>}
-                      {routes.filter((r) => r.route_name !== route.route_name).map((r) => {
-                        const full = r.orders.length >= capacityFor(r.vehicle_type);
-                        return (
-                          <option key={r.route_name} value={r.route_name} disabled={full}>
-                            {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)}){full ? ' — full' : ''}
-                          </option>
-                        );
-                      })}
-                      <option value="pending">Remove → Unassigned</option>
-                    </select>
-                  </div>
-                </div>
+          <ol className="rsx__list">
+            <li className="rsx__node rsx__node--depot">
+              <span className="rsx__rail"><span className="rsx__dot rsx__dot--depot"><Warehouse size={16} /></span></span>
+              <div className="rsx__depot">
+                <b>Warehouse</b>
+                <span>Route starts here</span>
               </div>
-            ))}
+            </li>
 
-            <div className="route-stop-list__terminal route-stop-list__terminal--end">
-              <span className="route-stop-list__terminal-dot route-stop-list__terminal-dot--end"><IconFlag width={12} height={12} /></span>
-              Finish{route.estimated_finish_time ? ` · ${route.estimated_finish_time}` : ''}
-            </div>
-          </>
+            {route.orders.map((order, stopIdx) => {
+              const selected = String(order.order_id) === String(selectedOrderId);
+              const isManual = manualExtraOrderId === String(order.order_id);
+              const state = order.is_delivered ? 'done' : order.is_late ? 'late' : 'open';
+              return (
+                <li
+                  key={order.order_id}
+                  className={`rsx__node rsx__node--${state}${selected ? ' is-selected' : ''}`}
+                  ref={(el) => { nodeRefs.current[order.order_id] = el; }}
+                  draggable
+                  onClick={() => onSelectOrder?.(order.order_id)}
+                  onDragStart={() => handleDragStart(order.order_id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDrop(order.order_id)}
+                >
+                  <span className="rsx__rail">
+                    <span className="rsx__dot">
+                      {order.is_delivered ? <IconCheck width={15} height={15} /> : stopIdx + 1}
+                    </span>
+                  </span>
+
+                  <article className="rsx__card">
+                    <span className="rsx__grip" title="Drag to reorder"><GripVertical size={16} /></span>
+                    <div className="rsx__main">
+                      <div className="rsx__row1">
+                        <h4 className="rsx__name">{order.customer_name || 'Unnamed customer'}</h4>
+                        <span className="rsx__order">#{order.order_id}</span>
+                        <span className="rsx__pills">
+                          {order.is_delivered ? (
+                            <span className="rsx__pill rsx__pill--done"><IconCheck width={11} height={11} /> Delivered</span>
+                          ) : (
+                            <span className={`rsx__pill rsx__pill--${order.is_late ? 'late' : 'ok'}`}>{order.is_late ? 'Running late' : 'On time'}</span>
+                          )}
+                          {isManual && <span className="rsx__pill rsx__pill--manual" title="Added past this route's normal capacity via the one-time override">Manual override</span>}
+                        </span>
+                      </div>
+
+                      <p className="rsx__addr">
+                        {order.area && <span className="rsx__area">{order.area}</span>}
+                        {order.address || 'No address on file'}
+                      </p>
+
+                      <div className="rsx__meta">
+                        <span className="rsx__meta-item"><IconClock width={13} height={13} /> {order.delivery_time || 'No slot'}</span>
+                        {order.eta && <span className="rsx__meta-item rsx__meta-item--eta">ETA <b>{order.eta}</b></span>}
+                        {order.map_link && (
+                          <a className="rsx__pin" href={order.map_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                            <IconPin width={13} height={13} /> Open in Maps
+                          </a>
+                        )}
+                        {isManual && (
+                          <button
+                            type="button"
+                            className="rsx__undo"
+                            disabled={isRemovingManualExtra}
+                            title="Remove this delivery and free the manual override up again for this route"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm('Undo the manual override?\n\nThis delivery moves back to Unassigned Orders, and this route can accept one manual addition again.')) {
+                                onRemoveManualExtra?.(route.route_id);
+                              }
+                            }}
+                          >
+                            {isRemovingManualExtra ? 'Undoing…' : 'Undo override'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rsx__tools" onClick={(e) => e.stopPropagation()}>
+                      <div className="rsx__order-btns">
+                        <button type="button" disabled={stopIdx === 0} title="Move earlier" aria-label="Move earlier" onClick={() => moveStop(order.order_id, 'up')}>
+                          <IconArrowUp width={13} height={13} />
+                        </button>
+                        <button type="button" disabled={stopIdx === route.orders.length - 1} title="Move later" aria-label="Move later" onClick={() => moveStop(order.order_id, 'down')}>
+                          <IconArrowDown width={13} height={13} />
+                        </button>
+                      </div>
+                      <select
+                        className={`rsx__move${order.is_delivered ? ' rsx__move--reassign' : ''}`}
+                        value=""
+                        title={order.is_delivered ? 'Re-assign this delivered order - deliver again on this route, or move it' : 'Move this stop to another route'}
+                        onChange={(e) => { const target = e.target.value; if (target) handleMoveTo(order.order_id, target); e.target.value = ''; }}
+                      >
+                        <option value="">{order.is_delivered ? '↩ Re-assign' : 'Move to…'}</option>
+                        {order.is_delivered && <option value="__reopen">Deliver again on {route.route_name} (same driver)</option>}
+                        {routes.filter((r) => r.route_name !== route.route_name).map((r) => {
+                          const full = r.orders.length >= capacityFor(r.vehicle_type);
+                          return (
+                            <option key={r.route_name} value={r.route_name} disabled={full}>
+                              {r.route_name} ({r.orders.length}/{capacityFor(r.vehicle_type)}){full ? ' — full' : ''}
+                            </option>
+                          );
+                        })}
+                        <option value="pending">Remove → Unassigned</option>
+                      </select>
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+
+            <li className="rsx__node rsx__node--depot rsx__node--end">
+              <span className="rsx__rail"><span className="rsx__dot rsx__dot--end"><IconFlag width={15} height={15} /></span></span>
+              <div className="rsx__depot">
+                <b>Back to warehouse</b>
+                <span>{route.estimated_finish_time ? `Last drop finishes ${route.estimated_finish_time}` : 'Route ends here'}</span>
+              </div>
+            </li>
+          </ol>
         )}
-      </div>
+      </section>
 
       {/* The in-app map every route now has, not just routes with an
           active driver - seeing this route's stops no longer requires
