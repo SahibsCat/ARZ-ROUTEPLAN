@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from app import crud, distance_service, password_vault
 from app.crud import RootplanError, RouteNotFoundError
 from app.driver_auth import create_session, generate_driver_code, hash_password, revoke_driver_sessions, verify_password
-from app.models import Driver, DriverLocationPing, DriverPasswordVault, DriverSession, Route, RouteStop
+from app.models import ArchivedRoute, Driver, DriverLocationPing, DriverPasswordVault, DriverSession, Route, RouteStop
 from app.route_service import VELOCHERY_DEPOT
 
 # A ping newer than this reads as genuinely live; older than that but
@@ -249,9 +249,10 @@ def list_drivers_with_assignment(db: Session) -> List[Dict[str, object]]:
     drivers = list_drivers(db)
     # One query for every currently-assigned route rather than N+1 -
     # active routes (not soft-deleted, driver_id set) keyed by driver_id.
+    archived = db.query(ArchivedRoute.route_id)
     routes_by_driver = {
         r.driver_id: r
-        for r in db.query(Route).filter(Route.driver_id.isnot(None)).all()
+        for r in db.query(Route).filter(Route.driver_id.isnot(None), ~Route.id.in_(archived)).order_by(Route.id).all()
     }
     saved = {row[0] for row in db.query(DriverPasswordVault.driver_id).all()}
     return [driver_summary(d, routes_by_driver.get(d.id), d.id in saved) for d in drivers]
@@ -315,7 +316,72 @@ def authenticate_driver(db: Session, username: str, password: str) -> Tuple[Driv
 # --------------------------------------------------------------------------
 
 def get_driver_current_route(db: Session, driver_id: int) -> Optional[Route]:
-    return db.query(Route).filter(Route.driver_id == driver_id).first()
+    archived = db.query(ArchivedRoute.route_id)
+    return (
+        db.query(Route)
+        .filter(Route.driver_id == driver_id, ~Route.id.in_(archived))
+        .order_by(Route.id.desc())
+        .first()
+    )
+
+
+# --------------------------------------------------------------------------
+# 24-hour expiry
+# --------------------------------------------------------------------------
+
+ROUTE_LIFETIME = timedelta(hours=24)
+_EXPIRE_THROTTLE_SECONDS = 60
+_last_expire_run: Optional[datetime] = None
+
+
+def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def expire_old_routes(db: Session, now: Optional[datetime] = None) -> Dict[str, int]:
+    """Assigned routes leave the driver app and the Routes page 24h after
+    the driver started them (24h after creation if never started).
+    Completed runs are archived - still listed in Driver Data with their
+    km and deliveries. Anything not completed by then is deleted outright,
+    stops and GPS trail included."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - ROUTE_LIFETIME
+    archived_ids = db.query(ArchivedRoute.route_id)
+    candidates = (
+        db.query(Route)
+        .filter(~Route.id.in_(archived_ids))
+        .filter((Route.driver_id.isnot(None)) | (Route.started_at.isnot(None)))
+        .all()
+    )
+    archived = deleted = 0
+    for route in candidates:
+        anchor = _aware(route.started_at) or _aware(route.created_at)
+        if anchor is None or anchor > cutoff:
+            continue
+        if route.route_run_status == "completed":
+            db.add(ArchivedRoute(route_id=route.id))
+            archived += 1
+        else:
+            db.delete(route)  # stops/pings go with it (see delete_driver_history_record)
+            deleted += 1
+    if archived or deleted:
+        db.commit()
+    return {"archived": archived, "deleted": deleted}
+
+
+def maybe_expire_old_routes(db: Session) -> None:
+    """Cheap to call on hot paths - runs the expiry at most once a minute."""
+    global _last_expire_run
+    now = datetime.now(timezone.utc)
+    if _last_expire_run is not None and (now - _last_expire_run).total_seconds() < _EXPIRE_THROTTLE_SECONDS:
+        return
+    _last_expire_run = now
+    try:
+        expire_old_routes(db, now)
+    except Exception:  # never break the page over housekeeping
+        db.rollback()
 
 
 def assign_driver_to_route(db: Session, route_id: int, driver_id: int, force: bool = False) -> Dict[str, object]:

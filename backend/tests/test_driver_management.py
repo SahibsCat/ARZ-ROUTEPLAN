@@ -934,3 +934,54 @@ def test_sum_haversine_km_ignores_drift_while_parked():
         _GapPing(13.0000, 80.2002, base + timedelta(seconds=30), accuracy=35, speed=0.0),
     ]
     assert crud_driver._sum_haversine_km(pings) == 0.0
+
+
+# --------------------------------------------------------------------------
+# 24-hour route expiry
+# --------------------------------------------------------------------------
+
+def _started_route(db_session, username, hours_ago, complete):
+    from app.models import Route
+    route = _route(db_session)
+    driver = crud_driver.create_driver(db_session, username.title(), username, "pass123")
+    crud_driver.assign_driver_to_route(db_session, route.id, driver.id)
+    crud_driver.start_route(db_session, driver, route.id)
+    if complete:
+        crud_driver.end_route(db_session, driver, route.id)
+    row = db_session.query(Route).filter(Route.id == route.id).one()
+    row.started_at = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+    db_session.commit()
+    return route.id, driver
+
+
+def test_completed_route_is_archived_after_24h_but_kept_in_driver_data(db_session):
+    from app.models import Route
+    route_id, driver = _started_route(db_session, "kumar", 25, complete=True)
+    result = crud_driver.expire_old_routes(db_session)
+    assert result == {"archived": 1, "deleted": 0}
+    # Gone from the driver app and the driver's assignment...
+    assert crud_driver.get_driver_current_route(db_session, driver.id) is None
+    assert crud_driver.list_drivers_with_assignment(db_session)[0]["assigned_route_id"] is None
+    # ...and from the Routes page...
+    route = db_session.query(Route).filter(Route.id == route_id).one()
+    assert crud.route_plan_summary(route.route_plan)["routes"] == []
+    # ...but the run is still in Driver Data.
+    runs, _ = crud_driver.list_driver_history(db_session)
+    assert [r["route_id"] for r in runs] == [route_id]
+    # Running again is a no-op.
+    assert crud_driver.expire_old_routes(db_session) == {"archived": 0, "deleted": 0}
+
+
+def test_unfinished_route_is_deleted_after_24h(db_session):
+    from app.models import Route
+    route_id, driver = _started_route(db_session, "ravi", 30, complete=False)
+    assert crud_driver.expire_old_routes(db_session) == {"archived": 0, "deleted": 1}
+    assert db_session.query(Route).filter(Route.id == route_id).first() is None
+    assert crud_driver.get_driver_current_route(db_session, driver.id) is None
+    assert crud_driver.list_driver_history(db_session)[0] == []
+
+
+def test_recent_route_is_left_alone(db_session):
+    route_id, driver = _started_route(db_session, "anu", 23, complete=True)
+    assert crud_driver.expire_old_routes(db_session) == {"archived": 0, "deleted": 0}
+    assert crud_driver.get_driver_current_route(db_session, driver.id).id == route_id

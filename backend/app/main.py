@@ -71,7 +71,32 @@ async def lifespan(_app: FastAPI):
     # loop - see broadcast_threadsafe's own comment for why that indirection
     # is necessary.
     tracking_manager.bind_loop(asyncio.get_running_loop())
+    expiry_task = asyncio.create_task(_route_expiry_loop())
     yield
+    expiry_task.cancel()
+
+
+def _run_route_expiry() -> None:
+    # Same session source the endpoints use (honours test overrides).
+    gen = app.dependency_overrides.get(get_db, get_db)()
+    db = next(gen)
+    try:
+        crud_driver.expire_old_routes(db)
+    except Exception:
+        db.rollback()
+        traceback.print_exc()
+    finally:
+        gen.close()
+
+
+async def _route_expiry_loop() -> None:
+    """Assigned routes expire 24h after start - see
+    crud_driver.expire_old_routes. Checked every 10 minutes while the
+    server is up; the dashboard and driver app also trigger it on load,
+    which covers the free Render instance sleeping."""
+    while True:
+        await asyncio.to_thread(_run_route_expiry)
+        await asyncio.sleep(600)
 
 
 app = FastAPI(title="Routeplan API", lifespan=lifespan)
@@ -531,6 +556,7 @@ def get_dashboard(db: Session = Depends(get_db)):
     delete didn't work" from the UI. The pointer is set on every
     upload/generate and cleared the moment that specific record is
     deleted, so an empty pointer means an honestly empty dashboard."""
+    crud_driver.maybe_expire_old_routes(db)
     settings = crud.get_settings(db)
     settings_response = SettingsResponse(
         default_car_count=settings.default_car_count,
@@ -1048,6 +1074,7 @@ def get_driver_history_endpoint(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    crud_driver.maybe_expire_old_routes(db)
     rows, total = crud_driver.list_driver_history(db, driver_id=driver_id, limit=limit, offset=offset)
     return {"runs": rows, "total": total, "limit": limit, "offset": offset}
 
@@ -1275,6 +1302,7 @@ def driver_remove_push_token(payload: PushTokenRequest = Body(...), driver=Depen
 
 @app.get("/api/driver/me/route")
 def driver_my_route_endpoint(driver=Depends(get_current_driver), db: Session = Depends(get_db)):
+    crud_driver.maybe_expire_old_routes(db)
     route = crud_driver.get_driver_active_route(db, driver)
     return {"route": route}
 

@@ -1727,6 +1727,17 @@ def route_summary(route: Route) -> Dict[str, object]:
 
 def route_plan_summary(route_plan: RoutePlan) -> Dict[str, object]:
     routes = sorted(route_plan.routes, key=lambda r: r.id)
+    # Finished routes 24h past their start are archived - kept for Driver
+    # Data only, never shown on the Routes page again.
+    from sqlalchemy.orm import object_session
+    from app.models import ArchivedRoute
+    session = object_session(route_plan)
+    if session is not None and routes:
+        archived = {
+            row[0] for row in session.query(ArchivedRoute.route_id)
+            .filter(ArchivedRoute.route_id.in_([r.id for r in routes])).all()
+        }
+        routes = [r for r in routes if r.id not in archived]
     pending = [dict(p.order_snapshot or {}) for p in route_plan.pending_stops]
     return {
         "plan_id": route_plan.id,

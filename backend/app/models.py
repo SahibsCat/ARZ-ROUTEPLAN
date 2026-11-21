@@ -341,6 +341,17 @@ class Driver(Base):
     push_tokens = relationship("DriverPushToken", back_populates="driver", cascade="all, delete-orphan")
 
 
+class ArchivedRoute(Base):
+    """A finished route 24h past its start: hidden from the Routes page and
+    the driver app, but its Route row (stops, GPS, km) stays so the run
+    remains in Driver Data. Own table so create_all adds it with no
+    migration - see crud_driver.expire_old_routes."""
+    __tablename__ = "archived_routes"
+
+    route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), primary_key=True)
+    archived_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class DriverPasswordVault(Base):
     """Encrypted copy of a driver's current password, so the admin can see
     it on the Drivers page (see app/password_vault.py). Its own table, not
