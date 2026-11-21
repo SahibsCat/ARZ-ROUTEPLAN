@@ -163,7 +163,12 @@ function useAnimatedPositions(targets) {
   // speed roughly consistent with how the driver is actually moving,
   // instead of a one-size-fits-all duration.
   const MIN_GLIDE_MS = 600;
-  const MAX_GLIDE_MS = 6000;
+  const MAX_GLIDE_MS = 9000;
+  // Each glide is stretched a little past the measured gap so the marker
+  // is still moving when the next fix lands - it then retargets from
+  // wherever it currently is, which reads as one continuous drive instead
+  // of glide-stop-glide.
+  const GLIDE_OVERLAP = 1.2;
   const DEFAULT_GLIDE_MS = 4200; // used only for a key's very first real retarget, with no prior gap to measure
 
   useEffect(() => {
@@ -186,7 +191,7 @@ function useAnimatedPositions(targets) {
       const now = performance.now();
       const lastRetargetAt = lastRetargetAtRef.current[key];
       const gap = lastRetargetAt != null ? now - lastRetargetAt : DEFAULT_GLIDE_MS;
-      const duration = Math.min(MAX_GLIDE_MS, Math.max(MIN_GLIDE_MS, gap));
+      const duration = Math.min(MAX_GLIDE_MS, Math.max(MIN_GLIDE_MS, gap * GLIDE_OVERLAP));
       lastRetargetAtRef.current[key] = now;
       animsRef.current[key] = { from, to: { lat: pos.lat, lng: pos.lng }, start: now, duration };
     });
@@ -355,7 +360,7 @@ function vehicleIconUrl(vehicleType, color, { size = 28, opacity = 1, heading = 
       + `<circle cx="6" cy="17.2" r="2.6" fill="none" stroke="#111827" stroke-width="2.1"/>`
       + `<circle cx="18" cy="17.2" r="2.6" fill="none" stroke="#111827" stroke-width="2.1"/>`;
   const arrow = heading != null && !Number.isNaN(heading)
-    ? `<g transform="rotate(${heading} ${c} ${c})"><path d="M${c} ${c - r - size * 0.13} L${c + size * 0.12} ${c - r + size * 0.01} L${c - size * 0.12} ${c - r - size * 0.01} Z" fill="${color}" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></g>`
+    ? `<g transform="rotate(${heading} ${c} ${c})"><path d="M${c} ${c - r - size * 0.13} L${c + size * 0.12} ${c - r + size * 0.01} L${c - size * 0.12} ${c - r + size * 0.01} Z" fill="${color}" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></g>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" opacity="${opacity}">`
     + `<circle cx="${c}" cy="${c + size * 0.03}" r="${r + 2}" fill="#000" fill-opacity="0.3"/>`
@@ -2171,13 +2176,21 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
 
   // Only pan for a move big enough to be real movement (GPS noise would
   // otherwise make the map shake), and only while following.
+  // The camera follows the gliding marker (not the raw fix, which would
+  // jump the map ahead of the vehicle): once the vehicle drifts out of the
+  // middle of the view, glide the map back to it.
   useEffect(() => {
-    if (!position || !mapRef.current || !autoFollow) return;
-    const prev = lastPannedRef.current;
-    if (prev && haversineMeters(prev, position) < 8) return;
-    lastPannedRef.current = position;
-    mapRef.current.panTo(position);
-  }, [position?.lat, position?.lng, autoFollow]);
+    if (!displayedPosition || !mapRef.current || !autoFollow || !viewport) return;
+    const p = project(displayedPosition.lat, displayedPosition.lng);
+    if (!p) return;
+    const dx = Math.abs(p.x - viewport.w / 2);
+    const dy = Math.abs(p.y - viewport.h / 2);
+    if (dx > viewport.w * 0.15 || dy > viewport.h * 0.15) {
+      lastPannedRef.current = displayedPosition;
+      mapRef.current.panTo(displayedPosition);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayedPosition?.lat, displayedPosition?.lng, autoFollow]);
 
   const handleRecenter = () => {
     setAutoFollow(true);
@@ -2259,9 +2272,13 @@ function LiveMapModal({ route, driver, initialTracking, fetchRouteTracking, fetc
                 // Break the driven line wherever consecutive fixes are far
                 // apart (a stale fix at the warehouse, GPS off then on) -
                 // otherwise that gap draws as a straight line across the map.
+                // The line is drawn up to where the vehicle *is on screen*
+                // (the gliding marker), not to the newest fix - otherwise
+                // the line shoots ahead and the vehicle chases it.
+                const drawn = displayedPosition && path.length ? [...path.slice(0, -1), displayedPosition] : path;
                 const trailSegments = [];
-                path.forEach((pt, i) => {
-                  if (i === 0 || haversineMeters(path[i - 1], pt) > TRAIL_JUMP_METERS) trailSegments.push([pt]);
+                drawn.forEach((pt, i) => {
+                  if (i === 0 || haversineMeters(drawn[i - 1], pt) > TRAIL_JUMP_METERS) trailSegments.push([pt]);
                   else trailSegments[trailSegments.length - 1].push(pt);
                 });
                 const trails = trailSegments.filter((seg) => seg.length > 1).map(toPts).filter(Boolean);
